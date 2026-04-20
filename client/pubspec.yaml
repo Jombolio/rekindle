@@ -1,0 +1,54 @@
+name: rekindle
+description: Self-hosted comic, manga, and book reader.
+version: 1.0.0+1
+publish_to: none
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+  flutter: '>=3.22.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.6.1
+
+  # HTTP
+  dio: ^5.7.0
+
+  # Navigation
+  go_router: ^14.6.2
+
+  # Persistence — prefs & local SQLite
+  shared_preferences: ^2.3.4
+  sqflite: ^2.3.3
+  sqflite_common_ffi: ^2.3.4     # Linux / Windows desktop
+
+  # File system
+  path_provider: ^2.1.4
+
+  # Image loading & reader
+  cached_network_image: ^3.4.1
+  photo_view: ^0.15.0
+
+  # Offline: ZIP/CBZ extraction on-device
+  archive: ^3.6.1
+
+  # Connectivity detection
+  connectivity_plus: ^6.1.1
+
+  # File picker (admin upload)
+  file_picker: ^8.1.7
+
+  # EPUB: XML parsing + HTML rendering (no WebView required)
+  xml: ^6.5.0
+  flutter_widget_from_html: ^0.15.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

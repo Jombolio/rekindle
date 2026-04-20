@@ -1,0 +1,5 @@
+-keep class com.rekindle.app.data.model.** { *; }
+-keepattributes Signature
+-keepattributes *Annotation*
+-dontwarn okhttp3.**
+-dontwarn retrofit2.**

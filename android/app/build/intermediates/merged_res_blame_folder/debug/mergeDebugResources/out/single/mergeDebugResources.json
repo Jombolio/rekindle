@@ -1,0 +1,26 @@
+[
+    {
+        "merged": "com.rekindle.app-debug-73:/mipmap-xxhdpi_ic_launcher.png.flat",
+        "source": "com.rekindle.app-main-75:/mipmap-xxhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.rekindle.app-debug-73:/mipmap-xxxhdpi_ic_launcher.png.flat",
+        "source": "com.rekindle.app-main-75:/mipmap-xxxhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "/home/jombo/.gradle/daemon/8.9/com.rekindle.app-debug-73:/xml_file_paths.xml.flat",
+        "source": "/home/jombo/.gradle/daemon/8.9/com.rekindle.app-main-75:/xml/file_paths.xml"
+    },
+    {
+        "merged": "com.rekindle.app-debug-73:/mipmap-xhdpi_ic_launcher.png.flat",
+        "source": "com.rekindle.app-main-75:/mipmap-xhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.rekindle.app-debug-73:/mipmap-hdpi_ic_launcher.png.flat",
+        "source": "com.rekindle.app-main-75:/mipmap-hdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.rekindle.app-debug-73:/mipmap-mdpi_ic_launcher.png.flat",
+        "source": "com.rekindle.app-main-75:/mipmap-mdpi/ic_launcher.png"
+    }
+]

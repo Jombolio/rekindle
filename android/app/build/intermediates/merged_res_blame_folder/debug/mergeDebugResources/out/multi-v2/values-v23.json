@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.rekindle.app-mergeDebugResources-71:/values-v23/values-v23.xml",
+            "map": [
+                {
+                    "source": "/home/jombo/.gradle/caches/8.9/transforms/80f0f03f94d3fda7b13ab1eb77196a18/transformed/work-runtime-2.9.1/res/values-v23/values-v23.xml",
+                    "from": {
+                        "startLines": "2,3",
+                        "startColumns": "4,4",
+                        "startOffsets": "55,121",
+                        "endColumns": "65,62",
+                        "endOffsets": "116,179"
+                    }
+                }
+            ]
+        }
+    ]
+}
