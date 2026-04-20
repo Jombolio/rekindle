@@ -43,4 +43,13 @@ class AuthApi {
     final resp = await _client.dio.get('api/auth/me');
     return resp.data as Map<String, dynamic>;
   }
+
+  Future<bool> needsSetup() async {
+    try {
+      final resp = await _client.dio.get('api/auth/setup-status');
+      return (resp.data as Map<String, dynamic>)['needsSetup'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
 }

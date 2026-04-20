@@ -57,9 +57,12 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     final url = rawUrl.endsWith('/') ? rawUrl : '$rawUrl/';
     setState(() { _busy = true; _error = null; });
 
+    bool setupNeeded = false;
     try {
       final client = ApiClient(baseUrl: url);
-      await AuthApi(client).me();
+      final authApi = AuthApi(client);
+      await authApi.me();
+      setupNeeded = await authApi.needsSetup();
     } on DioException catch (e) {
       final status = e.response?.statusCode;
       if (status != 401 && status != 409) {
@@ -81,7 +84,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
       name: name.isEmpty ? _hostFromUrl(rawUrl) : name,
       baseUrl: url,
     );
-    setState(() { _busy = false; _step = 2; });
+    setState(() { _busy = false; _step = 2; _isSetupMode = setupNeeded; });
   }
 
   Future<void> _login() async {

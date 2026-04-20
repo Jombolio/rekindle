@@ -52,13 +52,49 @@ class _SourceSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(sourceAuthProvider(source.id));
+    final authAsync = ref.watch(sourceAuthProvider(source.id));
     final librariesState = ref.watch(sourceLibraryProvider(source.id));
 
-    final auth = authState.valueOrNull;
+    final auth = authAsync.valueOrNull;
     final isAdmin = auth is AuthAuthenticated && auth.isAdmin;
     final username = auth is AuthAuthenticated ? auth.username : null;
-    final hasToken = source.token != null;
+
+    Widget body;
+    if (authAsync.isLoading) {
+      body = const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    } else if (auth is! AuthAuthenticated) {
+      body = _SignInPrompt(sourceId: source.id);
+    } else {
+      body = librariesState.when(
+        loading: () => const Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+        error: (e, _) => Padding(
+          padding: const EdgeInsets.all(16),
+          child: ErrorView(
+            message: e.toString(),
+            onRetry: () =>
+                ref.read(sourceLibraryProvider(source.id).notifier).refresh(),
+          ),
+        ),
+        data: (libs) => libs.isEmpty
+            ? _EmptyLibraries(
+                isAdmin: isAdmin,
+                onAdd: () => _showLibraryDialog(context, ref, source.id),
+              )
+            : _LibraryList(
+                libraries: libs,
+                sourceId: source.id,
+                isAdmin: isAdmin,
+                username: username,
+                ref: ref,
+              ),
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -92,36 +128,7 @@ class _SourceSection extends ConsumerWidget {
           ),
         ),
         const Divider(height: 1, indent: 16, endIndent: 16),
-        // Libraries or state views
-        if (!hasToken)
-          _SignInPrompt(sourceId: source.id)
-        else
-          librariesState.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.all(24),
-              child: Center(child: CircularProgressIndicator()),
-            ),
-            error: (e, _) => Padding(
-              padding: const EdgeInsets.all(16),
-              child: ErrorView(
-                message: e.toString(),
-                onRetry: () =>
-                    ref.read(sourceLibraryProvider(source.id).notifier).refresh(),
-              ),
-            ),
-            data: (libs) => libs.isEmpty
-                ? _EmptyLibraries(
-                    isAdmin: isAdmin,
-                    onAdd: () => _showLibraryDialog(context, ref, source.id),
-                  )
-                : _LibraryList(
-                    libraries: libs,
-                    sourceId: source.id,
-                    isAdmin: isAdmin,
-                    username: username,
-                    ref: ref,
-                  ),
-          ),
+        body,
       ],
     );
   }
