@@ -1,6 +1,7 @@
 # Rekindle
 
-Self-hosted comic, manga, and book reader. Point it at a folder of CBZ/CBR archives or EPUBs and read them from any device.
+Self-hosted comic, manga, and book reader. 
+Point the Rekindle Server to a folder of book archives (such as CBZs, CBRs, EPUBs, MOBIs or PDFs) and read/download them from any device running the Rekindle Client.
 
 ## Structure
 
