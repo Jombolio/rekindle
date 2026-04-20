@@ -61,15 +61,24 @@ Future<Directory> resolveDownloadDir() async {
     return dir;
   }
 
-  // Platform default: <Documents>/Rekindle Downloads
-  final docs = await getApplicationDocumentsDirectory();
-  final dir = Directory('${docs.path}/Rekindle Downloads');
+  final base = await _platformDownloadsBase();
+  final dir = Directory('${base.path}/Rekindle Downloads');
   await dir.create(recursive: true);
   return dir;
 }
 
 /// The human-readable default path shown as hint when no custom dir is set.
 Future<String> defaultDownloadDirPath() async {
-  final docs = await getApplicationDocumentsDirectory();
-  return '${docs.path}/Rekindle Downloads';
+  final base = await _platformDownloadsBase();
+  return '${base.path}/Rekindle Downloads';
+}
+
+/// Returns the platform Downloads folder (Windows/macOS), falling back to
+/// Documents on platforms where a dedicated Downloads folder doesn't exist.
+Future<Directory> _platformDownloadsBase() async {
+  try {
+    final dir = await getDownloadsDirectory();
+    if (dir != null) return dir;
+  } catch (_) {}
+  return getApplicationDocumentsDirectory();
 }

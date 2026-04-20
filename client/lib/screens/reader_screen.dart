@@ -32,6 +32,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   late final PageController _pageCtrl;
   bool _didJump = false;
   bool _didInitialPageJump = false;
+  int _lastPrefetchedPage = -1;
 
   // ── Scroll mode ───────────────────────────────────────────────────────────
   final ScrollController _scrollCtrl = ScrollController();
@@ -404,6 +405,33 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     _scrollTrackedPage = page;
   }
 
+  // ── Prefetch ──────────────────────────────────────────────────────────────
+
+  /// Pre-warms the Flutter image cache for pages surrounding [currentPage].
+  /// Called whenever the current page changes in paged mode.
+  void _prefetchAround(
+    int currentPage,
+    List<String>? extractedPages,
+    dynamic client,
+    List<List<int>> slides,
+  ) {
+    if (!mounted) return;
+    const ahead = 4;
+    const behind = 1;
+    final slideIdx = slides.indexWhere((s) => s.contains(currentPage));
+    if (slideIdx < 0) return;
+
+    for (var offset = -behind; offset <= ahead; offset++) {
+      if (offset == 0) continue;
+      final idx = slideIdx + offset;
+      if (idx < 0 || idx >= slides.length) continue;
+      for (final pageIdx in slides[idx]) {
+        precacheImage(_buildImageProvider(pageIdx, extractedPages, client), context)
+            .ignore();
+      }
+    }
+  }
+
   // ── Image provider ────────────────────────────────────────────────────────
 
   ImageProvider _buildImageProvider(
@@ -444,6 +472,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         ref.watch(siblingArchivesProvider(widget.mediaId)).valueOrNull ?? [];
 
     _ensurePageKeys(totalPages);
+
+    // Prefetch surrounding pages whenever the current page changes (paged mode).
+    if (totalPages > 0 && !scrollMode &&
+        readerState.currentPage != _lastPrefetchedPage) {
+      _lastPrefetchedPage = readerState.currentPage;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _prefetchAround(readerState.currentPage, extractedPages, client, slides);
+      });
+    }
 
     // Post-frame jumps — only relevant until first jump fires.
     if (totalPages > 0) {
@@ -589,6 +626,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       child: ListView.builder(
           controller: _scrollCtrl,
           itemCount: totalPages,
+          // Pre-render 3 screens worth of content below (and above) the
+          // visible area so images are already decoded before they scroll in.
+          cacheExtent: MediaQuery.sizeOf(context).height * 3,
           itemBuilder: (context, pageIndex) {
             return Image(
               key: _pageKeys[pageIndex],

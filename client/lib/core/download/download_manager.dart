@@ -222,7 +222,11 @@ class DownloadManager {
       );
 
   static Future<Directory> _defaultDownloadsDir() async {
-    final base = await getApplicationDocumentsDirectory();
+    Directory? base;
+    try {
+      base = await getDownloadsDirectory();
+    } catch (_) {}
+    base ??= await getApplicationDocumentsDirectory();
     final dir = Directory('${base.path}/Rekindle Downloads');
     await dir.create(recursive: true);
     return dir;

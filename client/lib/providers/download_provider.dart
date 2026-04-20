@@ -50,6 +50,9 @@ class DownloadNotifier extends FamilyNotifier<DownloadState, String> {
         localPath: path,
         onProgress: (s) => state = s,
       );
+
+      // Force any open reader to switch from NetworkImage to local FileImage.
+      ref.invalidate(extractedPagesProvider(mediaId));
     } on DioException catch (e) {
       if (e.type != DioExceptionType.cancel) rethrow;
     }
