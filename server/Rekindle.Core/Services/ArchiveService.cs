@@ -81,23 +81,36 @@ public class ArchiveService(IOptions<RekindleOptions> options, ILogger<ArchiveSe
         }
     }
 
-    private static Task<Stream?> ExtractArchiveCoverAsync(string filePath)
+    private static async Task<Stream?> ExtractArchiveCoverAsync(string filePath)
     {
         using var archive = ArchiveFactory.Open(filePath);
-        var firstImage = archive.Entries
+        var candidates = archive.Entries
             .Where(e => !e.IsDirectory && IsImageEntry(e.Key))
             .OrderBy(e => e.Key, NaturalStringComparer.Instance)
-            .FirstOrDefault();
+            .ToList();
 
-        if (firstImage is null)
-            return Task.FromResult<Stream?>(null);
+        foreach (var entry in candidates)
+        {
+            var ms = new MemoryStream();
+            using (var entryStream = entry.OpenEntryStream())
+                await entryStream.CopyToAsync(ms);
+            ms.Position = 0;
 
-        var ms = new MemoryStream();
-        using (var entryStream = firstImage.OpenEntryStream())
-            entryStream.CopyTo(ms);
+            // Skip entries that have an image extension but aren't actually
+            // decodable (e.g. macOS .__MACOSX artifacts, corrupt entries).
+            try
+            {
+                await Image.IdentifyAsync(ms);
+                ms.Position = 0;
+                return ms;
+            }
+            catch (UnknownImageFormatException)
+            {
+                await ms.DisposeAsync();
+            }
+        }
 
-        ms.Position = 0;
-        return Task.FromResult<Stream?>(ms);
+        return null;
     }
 
     private static Task<Stream?> RenderPdfCoverAsync(string filePath)
