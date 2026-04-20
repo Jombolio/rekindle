@@ -53,13 +53,12 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Remove default WorkManager initializer since we use on-demand initialization -->
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="com.rekindle.app.androidx-startup"
             android:exported="false" >
-            <meta-data
-                android:name="androidx.work.WorkManagerInitializer"
-                android:value="androidx.startup" />
             <meta-data
                 android:name="androidx.emoji2.text.EmojiCompatInitializer"
                 android:value="androidx.startup" />

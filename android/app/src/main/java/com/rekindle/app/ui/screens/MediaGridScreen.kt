@@ -79,7 +79,7 @@ fun MediaGridScreen(
                         canDownload = canDownload,
                         onDownload = { vm.download(media) },
                         onDeleteDownload = { vm.deleteDownload(media.id) },
-                        onCancelDownload = { /* DownloadRepository cancel TBD */ },
+                        onCancelDownload = { vm.cancelDownload(media.id) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .aspectRatio(2f / 3f)

@@ -70,5 +70,6 @@ class ChapterIndexViewModel @Inject constructor(
     fun downloadStateFor(mediaId: String): DownloadState = downloadStates.value[mediaId] ?: DownloadState()
     fun download(media: Media) = downloadRepo.download(media.id, media.format, media.displayTitle, media.relativePath)
     fun deleteDownload(mediaId: String) = downloadRepo.delete(mediaId)
+    fun cancelDownload(mediaId: String) = downloadRepo.cancel(mediaId)
     fun coverUrl(mediaId: String) = repo.coverUrl(baseUrl, mediaId)
 }

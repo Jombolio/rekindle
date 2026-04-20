@@ -99,7 +99,7 @@ fun ChapterIndexScreen(
                                 downloadState = dlState,
                                 onDownload = { vm.download(chapter) },
                                 onDelete = { vm.deleteDownload(chapter.id) },
-                                onCancel = {},
+                                onCancel = { vm.cancelDownload(chapter.id) },
                                 modifier = Modifier.size(40.dp),
                             )
                         }) else null,

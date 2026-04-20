@@ -6,6 +6,7 @@ import com.rekindle.app.core.download.DownloadStatus
 import com.rekindle.app.core.prefs.PrefsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,6 +27,8 @@ class DownloadRepository @Inject constructor(
 
     private val _states = MutableStateFlow<Map<String, DownloadState>>(emptyMap())
     val states: StateFlow<Map<String, DownloadState>> = _states.asStateFlow()
+
+    private val _jobs = ConcurrentHashMap<String, Job>()
 
     fun stateFor(mediaId: String): DownloadState =
         _states.value[mediaId] ?: DownloadState()
@@ -41,7 +45,7 @@ class DownloadRepository @Inject constructor(
         val current = stateFor(mediaId).status
         if (current == DownloadStatus.DOWNLOADING || current == DownloadStatus.EXTRACTING) return
 
-        scope.launch {
+        val job = scope.launch {
             val baseUrl = prefs.serverUrl.first()
             val token = prefs.token.first() ?: ""
             runCatching {
@@ -61,8 +65,21 @@ class DownloadRepository @Inject constructor(
                 )
                 update(mediaId, downloadManager.restore(mediaId))
             }.onFailure { e ->
+                if (e is kotlinx.coroutines.CancellationException) return@onFailure
                 update(mediaId, DownloadState(status = DownloadStatus.FAILED, error = e.message))
             }
+        }
+
+        _jobs[mediaId] = job
+        job.invokeOnCompletion { _jobs.remove(mediaId) }
+    }
+
+    fun cancel(mediaId: String) {
+        _jobs[mediaId]?.cancel()
+        _jobs.remove(mediaId)
+        scope.launch {
+            downloadManager.cancelIncomplete(mediaId)
+            update(mediaId, DownloadState())
         }
     }
 

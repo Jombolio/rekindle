@@ -436,28 +436,25 @@ public final class DaggerRekindleApplication_HiltComponents_SingletonC {
 
     @IdentifierNameString
     private static final class LazyClassKeyProvider {
-      static String com_rekindle_app_ui_viewmodel_LoginViewModel = "com.rekindle.app.ui.viewmodel.LoginViewModel";
+      static String com_rekindle_app_ui_viewmodel_MediaGridViewModel = "com.rekindle.app.ui.viewmodel.MediaGridViewModel";
 
-      static String com_rekindle_app_ui_viewmodel_ReaderViewModel = "com.rekindle.app.ui.viewmodel.ReaderViewModel";
-
-      static String com_rekindle_app_ui_viewmodel_ChapterIndexViewModel = "com.rekindle.app.ui.viewmodel.ChapterIndexViewModel";
+      static String com_rekindle_app_ui_viewmodel_SettingsViewModel = "com.rekindle.app.ui.viewmodel.SettingsViewModel";
 
       static String com_rekindle_app_ui_viewmodel_LibraryViewModel = "com.rekindle.app.ui.viewmodel.LibraryViewModel";
 
       static String com_rekindle_app_ui_viewmodel_EpubReaderViewModel = "com.rekindle.app.ui.viewmodel.EpubReaderViewModel";
 
-      static String com_rekindle_app_ui_viewmodel_SettingsViewModel = "com.rekindle.app.ui.viewmodel.SettingsViewModel";
+      static String com_rekindle_app_ui_viewmodel_ReaderViewModel = "com.rekindle.app.ui.viewmodel.ReaderViewModel";
 
-      static String com_rekindle_app_ui_viewmodel_MediaGridViewModel = "com.rekindle.app.ui.viewmodel.MediaGridViewModel";
+      static String com_rekindle_app_ui_viewmodel_LoginViewModel = "com.rekindle.app.ui.viewmodel.LoginViewModel";
 
-      @KeepFieldType
-      LoginViewModel com_rekindle_app_ui_viewmodel_LoginViewModel2;
-
-      @KeepFieldType
-      ReaderViewModel com_rekindle_app_ui_viewmodel_ReaderViewModel2;
+      static String com_rekindle_app_ui_viewmodel_ChapterIndexViewModel = "com.rekindle.app.ui.viewmodel.ChapterIndexViewModel";
 
       @KeepFieldType
-      ChapterIndexViewModel com_rekindle_app_ui_viewmodel_ChapterIndexViewModel2;
+      MediaGridViewModel com_rekindle_app_ui_viewmodel_MediaGridViewModel2;
+
+      @KeepFieldType
+      SettingsViewModel com_rekindle_app_ui_viewmodel_SettingsViewModel2;
 
       @KeepFieldType
       LibraryViewModel com_rekindle_app_ui_viewmodel_LibraryViewModel2;
@@ -466,10 +463,13 @@ public final class DaggerRekindleApplication_HiltComponents_SingletonC {
       EpubReaderViewModel com_rekindle_app_ui_viewmodel_EpubReaderViewModel2;
 
       @KeepFieldType
-      SettingsViewModel com_rekindle_app_ui_viewmodel_SettingsViewModel2;
+      ReaderViewModel com_rekindle_app_ui_viewmodel_ReaderViewModel2;
 
       @KeepFieldType
-      MediaGridViewModel com_rekindle_app_ui_viewmodel_MediaGridViewModel2;
+      LoginViewModel com_rekindle_app_ui_viewmodel_LoginViewModel2;
+
+      @KeepFieldType
+      ChapterIndexViewModel com_rekindle_app_ui_viewmodel_ChapterIndexViewModel2;
     }
   }
 
@@ -530,40 +530,40 @@ public final class DaggerRekindleApplication_HiltComponents_SingletonC {
 
     @IdentifierNameString
     private static final class LazyClassKeyProvider {
-      static String com_rekindle_app_ui_viewmodel_EpubReaderViewModel = "com.rekindle.app.ui.viewmodel.EpubReaderViewModel";
-
-      static String com_rekindle_app_ui_viewmodel_ChapterIndexViewModel = "com.rekindle.app.ui.viewmodel.ChapterIndexViewModel";
+      static String com_rekindle_app_ui_viewmodel_LibraryViewModel = "com.rekindle.app.ui.viewmodel.LibraryViewModel";
 
       static String com_rekindle_app_ui_viewmodel_MediaGridViewModel = "com.rekindle.app.ui.viewmodel.MediaGridViewModel";
 
-      static String com_rekindle_app_ui_viewmodel_LibraryViewModel = "com.rekindle.app.ui.viewmodel.LibraryViewModel";
-
-      static String com_rekindle_app_ui_viewmodel_ReaderViewModel = "com.rekindle.app.ui.viewmodel.ReaderViewModel";
-
-      static String com_rekindle_app_ui_viewmodel_LoginViewModel = "com.rekindle.app.ui.viewmodel.LoginViewModel";
+      static String com_rekindle_app_ui_viewmodel_ChapterIndexViewModel = "com.rekindle.app.ui.viewmodel.ChapterIndexViewModel";
 
       static String com_rekindle_app_ui_viewmodel_SettingsViewModel = "com.rekindle.app.ui.viewmodel.SettingsViewModel";
 
-      @KeepFieldType
-      EpubReaderViewModel com_rekindle_app_ui_viewmodel_EpubReaderViewModel2;
+      static String com_rekindle_app_ui_viewmodel_LoginViewModel = "com.rekindle.app.ui.viewmodel.LoginViewModel";
 
-      @KeepFieldType
-      ChapterIndexViewModel com_rekindle_app_ui_viewmodel_ChapterIndexViewModel2;
+      static String com_rekindle_app_ui_viewmodel_EpubReaderViewModel = "com.rekindle.app.ui.viewmodel.EpubReaderViewModel";
 
-      @KeepFieldType
-      MediaGridViewModel com_rekindle_app_ui_viewmodel_MediaGridViewModel2;
+      static String com_rekindle_app_ui_viewmodel_ReaderViewModel = "com.rekindle.app.ui.viewmodel.ReaderViewModel";
 
       @KeepFieldType
       LibraryViewModel com_rekindle_app_ui_viewmodel_LibraryViewModel2;
 
       @KeepFieldType
-      ReaderViewModel com_rekindle_app_ui_viewmodel_ReaderViewModel2;
+      MediaGridViewModel com_rekindle_app_ui_viewmodel_MediaGridViewModel2;
+
+      @KeepFieldType
+      ChapterIndexViewModel com_rekindle_app_ui_viewmodel_ChapterIndexViewModel2;
+
+      @KeepFieldType
+      SettingsViewModel com_rekindle_app_ui_viewmodel_SettingsViewModel2;
 
       @KeepFieldType
       LoginViewModel com_rekindle_app_ui_viewmodel_LoginViewModel2;
 
       @KeepFieldType
-      SettingsViewModel com_rekindle_app_ui_viewmodel_SettingsViewModel2;
+      EpubReaderViewModel com_rekindle_app_ui_viewmodel_EpubReaderViewModel2;
+
+      @KeepFieldType
+      ReaderViewModel com_rekindle_app_ui_viewmodel_ReaderViewModel2;
     }
 
     private static final class SwitchingProvider<T> implements Provider<T> {

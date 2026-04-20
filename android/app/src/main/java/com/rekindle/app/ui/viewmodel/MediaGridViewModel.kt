@@ -89,6 +89,7 @@ class MediaGridViewModel @Inject constructor(
     }
 
     fun deleteDownload(mediaId: String) = downloadRepo.delete(mediaId)
+    fun cancelDownload(mediaId: String) = downloadRepo.cancel(mediaId)
 
     fun coverUrl(mediaId: String) = repo.coverUrl(baseUrl, mediaId)
 }

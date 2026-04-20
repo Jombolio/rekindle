@@ -7,6 +7,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.rekindle.app.domain.model.Media
+import com.rekindle.app.ui.screens.AdminScreen
 import com.rekindle.app.ui.screens.ChapterIndexScreen
 import com.rekindle.app.ui.screens.EpubReaderScreen
 import com.rekindle.app.ui.screens.LibraryScreen
@@ -19,6 +20,7 @@ sealed class Screen(val route: String) {
     data object Login : Screen("login")
     data object Libraries : Screen("libraries")
     data object Settings : Screen("settings")
+    data object Admin : Screen("admin")
     data object MediaGrid : Screen("library/{libraryId}?name={libraryName}") {
         fun route(libraryId: String, name: String? = null) =
             "library/$libraryId?name=${encode(name)}"
@@ -27,8 +29,8 @@ sealed class Screen(val route: String) {
         fun route(folderId: String, title: String? = null) =
             "series/$folderId?title=${encode(title)}"
     }
-    data object Reader : Screen("reader/{mediaId}") {
-        fun route(mediaId: String) = "reader/$mediaId"
+    data object Reader : Screen("reader/{mediaId}?initialPage={initialPage}") {
+        fun route(mediaId: String, initialPage: Int = -1) = "reader/$mediaId?initialPage=$initialPage"
     }
     data object Epub : Screen("epub/{mediaId}?title={title}") {
         fun route(mediaId: String, title: String? = null) =
@@ -66,6 +68,7 @@ fun RekindleApp() {
                     navController.navigate(Screen.MediaGrid.route(id, name))
                 },
                 onSettingsClick = { navController.navigate(Screen.Settings.route) },
+                onAdminClick = { navController.navigate(Screen.Admin.route) },
                 onLogout = {
                     navController.navigate(Screen.Login.route) {
                         popUpTo(0) { inclusive = true }
@@ -110,11 +113,19 @@ fun RekindleApp() {
 
         composable(
             route = Screen.Reader.route,
-            arguments = listOf(navArgument("mediaId") { type = NavType.StringType }),
+            arguments = listOf(
+                navArgument("mediaId") { type = NavType.StringType },
+                navArgument("initialPage") { type = NavType.IntType; defaultValue = -1 },
+            ),
         ) { back ->
             ReaderScreen(
                 mediaId = back.arguments!!.getString("mediaId")!!,
                 onBack = { navController.popBackStack() },
+                onNavigateToChapter = { targetId, initialPage ->
+                    navController.navigate(Screen.Reader.route(targetId, initialPage)) {
+                        popUpTo(Screen.Reader.route) { inclusive = true }
+                    }
+                },
             )
         }
 
@@ -135,7 +146,19 @@ fun RekindleApp() {
         }
 
         composable(Screen.Settings.route) {
-            SettingsScreen(onBack = { navController.popBackStack() })
+            SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onAddSource = { navController.navigate(Screen.Login.route) },
+                onSourceSwitch = {
+                    navController.navigate(Screen.Libraries.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+            )
+        }
+
+        composable(Screen.Admin.route) {
+            AdminScreen(onBack = { navController.popBackStack() })
         }
     }
 }

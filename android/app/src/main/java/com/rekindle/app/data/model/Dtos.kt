@@ -10,6 +10,7 @@ data class LibraryDto(
     val id: String,
     val name: String,
     @SerializedName("rootPath") val path: String,
+    val type: String = "comic",
 )
 
 data class MediaDto(
@@ -39,7 +40,10 @@ data class PagedResponseDto<T>(
     val totalPages: Int,
 )
 
-data class PageCountDto(val pageCount: Int)
+data class PageCountDto(
+    val pageCount: Int,
+    val spreads: List<Boolean> = emptyList(),
+)
 
 data class LoginRequest(val username: String, val password: String)
 data class LoginResponse(val token: String, val permissionLevel: Int = 2)
@@ -51,7 +55,7 @@ data class CreateLibraryRequest(val name: String, val rootPath: String, val type
 data class UpdateLibraryRequest(val name: String, val rootPath: String, val type: String)
 
 // Mappers
-fun LibraryDto.toDomain() = Library(id, name, path)
+fun LibraryDto.toDomain() = Library(id, name, path, type)
 fun MediaDto.toDomain() = Media(
     id, title, sortTitle ?: title, format, mediaType, relativePath, parentId, pageCount, libraryId
 )

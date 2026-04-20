@@ -145,6 +145,15 @@ class DownloadManager @Inject constructor(
         downloadDao.delete(mediaId)
     }
 
+    /** Cleans up an incomplete (cancelled) download without touching extracted pages. */
+    suspend fun cancelIncomplete(mediaId: String) = withContext(Dispatchers.IO) {
+        val entity = downloadDao.getByMediaId(mediaId) ?: return@withContext
+        if (entity.status != DownloadStatus.COMPLETE.name) {
+            entity.localPath?.let { File(it).delete() }
+            downloadDao.delete(mediaId)
+        }
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private fun destinationFile(mediaId: String, format: String, relativePath: String): File {

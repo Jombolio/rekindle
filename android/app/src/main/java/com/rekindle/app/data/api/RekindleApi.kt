@@ -35,6 +35,9 @@ interface RekindleApi {
     @GET("api/libraries")
     suspend fun getLibraries(): List<LibraryDto>
 
+    @GET("api/libraries/{id}")
+    suspend fun getLibraryById(@Path("id") id: String): LibraryDto
+
     @POST("api/libraries")
     suspend fun createLibrary(@Body request: CreateLibraryRequest): LibraryDto
 

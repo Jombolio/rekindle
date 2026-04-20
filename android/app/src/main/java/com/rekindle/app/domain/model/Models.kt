@@ -1,9 +1,18 @@
 package com.rekindle.app.domain.model
 
+data class ServerSource(
+    val id: String,
+    val name: String,
+    val baseUrl: String,
+    val token: String? = null,
+    val permissionLevel: Int = 2,
+)
+
 data class Library(
     val id: String,
     val name: String,
     val path: String,
+    val type: String = "comic",
 )
 
 data class Media(

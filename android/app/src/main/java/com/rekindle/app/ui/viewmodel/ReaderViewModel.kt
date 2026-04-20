@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.data.repository.DownloadRepository
 import com.rekindle.app.data.repository.MediaRepository
+import com.rekindle.app.domain.model.Media
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,10 +24,16 @@ data class ReaderState(
     val initialPage: Int = 0,
     val isRtl: Boolean = false,
     val doublePage: Boolean = false,
+    val scrollMode: Boolean = false,
+    val spineGap: Float = 0f,
+    val spreads: List<Boolean> = emptyList(),
     val showControls: Boolean = true,
     val seekToPage: Int = -1,
-    /** Non-null when reading from extracted local files. */
     val extractedPages: List<String>? = null,
+    val siblings: List<Media> = emptyList(),
+    /** Non-null while the reader should navigate to a different chapter. */
+    val navigateToChapterId: String? = null,
+    val navigateToChapterInitialPage: Int = -1,
 )
 
 @HiltViewModel
@@ -38,6 +45,9 @@ class ReaderViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val mediaId: String = checkNotNull(savedStateHandle["mediaId"])
+
+    /** -1 means no override; use saved server progress. 0 = start of chapter (chapter advance). */
+    private val initialPageOverride: Int = savedStateHandle["initialPage"] ?: -1
 
     private val _state = MutableStateFlow(ReaderState())
     val state = _state.asStateFlow()
@@ -52,15 +62,20 @@ class ReaderViewModel @Inject constructor(
         viewModelScope.launch {
             authHeader = "Bearer ${prefs.token.first() ?: ""}"
             baseUrl = prefs.serverUrl.first()
+
             _state.update {
                 it.copy(
-                    isRtl = prefs.isRtl(mediaId).first(),
                     doublePage = prefs.isDoublePage(mediaId).first(),
+                    scrollMode = prefs.isScrollMode(mediaId).first(),
+                    spineGap = prefs.spineGap.first(),
                 )
             }
+
             loadExtractedPages()
             loadProgress()
+            loadDirection()
             loadPageCount()
+            loadSiblings()
         }
     }
 
@@ -71,22 +86,45 @@ class ReaderViewModel @Inject constructor(
 
     private suspend fun loadProgress() {
         val progress = repo.getProgress(mediaId)
-        val savedPage = progress?.currentPage ?: 0
+        val savedPage = when {
+            initialPageOverride >= 0 -> initialPageOverride
+            else -> progress?.currentPage ?: 0
+        }
         _state.update { it.copy(currentPage = savedPage, initialPage = savedPage) }
     }
 
+    private suspend fun loadDirection() {
+        val explicit = prefs.isRtlExplicit(mediaId).first()
+        if (explicit != null) {
+            _state.update { it.copy(isRtl = explicit) }
+            return
+        }
+        // No explicit user pref — infer from library type (manga → RTL)
+        runCatching {
+            val media = repo.getMediaById(mediaId)
+            val library = repo.getLibraryById(media.libraryId)
+            if (library.type == "manga") _state.update { it.copy(isRtl = true) }
+        }
+    }
+
     private suspend fun loadPageCount() {
-        // If we have extracted pages locally, use that count immediately
         val localCount = _state.value.extractedPages?.size
         if (localCount != null && localCount > 0) {
             _state.update { it.copy(totalPages = localCount) }
         }
-        // Always fetch from server to confirm/update (also triggers server-side extraction)
         runCatching { repo.getPageCount(mediaId) }
-            .onSuccess { count -> if (count > 0) _state.update { it.copy(totalPages = count) } }
+            .onSuccess { layout ->
+                if (layout.count > 0) {
+                    _state.update { it.copy(totalPages = layout.count, spreads = layout.spreads) }
+                }
+            }
     }
 
-    /** URL for page when streaming from server. */
+    private suspend fun loadSiblings() {
+        runCatching { repo.getSiblings(mediaId) }
+            .onSuccess { siblings -> _state.update { it.copy(siblings = siblings) } }
+    }
+
     fun pageUrl(pageIndex: Int): String = repo.pageUrl(baseUrl, mediaId, pageIndex)
 
     fun onPageChange(page: Int) {
@@ -110,6 +148,33 @@ class ReaderViewModel @Inject constructor(
         _state.update { it.copy(doublePage = newVal) }
         viewModelScope.launch { prefs.setDoublePage(mediaId, newVal) }
     }
+
+    fun toggleScrollMode() {
+        val newVal = !_state.value.scrollMode
+        _state.update { it.copy(scrollMode = newVal) }
+        viewModelScope.launch { prefs.setScrollMode(mediaId, newVal) }
+    }
+
+    fun updateSpineGap(gap: Float) {
+        val clamped = gap.coerceIn(0f, 64f)
+        _state.update { it.copy(spineGap = clamped) }
+        viewModelScope.launch { prefs.setSpineGap(clamped) }
+    }
+
+    /** Triggers navigation to an adjacent chapter, carrying the RTL direction forward
+     *  unless the target already has an explicit user pref. */
+    fun navigateToChapter(targetId: String, initialPage: Int) {
+        val currentIsRtl = _state.value.isRtl
+        viewModelScope.launch {
+            val targetHasExplicit = prefs.isRtlExplicit(targetId).first()
+            if (targetHasExplicit == null) {
+                prefs.setRtl(targetId, currentIsRtl)
+            }
+        }
+        _state.update { it.copy(navigateToChapterId = targetId, navigateToChapterInitialPage = initialPage) }
+    }
+
+    fun clearNavigation() = _state.update { it.copy(navigateToChapterId = null) }
 
     private fun scheduleSync() {
         syncJob?.cancel()

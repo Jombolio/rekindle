@@ -6,9 +6,24 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+import java.util.Properties
+
+val keystoreProps = Properties()
+val keystorePropsFile = rootProject.file("keystore.properties")
+if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { keystoreProps.load(it) }
+
 android {
     namespace = "com.rekindle.app"
     compileSdk = 35
+
+    signingConfigs {
+        create("release") {
+            storeFile = (keystoreProps["storeFile"] as String?)?.let { rootProject.file(it) }
+            storePassword = keystoreProps["storePassword"] as String?
+            keyAlias = keystoreProps["keyAlias"] as String?
+            keyPassword = keystoreProps["keyPassword"] as String?
+        }
+    }
 
     defaultConfig {
         applicationId = "com.rekindle.app"
@@ -22,7 +37,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

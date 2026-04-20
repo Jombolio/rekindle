@@ -1,13 +1,30 @@
-*.iml
-.gradle
-/local.properties
-/.idea
-.DS_Store
+# Build outputs
 /build
-/captures
-.externalNativeBuild
-.cxx
+**/build/
+
+# Gradle
+.gradle
+**/.gradle/
+gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+/.idea
+**/*.iml
+.DS_Store
+
+# Local config
 local.properties
+
+# Signing — never commit keys or credentials
+rekindle.jks
+*.jks
+*.keystore
+keystore.properties
 
 # Java heap/memory dumps
 *.hprof
+
+# Android Studio profiling
+/captures
+.externalNativeBuild
+.cxx
