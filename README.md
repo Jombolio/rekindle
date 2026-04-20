@@ -29,7 +29,7 @@ Edit `Rekindle.Server/appsettings.json` to configure:
 | `Rekindle.DataPath` | `data` | Where your media libraries live |
 | `Rekindle.CachePath` | `cache` | Extracted page cache |
 | `Rekindle.CacheMaxSizeBytes` | `10737418240` (10 GB) | Cache size limit |
-| `Jwt.Secret` | *(required)* | Set a long random string before first run |
+| `Jwt.Secret` | *(auto-generated)* | Generated and persisted to `data/jwt_secret.key` on first run |
 | `Urls` | `http://0.0.0.0:8080` | Bind address and port |
 
 ## Client
@@ -42,5 +42,15 @@ flutter run -d linux    # Linux
 flutter run -d windows  # Windows (must build on Windows)
 flutter run             # Android (device/emulator connected)
 ```
+
+For release builds, use `--obfuscate` and `--split-debug-info` to strip embedded build-machine paths from the binary:
+
+```bash
+flutter build linux --release --obfuscate --split-debug-info=symbols/
+flutter build windows --release --obfuscate --split-debug-info=symbols/  # on Windows
+flutter build apk --release --obfuscate --split-debug-info=symbols/
+```
+
+Keep the generated `symbols/` directory — it is required to decode stack traces from crash reports.
 
 On first launch, enter your server URL and log in.

@@ -33,8 +33,12 @@ migrate_working_dir/
 .pub/
 /build/
 
+# Release builds
+/Releases/
+
 # Symbolication related
 app.*.symbols
+/symbols/
 
 # Obfuscation related
 app.*.map.json
