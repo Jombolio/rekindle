@@ -14,6 +14,9 @@ appsettings.Development.json
 appsettings.Production.json
 appsettings.Local.json
 
+# Auto-generated JWT secret (written to DataPath on first launch)
+*.key
+
 # Release bundles (build artifacts, not source)
 Releases/
 
