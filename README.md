@@ -10,15 +10,15 @@ Point the Rekindle Server at a folder of archives (CBZ, CBR, EPUB, MOBI, PDF) an
 ## Table of Contents
 
 - [Supported Formats](#supported-formats)
+- [Client Setup](#client-setup)
+  - [Linux](#linux-1)
+  - [Windows](#windows-1)
+  - [Android](#android)
 - [Server Setup](#server-setup)
   - [Linux](#linux)
   - [Windows](#windows)
   - [Configuration](#configuration)
   - [First-time Setup](#first-time-setup)
-- [Client Setup](#client-setup)
-  - [Linux](#linux-1)
-  - [Windows](#windows-1)
-  - [Android](#android)
 - [Connecting to the Server](#connecting-to-the-server)
 - [Building from Source](#building-from-source)
 
@@ -41,6 +41,49 @@ Point the Rekindle Server at a folder of archives (CBZ, CBR, EPUB, MOBI, PDF) an
 | Comics | Left-to-right |
 | Manga | Right-to-left |
 | Books | Left-to-right |
+
+---
+
+## Client Setup
+
+Download the latest client release from the [Releases page](https://github.com/Jombolio/rekindle/releases/tag/Pre-release).
+
+### Linux
+
+1. Download and extract `Rekindle-v0.8-linux-x64.zip`
+2. Make the binary executable:
+   ```bash
+   chmod +x rekindle
+   ```
+3. Run it:
+   ```bash
+   ./rekindle
+   ```
+
+### Windows
+
+1. Download and extract `Rekindle-v0.8-windows-x64.zip`.
+2. Run `rekindle.exe`.
+
+> Windows may show a SmartScreen warning on first launch because the binary is not code-signed. Click **More info → Run anyway**.
+
+### Android
+
+Download and install the `.apk` from the [Releases page](https://github.com/Jombolio/rekindle/releases/tag/Pre-release).
+
+> You will need to allow installation from unknown sources. On most devices: **Settings → Apps → Special app access → Install unknown apps**.
+
+**Requirements:** Android 8.0 (API 26) or later.
+
+---
+
+## Connecting to the Server
+
+1. Open the Rekindle Client.
+2. Enter your server URL. (e.g. `http://192.168.1.10:8080`)
+3. If no admin account exists yet, you will be prompted for the setup token printed in the server console.
+4. Create your admin account and log in.
+5. Go to **Admin → Libraries**, create a library, point it at a folder of archives on the server machine, and trigger a scan.
 
 ---
 
@@ -108,49 +151,6 @@ On first launch with no admin account, the server prints a one-time setup token 
 ```
 
 Use the Rekindle Client to complete setup — it will prompt for this token on first connection.
-
----
-
-## Client Setup
-
-Download the latest client release from the [Releases page](https://github.com/Jombolio/rekindle/releases/tag/Pre-release).
-
-### Linux
-
-1. Download and extract `Rekindle-v0.8-linux-x64.zip`
-2. Make the binary executable:
-   ```bash
-   chmod +x rekindle
-   ```
-3. Run it:
-   ```bash
-   ./rekindle
-   ```
-
-### Windows
-
-1. Download and extract `Rekindle-v0.8-windows-x64.zip`
-2. Run `rekindle.exe`
-
-> Windows may show a SmartScreen warning on first launch because the binary is not code-signed. Click **More info → Run anyway**.
-
-### Android
-
-Download and install the `.apk` from the [Releases page](https://github.com/Jombolio/rekindle/releases/tag/Pre-release).
-
-> You will need to allow installation from unknown sources. On most devices: **Settings → Apps → Special app access → Install unknown apps**.
-
-**Requirements:** Android 8.0 (API 26) or later.
-
----
-
-## Connecting to the Server
-
-1. Open the Rekindle Client
-2. Enter your server URL (e.g. `http://192.168.1.10:8080`)
-3. If no admin account exists yet, you will be prompted for the setup token printed in the server console
-4. Create your admin account and log in
-5. Go to **Admin → Libraries**, create a library, point it at a folder of archives on the server machine, and trigger a scan
 
 ---
 
