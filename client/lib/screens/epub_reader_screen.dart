@@ -57,7 +57,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     if (!mounted) return;
 
     final book = EpubParser.parse(bytes);
-    final savedChapter = ref.read(readerProvider(widget.mediaId)).currentPage;
+    final savedChapter = ref.read(readerProvider((widget.mediaId, null))).currentPage;
 
     setState(() {
       _book = book;
@@ -66,7 +66,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     });
 
     ref
-        .read(readerProvider(widget.mediaId).notifier)
+        .read(readerProvider((widget.mediaId, null)).notifier)
         .setTotalPages(book.chapters.length);
   }
 
@@ -88,7 +88,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
 
   void _saveChapter() {
     ref
-        .read(readerProvider(widget.mediaId).notifier)
+        .read(readerProvider((widget.mediaId, null)).notifier)
         .goToPage(_chapterIndex, widget.mediaId);
   }
 

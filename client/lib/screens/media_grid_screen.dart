@@ -14,11 +14,13 @@ import 'widgets/error_view.dart';
 class MediaGridScreen extends ConsumerStatefulWidget {
   final String libraryId;
   final String? libraryName;
+  final String? libraryType;
 
   const MediaGridScreen({
     super.key,
     required this.libraryId,
     this.libraryName,
+    this.libraryType,
   });
 
   @override
@@ -49,9 +51,10 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   void _openItem(BuildContext context, Media item) {
     if (item.isFolder) {
       context.push('/series/${item.id}',
-          extra: <String, String?>{'title': item.displayTitle});
+          extra: <String, String?>{'title': item.displayTitle, 'libraryType': widget.libraryType});
     } else if (item.isImageBased) {
-      context.push('/reader/${item.id}');
+      context.push('/reader/${item.id}',
+          extra: <String, dynamic>{'libraryType': widget.libraryType});
     } else {
       context.push('/epub/${item.id}', extra: item.displayTitle);
     }

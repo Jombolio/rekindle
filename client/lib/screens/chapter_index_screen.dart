@@ -14,11 +14,13 @@ import 'widgets/error_view.dart';
 class ChapterIndexScreen extends ConsumerWidget {
   final String folderId;
   final String folderTitle;
+  final String? libraryType;
 
   const ChapterIndexScreen({
     super.key,
     required this.folderId,
     required this.folderTitle,
+    this.libraryType,
   });
 
   @override
@@ -77,6 +79,7 @@ class ChapterIndexScreen extends ConsumerWidget {
                     folder: subfolders[i - 1],
                     coverUrl: client.coverUrl(subfolders[i - 1].id),
                     authHeaders: client.authHeaders,
+                    libraryType: libraryType,
                   );
                 }
                 final archiveIndex = i - subfolders.length - 1;
@@ -85,6 +88,7 @@ class ChapterIndexScreen extends ConsumerWidget {
                   index: archiveIndex,
                   coverUrl: client.coverUrl(archives[archiveIndex].id),
                   authHeaders: client.authHeaders,
+                  libraryType: libraryType,
                 );
               }
               return _ChapterTile(
@@ -92,6 +96,7 @@ class ChapterIndexScreen extends ConsumerWidget {
                 index: i,
                 coverUrl: client.coverUrl(archives[i].id),
                 authHeaders: client.authHeaders,
+                libraryType: libraryType,
               );
             },
           );
@@ -128,11 +133,13 @@ class _SubfolderTile extends StatelessWidget {
   final Media folder;
   final String coverUrl;
   final Map<String, String> authHeaders;
+  final String? libraryType;
 
   const _SubfolderTile({
     required this.folder,
     required this.coverUrl,
     required this.authHeaders,
+    this.libraryType,
   });
 
   @override
@@ -178,7 +185,7 @@ class _SubfolderTile extends StatelessWidget {
       trailing: const Icon(Icons.chevron_right),
       onTap: () => context.push(
         '/series/${folder.id}',
-        extra: <String, String?>{'title': folder.displayTitle},
+        extra: <String, String?>{'title': folder.displayTitle, 'libraryType': libraryType},
       ),
     );
   }
@@ -191,17 +198,20 @@ class _ChapterTile extends ConsumerWidget {
   final int index;
   final String coverUrl;
   final Map<String, String> authHeaders;
+  final String? libraryType;
 
   const _ChapterTile({
     required this.chapter,
     required this.index,
     required this.coverUrl,
     required this.authHeaders,
+    this.libraryType,
   });
 
   void _open(BuildContext context) {
     if (chapter.isImageBased) {
-      context.push('/reader/${chapter.id}');
+      context.push('/reader/${chapter.id}',
+          extra: <String, dynamic>{'libraryType': libraryType});
     } else {
       context.push('/epub/${chapter.id}', extra: chapter.title);
     }

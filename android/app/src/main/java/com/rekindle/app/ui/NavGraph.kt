@@ -21,16 +21,17 @@ sealed class Screen(val route: String) {
     data object Libraries : Screen("libraries")
     data object Settings : Screen("settings")
     data object Admin : Screen("admin")
-    data object MediaGrid : Screen("library/{libraryId}?name={libraryName}") {
-        fun route(libraryId: String, name: String? = null) =
-            "library/$libraryId?name=${encode(name)}"
+    data object MediaGrid : Screen("library/{libraryId}?name={libraryName}&libraryType={libraryType}") {
+        fun route(libraryId: String, name: String? = null, libraryType: String? = null) =
+            "library/$libraryId?name=${encode(name)}&libraryType=${encode(libraryType)}"
     }
-    data object Series : Screen("series/{folderId}?title={title}") {
-        fun route(folderId: String, title: String? = null) =
-            "series/$folderId?title=${encode(title)}"
+    data object Series : Screen("series/{folderId}?title={title}&libraryType={libraryType}") {
+        fun route(folderId: String, title: String? = null, libraryType: String? = null) =
+            "series/$folderId?title=${encode(title)}&libraryType=${encode(libraryType)}"
     }
-    data object Reader : Screen("reader/{mediaId}?initialPage={initialPage}") {
-        fun route(mediaId: String, initialPage: Int = -1) = "reader/$mediaId?initialPage=$initialPage"
+    data object Reader : Screen("reader/{mediaId}?initialPage={initialPage}&libraryType={libraryType}") {
+        fun route(mediaId: String, initialPage: Int = -1, libraryType: String? = null) =
+            "reader/$mediaId?initialPage=$initialPage&libraryType=${encode(libraryType)}"
     }
     data object Epub : Screen("epub/{mediaId}?title={title}") {
         fun route(mediaId: String, title: String? = null) =
@@ -42,9 +43,9 @@ sealed class Screen(val route: String) {
     }
 }
 
-fun Media.openRoute(): String = when {
-    isFolder -> Screen.Series.route(id, displayTitle)
-    isImageBased -> Screen.Reader.route(id)
+fun Media.openRoute(libraryType: String? = null): String = when {
+    isFolder -> Screen.Series.route(id, displayTitle, libraryType)
+    isImageBased -> Screen.Reader.route(id, libraryType = libraryType)
     else -> Screen.Epub.route(id, displayTitle)
 }
 
@@ -64,8 +65,8 @@ fun RekindleApp() {
 
         composable(Screen.Libraries.route) {
             LibraryScreen(
-                onLibraryClick = { id, name ->
-                    navController.navigate(Screen.MediaGrid.route(id, name))
+                onLibraryClick = { id, name, type ->
+                    navController.navigate(Screen.MediaGrid.route(id, name, type))
                 },
                 onSettingsClick = { navController.navigate(Screen.Settings.route) },
                 onAdminClick = { navController.navigate(Screen.Admin.route) },
@@ -82,14 +83,16 @@ fun RekindleApp() {
             arguments = listOf(
                 navArgument("libraryId") { type = NavType.StringType },
                 navArgument("libraryName") { type = NavType.StringType; defaultValue = "" },
+                navArgument("libraryType") { type = NavType.StringType; defaultValue = "" },
             ),
         ) { back ->
             val libraryId = back.arguments!!.getString("libraryId")!!
             val libraryName = back.arguments!!.getString("libraryName")?.decode()
+            val libraryType = back.arguments!!.getString("libraryType")?.decode()
             MediaGridScreen(
                 libraryId = libraryId,
                 libraryName = libraryName?.ifBlank { null },
-                onItemClick = { media -> navController.navigate(media.openRoute()) },
+                onItemClick = { media -> navController.navigate(media.openRoute(libraryType)) },
                 onBack = { navController.popBackStack() },
             )
         }
@@ -99,14 +102,16 @@ fun RekindleApp() {
             arguments = listOf(
                 navArgument("folderId") { type = NavType.StringType },
                 navArgument("title") { type = NavType.StringType; defaultValue = "" },
+                navArgument("libraryType") { type = NavType.StringType; defaultValue = "" },
             ),
         ) { back ->
             val folderId = back.arguments!!.getString("folderId")!!
             val title = back.arguments!!.getString("title")?.decode()
+            val libraryType = back.arguments!!.getString("libraryType")?.decode()
             ChapterIndexScreen(
                 folderId = folderId,
                 title = title?.ifBlank { null },
-                onChapterClick = { media -> navController.navigate(media.openRoute()) },
+                onChapterClick = { media -> navController.navigate(media.openRoute(libraryType)) },
                 onBack = { navController.popBackStack() },
             )
         }
@@ -116,13 +121,15 @@ fun RekindleApp() {
             arguments = listOf(
                 navArgument("mediaId") { type = NavType.StringType },
                 navArgument("initialPage") { type = NavType.IntType; defaultValue = -1 },
+                navArgument("libraryType") { type = NavType.StringType; defaultValue = "" },
             ),
         ) { back ->
+            val libraryType = back.arguments!!.getString("libraryType")?.decode()
             ReaderScreen(
                 mediaId = back.arguments!!.getString("mediaId")!!,
                 onBack = { navController.popBackStack() },
                 onNavigateToChapter = { targetId, initialPage ->
-                    navController.navigate(Screen.Reader.route(targetId, initialPage)) {
+                    navController.navigate(Screen.Reader.route(targetId, initialPage, libraryType)) {
                         popUpTo(Screen.Reader.route) { inclusive = true }
                     }
                 },

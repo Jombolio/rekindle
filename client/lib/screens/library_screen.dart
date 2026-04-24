@@ -329,7 +329,8 @@ class _LibraryList extends StatelessWidget {
               : null,
           onTap: () {
             ref.read(activeSourceIdProvider.notifier).state = sourceId;
-            context.push('/libraries/${lib.id}', extra: lib.name);
+            context.push('/libraries/${lib.id}',
+                extra: {'name': lib.name, 'type': lib.type});
           },
         );
       }).toList(),

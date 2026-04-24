@@ -18,10 +18,16 @@ import '../providers/reader_provider.dart';
 
 class ReaderScreen extends ConsumerStatefulWidget {
   final String mediaId;
+  final String? libraryType;
   /// When set, the reader starts at this page and ignores saved server progress.
   final int? initialPage;
 
-  const ReaderScreen({super.key, required this.mediaId, this.initialPage});
+  const ReaderScreen({
+    super.key,
+    required this.mediaId,
+    this.libraryType,
+    this.initialPage,
+  });
 
   @override
   ConsumerState<ReaderScreen> createState() => _ReaderScreenState();
@@ -198,11 +204,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   /// unless the target already has an explicit user preference saved.
   void _openAdjacentChapter(BuildContext context, String targetId) {
     if (Prefs.instance.isRtlExplicit(targetId) == null) {
-      final isRtl = ref.read(readerProvider(widget.mediaId)).direction ==
+      final isRtl = ref.read(readerProvider((widget.mediaId, widget.libraryType))).direction ==
           ReadingDirection.rtl;
       Prefs.instance.setRtl(targetId, rtl: isRtl);
     }
-    context.replace('/reader/$targetId', extra: {'initialPage': 0});
+    context.replace('/reader/$targetId',
+        extra: {'initialPage': 0, 'libraryType': widget.libraryType});
   }
 
   // ── Page-key pool ─────────────────────────────────────────────────────────
@@ -258,20 +265,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   }
 
   void _goLeft(BuildContext context, List<Media> siblings) {
-    final isRtl = ref.read(readerProvider(widget.mediaId)).direction ==
+    final isRtl = ref.read(readerProvider((widget.mediaId, widget.libraryType))).direction ==
         ReadingDirection.rtl;
     isRtl ? _nextSlide(context, siblings) : _prevSlide(context, siblings);
   }
 
   void _goRight(BuildContext context, List<Media> siblings) {
-    final isRtl = ref.read(readerProvider(widget.mediaId)).direction ==
+    final isRtl = ref.read(readerProvider((widget.mediaId, widget.libraryType))).direction ==
         ReadingDirection.rtl;
     isRtl ? _prevSlide(context, siblings) : _nextSlide(context, siblings);
   }
 
   void _nextSlide(BuildContext context, List<Media> siblings) {
     _resetZoom();
-    final state = ref.read(readerProvider(widget.mediaId));
+    final state = ref.read(readerProvider((widget.mediaId, widget.libraryType)));
     final slideCount = state.doublePage
         ? buildSlides(state.totalPages, state.spreads).length
         : state.totalPages;
@@ -382,8 +389,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
     _scrollTrackedPage = bestPage;
 
-    final notifier = ref.read(readerProvider(widget.mediaId).notifier);
-    if (bestPage != ref.read(readerProvider(widget.mediaId)).currentPage) {
+    final notifier = ref.read(readerProvider((widget.mediaId, widget.libraryType)).notifier);
+    if (bestPage != ref.read(readerProvider((widget.mediaId, widget.libraryType))).currentPage) {
       notifier.goToPage(bestPage, widget.mediaId);
     }
   }
@@ -452,7 +459,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final readerState = ref.watch(readerProvider(widget.mediaId));
+    final readerState = ref.watch(readerProvider((widget.mediaId, widget.libraryType)));
     final mediaAsync = ref.watch(mediaDetailProvider(widget.mediaId));
     final client = ref.watch(apiClientProvider);
     final extractedPages =
@@ -695,7 +702,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         onPageChanged: (viewIndex) {
           final pageIndex = slides[viewIndex].first;
           ref
-              .read(readerProvider(widget.mediaId).notifier)
+              .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
               .goToPage(pageIndex, widget.mediaId);
         },
       );
@@ -798,7 +805,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                       : Icons.view_day_outlined),
                   onPressed: () {
                     ref
-                        .read(readerProvider(widget.mediaId).notifier)
+                        .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
                         .toggleScrollMode(widget.mediaId);
                     // Reset jump flags so the new mode can seek to the
                     // current page once it renders.
@@ -818,7 +825,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                         : Icons.auto_stories),
                     onPressed: () {
                       ref
-                          .read(readerProvider(widget.mediaId).notifier)
+                          .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
                           .toggleDoublePage(widget.mediaId);
                       _didJump = false;
                     },
@@ -863,10 +870,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                     style:
                         TextButton.styleFrom(foregroundColor: Colors.white),
                     onPressed: () {
-                      final s = ref.read(readerProvider(widget.mediaId));
+                      final s = ref.read(readerProvider((widget.mediaId, widget.libraryType)));
                       final newIsRtl = s.direction == ReadingDirection.ltr;
                       ref
-                          .read(readerProvider(widget.mediaId).notifier)
+                          .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
                           .toggleDirection(widget.mediaId);
                       final sl = s.doublePage
                           ? buildSlides(s.totalPages, s.spreads)
@@ -929,7 +936,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                       final page = v.round();
                       _resetZoom();
                       ref
-                          .read(readerProvider(widget.mediaId).notifier)
+                          .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
                           .goToPage(page, widget.mediaId);
                       if (scrollMode) {
                         _scrollToPage(page);

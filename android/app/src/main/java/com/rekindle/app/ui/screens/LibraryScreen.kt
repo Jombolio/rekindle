@@ -38,7 +38,7 @@ import com.rekindle.app.ui.viewmodel.LibraryViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
-    onLibraryClick: (id: String, name: String) -> Unit,
+    onLibraryClick: (id: String, name: String, type: String) -> Unit,
     onSettingsClick: () -> Unit,
     onAdminClick: () -> Unit,
     onLogout: () -> Unit,
@@ -105,7 +105,7 @@ fun LibraryScreen(
                         }) else null,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onLibraryClick(lib.id, lib.name) },
+                            .clickable { onLibraryClick(lib.id, lib.name, lib.type) },
                     )
                 }
             }

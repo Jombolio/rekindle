@@ -56,21 +56,27 @@ class ReaderState {
       );
 }
 
-class ReaderNotifier extends FamilyNotifier<ReaderState, String> {
+/// Family argument: mediaId + optional library type hint to avoid an extra
+/// round-trip when the caller already knows whether this is a manga library.
+typedef ReaderArgs = (String mediaId, String? libraryType);
+
+class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
   Timer? _syncTimer;
 
   @override
-  ReaderState build(String mediaId) {
+  ReaderState build(ReaderArgs arg) {
+    final (mediaId, _) = arg;
     ref.onDispose(() {
       _syncTimer?.cancel();
       _syncNow(mediaId);
     });
 
-    _init(mediaId);
+    _init(arg);
     return const ReaderState();
   }
 
-  Future<void> _init(String mediaId) async {
+  Future<void> _init(ReaderArgs arg) async {
+    final (mediaId, libraryType) = arg;
     final prefs = Prefs.instance;
     final db = ref.read(localDbProvider);
     final client = ref.read(apiClientProvider);
@@ -96,13 +102,16 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, String> {
       direction =
           explicitRtl ? ReadingDirection.rtl : ReadingDirection.ltr;
     } else {
-      var isManga = false;
-      try {
-        final media = await api.getById(mediaId);
-        final library = await LibrariesApi(client).getById(media.libraryId);
-        isManga = library.type == 'manga';
-      } catch (_) {
-        // Offline or missing — stay LTR
+      var isManga = libraryType == 'manga';
+      if (libraryType == null) {
+        // Library type not provided by caller — fetch it.
+        try {
+          final media = await api.getById(mediaId);
+          final library = await LibrariesApi(client).getById(media.libraryId);
+          isManga = library.type == 'manga';
+        } catch (_) {
+          // Offline or missing — stay LTR
+        }
       }
       direction = isManga ? ReadingDirection.rtl : ReadingDirection.ltr;
     }
@@ -234,7 +243,7 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, String> {
 }
 
 final readerProvider =
-    NotifierProviderFamily<ReaderNotifier, ReaderState, String>(
+    NotifierProviderFamily<ReaderNotifier, ReaderState, ReaderArgs>(
   ReaderNotifier.new,
 );
 

@@ -49,6 +49,8 @@ class ReaderViewModel @Inject constructor(
     /** -1 means no override; use saved server progress. 0 = start of chapter (chapter advance). */
     private val initialPageOverride: Int = savedStateHandle["initialPage"] ?: -1
 
+    private val libraryType: String? = savedStateHandle.get<String>("libraryType")?.ifBlank { null }
+
     private val _state = MutableStateFlow(ReaderState())
     val state = _state.asStateFlow()
 
@@ -99,7 +101,12 @@ class ReaderViewModel @Inject constructor(
             _state.update { it.copy(isRtl = explicit) }
             return
         }
-        // No explicit user pref — infer from library type (manga → RTL)
+        // No explicit user pref — infer from library type (manga → RTL).
+        // If the caller passed the type through navigation, skip the API calls.
+        if (libraryType != null) {
+            if (libraryType == "manga") _state.update { it.copy(isRtl = true) }
+            return
+        }
         runCatching {
             val media = repo.getMediaById(mediaId)
             val library = repo.getLibraryById(media.libraryId)

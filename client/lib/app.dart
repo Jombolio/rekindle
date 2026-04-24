@@ -45,10 +45,14 @@ final _routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/libraries/:id',
-        builder: (_, state) => MediaGridScreen(
-          libraryId: state.pathParameters['id']!,
-          libraryName: state.extra as String?,
-        ),
+        builder: (_, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          return MediaGridScreen(
+            libraryId: state.pathParameters['id']!,
+            libraryName: extra?['name'] as String?,
+            libraryType: extra?['type'] as String?,
+          );
+        },
       ),
       GoRoute(
         path: '/reader/:id',
@@ -56,6 +60,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
           final extra = state.extra as Map<String, dynamic>?;
           return ReaderScreen(
             mediaId: state.pathParameters['id']!,
+            libraryType: extra?['libraryType'] as String?,
             initialPage: extra?['initialPage'] as int?,
           );
         },
@@ -76,6 +81,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
           return ChapterIndexScreen(
             folderId: state.pathParameters['id']!,
             folderTitle: extra?['title'] ?? 'Series',
+            libraryType: extra?['libraryType'],
           );
         },
       ),
