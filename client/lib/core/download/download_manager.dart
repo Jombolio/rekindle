@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:archive/archive_io.dart';
 import 'package:dio/dio.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -227,7 +228,7 @@ class DownloadManager {
       base = await getDownloadsDirectory();
     } catch (_) {}
     base ??= await getApplicationDocumentsDirectory();
-    final dir = Directory('${base.path}/Rekindle Downloads');
+    final dir = Directory(p.join(base.path, 'Rekindle Downloads'));
     await dir.create(recursive: true);
     return dir;
   }

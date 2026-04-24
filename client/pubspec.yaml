@@ -27,6 +27,7 @@ dependencies:
 
   # File system
   path_provider: ^2.1.4
+  path: ^1.9.0
 
   # Image loading & reader
   cached_network_image: ^3.4.1

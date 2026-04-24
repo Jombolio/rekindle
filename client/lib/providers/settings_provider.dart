@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../core/storage/prefs.dart';
@@ -62,7 +63,7 @@ Future<Directory> resolveDownloadDir() async {
   }
 
   final base = await _platformDownloadsBase();
-  final dir = Directory('${base.path}/Rekindle Downloads');
+  final dir = Directory(p.join(base.path, 'Rekindle Downloads'));
   await dir.create(recursive: true);
   return dir;
 }
@@ -70,7 +71,7 @@ Future<Directory> resolveDownloadDir() async {
 /// The human-readable default path shown as hint when no custom dir is set.
 Future<String> defaultDownloadDirPath() async {
   final base = await _platformDownloadsBase();
-  return '${base.path}/Rekindle Downloads';
+  return p.join(base.path, 'Rekindle Downloads');
 }
 
 /// Returns the platform Downloads folder (Windows/macOS), falling back to
