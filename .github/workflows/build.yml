@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-linux:
-    name: Linux
+    name: Client — Linux
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
           files: Rekindle-linux-x64.zip
 
   build-windows:
-    name: Windows
+    name: Client — Windows
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -72,3 +72,104 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: Rekindle-windows-x64.zip
+
+  build-android:
+    name: Client — Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/rekindle.jks
+          cat <<EOF > android/keystore.properties
+          storeFile=rekindle.jks
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          EOF
+
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew assembleRelease
+
+      - name: Rename APK
+        run: mv android/app/build/outputs/apk/release/app-release.apk Rekindle.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rekindle-android
+          path: Rekindle.apk
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Rekindle.apk
+
+  build-server-linux:
+    name: Server — Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Publish
+        working-directory: server
+        run: |
+          dotnet publish Rekindle.Server/Rekindle.Server.csproj \
+            -c Release -r linux-x64 --self-contained \
+            -o ../RekindleServer-linux
+
+      - name: Package
+        run: zip -r RekindleServer-linux-x64.zip RekindleServer-linux/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RekindleServer-linux-x64
+          path: RekindleServer-linux-x64.zip
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: RekindleServer-linux-x64.zip
+
+  build-server-windows:
+    name: Server — Windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Publish
+        working-directory: server
+        run: |
+          dotnet publish Rekindle.Server/Rekindle.Server.csproj \
+            -c Release -r win-x64 --self-contained \
+            -o ../RekindleServer-windows
+
+      - name: Package
+        run: zip -r RekindleServer-windows-x64.zip RekindleServer-windows/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RekindleServer-windows-x64
+          path: RekindleServer-windows-x64.zip
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: RekindleServer-windows-x64.zip
