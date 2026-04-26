@@ -175,7 +175,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
             style: Theme.of(context).textTheme.headlineSmall,
             textAlign: TextAlign.center),
         const SizedBox(height: 8),
-        Text('Enter the server URL and an optional display name.',
+        Text('Enter your server URL and an optional display name. Use https:// if your server is behind a reverse proxy.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
             textAlign: TextAlign.center),
@@ -188,7 +188,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
           controller: _urlCtrl,
           decoration: const InputDecoration(
             labelText: 'Server URL',
-            hintText: 'http://192.168.1.100:8080',
+            hintText: 'http(s)://192.168.1.100:8080',
             border: OutlineInputBorder(),
             prefixIcon: Icon(Icons.link),
           ),
@@ -197,6 +197,8 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
           textInputAction: TextInputAction.next,
           onSubmitted: (_) {},
         ),
+        const SizedBox(height: 8),
+        _HttpsInfoCard(),
         const SizedBox(height: 12),
         TextField(
           controller: _nameCtrl,
@@ -303,6 +305,73 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
               : 'First time setup'),
         ),
       ],
+    );
+  }
+}
+
+class _HttpsInfoCard extends StatefulWidget {
+  @override
+  State<_HttpsInfoCard> createState() => _HttpsInfoCardState();
+}
+
+class _HttpsInfoCardState extends State<_HttpsInfoCard> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Card(
+      color: colorScheme.surfaceContainerLow,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => setState(() => _expanded = !_expanded),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.lock_outline,
+                      size: 16, color: colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('HTTPS is supported',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.primary,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                  Icon(
+                    _expanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                    size: 16,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+              if (_expanded) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'To use HTTPS, place a reverse proxy such as Nginx, Caddy, or Traefik in front of your Rekindle server and point a domain at it. '
+                  'For a public domain, Let\'s Encrypt provides free TLS certificates. '
+                  'Once set up, enter your server URL with https:// instead of http://.\n\n'
+                  'For local network use, plain HTTP is fine.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

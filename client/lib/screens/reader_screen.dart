@@ -536,8 +536,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
               _scrollUp(context, siblings);
             }
           } else {
-            if (event.logicalKey == LogicalKeyboardKey.arrowLeft) _goLeft(context, siblings);
-            if (event.logicalKey == LogicalKeyboardKey.arrowRight) _goRight(context, siblings);
+            if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+                event.logicalKey == LogicalKeyboardKey.keyA) _goLeft(context, siblings);
+            if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
+                event.logicalKey == LogicalKeyboardKey.keyD) _goRight(context, siblings);
           }
         },
         child: Scaffold(

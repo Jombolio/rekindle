@@ -11,3 +11,7 @@ desktop.ini
 
 # AI assistant memory (local only)
 .claude/
+
+# Build artifacts
+*.zip
+*.tar.gz

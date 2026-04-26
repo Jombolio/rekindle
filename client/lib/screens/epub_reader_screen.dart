@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
+import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 
 import '../core/epub/epub_parser.dart';
 import '../providers/download_provider.dart';
@@ -113,8 +113,10 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
       autofocus: true,
       onKeyEvent: (event) {
         if (event is KeyDownEvent) {
-          if (event.logicalKey == LogicalKeyboardKey.arrowRight) _nextChapter();
-          if (event.logicalKey == LogicalKeyboardKey.arrowLeft) _prevChapter();
+          if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
+              event.logicalKey == LogicalKeyboardKey.keyD) _nextChapter();
+          if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+              event.logicalKey == LogicalKeyboardKey.keyA) _prevChapter();
           if (event.logicalKey == LogicalKeyboardKey.escape) {
             Navigator.of(context).pop();
           }
