@@ -1,6 +1,8 @@
 # Rekindle
 
 Self-hosted comic, manga, and book reader.
+
+> **Disclaimer:** Rekindle is intended for use with content you own or have the legal right to access. Do not use this software to store, distribute, or access copyrighted material without authorisation. The developers are not responsible for any misuse of this software.
 Point the Rekindle Server at a folder of archives (CBZ, CBR, EPUB, MOBI, PDF) and read or download them from any device running the Rekindle Client.
 
 <img width="1277" height="371" alt="Screenshot_20260420_215357" src="https://github.com/user-attachments/assets/0f389771-0a4d-4c71-897b-85dcdccb26d6" />
@@ -18,6 +20,7 @@ Point the Rekindle Server at a folder of archives (CBZ, CBR, EPUB, MOBI, PDF) an
   - [Linux](#linux)
   - [Windows](#windows)
   - [Configuration](#configuration)
+  - [HTTPS](#https)
   - [First-time Setup](#first-time-setup)
 - [Connecting to the Server](#connecting-to-the-server)
 - [Building from Source](#building-from-source)
@@ -135,6 +138,55 @@ Edit `appsettings.json` in the same directory as the server binary before first 
   "Urls": "http://0.0.0.0:9000"
 }
 ```
+
+### HTTPS
+
+The server speaks plain HTTP by default. Two ways to add TLS:
+
+#### Option A — Caddy reverse proxy (recommended)
+
+[Caddy](https://caddyserver.com) obtains and renews Let's Encrypt certificates automatically.
+
+1. Install Caddy and point your domain's DNS at the server machine.
+2. Create a `Caddyfile`:
+   ```
+   your.domain.com {
+       reverse_proxy localhost:8080
+   }
+   ```
+3. Run Caddy:
+   ```bash
+   caddy run --config Caddyfile
+   ```
+
+Caddy handles port 80/443 and forwards traffic to Rekindle on 8080. No certificate management required.
+
+> For LAN-only use without a domain, use a self-signed certificate or keep plain HTTP and access the server by IP.
+
+#### Option B — Kestrel direct TLS
+
+If you already have a PEM certificate and key, configure Kestrel in `appsettings.json`:
+
+```json
+{
+  "Urls": "https://0.0.0.0:8443",
+  "Kestrel": {
+    "Endpoints": {
+      "Https": {
+        "Url": "https://0.0.0.0:8443",
+        "Certificate": {
+          "Path": "cert.pem",
+          "KeyPath": "key.pem"
+        }
+      }
+    }
+  }
+}
+```
+
+Place `cert.pem` and `key.pem` in the same directory as the server binary, then restart.
+
+---
 
 ### First-time Setup
 

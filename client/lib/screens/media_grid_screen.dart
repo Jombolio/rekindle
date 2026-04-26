@@ -152,32 +152,35 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
                             ),
                             if (isOffline) const OfflineBadge(),
                             if (item.isFolder) const FolderBadge(),
+                            if (canDownload)
+                              Positioned(
+                                bottom: 4,
+                                right: 4,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.55),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: SizedBox(
+                                    width: 32,
+                                    height: 32,
+                                    child: DownloadButton(media: item),
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       ),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () => _openItem(context, item),
-                              child: Text(
-                                item.displayTitle,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall,
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          ),
-                          if (canDownload)
-                            SizedBox(
-                              width: 36,
-                              height: 36,
-                              child: DownloadButton(media: item),
-                            ),
-                        ],
+                      const SizedBox(height: 6),
+                      GestureDetector(
+                        onTap: () => _openItem(context, item),
+                        child: Text(
+                          item.displayTitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
                       ),
                     ],
                   );

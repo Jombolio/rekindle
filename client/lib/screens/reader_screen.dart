@@ -203,11 +203,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   /// Navigates to [targetId], carrying the current reading direction forward
   /// unless the target already has an explicit user preference saved.
   void _openAdjacentChapter(BuildContext context, String targetId) {
+    final currentState = ref.read(readerProvider((widget.mediaId, widget.libraryType)));
+
     if (Prefs.instance.isRtlExplicit(targetId) == null) {
-      final isRtl = ref.read(readerProvider((widget.mediaId, widget.libraryType))).direction ==
-          ReadingDirection.rtl;
-      Prefs.instance.setRtl(targetId, rtl: isRtl);
+      Prefs.instance.setRtl(targetId,
+          rtl: currentState.direction == ReadingDirection.rtl);
     }
+    Prefs.instance.setDoublePage(targetId, doublePage: currentState.doublePage);
+    Prefs.instance.setScrollMode(targetId, scrollMode: currentState.scrollMode);
+
     context.replace('/reader/$targetId',
         extra: {'initialPage': 0, 'libraryType': widget.libraryType});
   }
