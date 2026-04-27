@@ -116,11 +116,21 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
       direction = isManga ? ReadingDirection.rtl : ReadingDirection.ltr;
     }
 
+    final sessionMode = ref.read(readerModeProvider);
+    final doublePage =
+        prefs.isDoublePageExplicit(mediaId) ?? sessionMode.doublePage;
+    final scrollMode =
+        prefs.isScrollModeExplicit(mediaId) ?? sessionMode.scrollMode;
+
+    // Keep session mode in sync so the next chapter inherits these settings.
+    ref.read(readerModeProvider.notifier).state =
+        (doublePage: doublePage, scrollMode: scrollMode);
+
     state = state.copyWith(
       currentPage: savedPage,
       direction: direction,
-      doublePage: prefs.isDoublePage(mediaId),
-      scrollMode: prefs.isScrollMode(mediaId),
+      doublePage: doublePage,
+      scrollMode: scrollMode,
       savedProgress: progress,
     );
 
@@ -164,12 +174,16 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
     final newVal = !state.doublePage;
     state = state.copyWith(doublePage: newVal);
     Prefs.instance.setDoublePage(mediaId, doublePage: newVal);
+    ref.read(readerModeProvider.notifier).update(
+        (m) => (doublePage: newVal, scrollMode: m.scrollMode));
   }
 
   void toggleScrollMode(String mediaId) {
     final newVal = !state.scrollMode;
     state = state.copyWith(scrollMode: newVal);
     Prefs.instance.setScrollMode(mediaId, scrollMode: newVal);
+    ref.read(readerModeProvider.notifier).update(
+        (m) => (doublePage: m.doublePage, scrollMode: newVal));
   }
 
   void _scheduleSync(String mediaId) {
@@ -245,6 +259,13 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
 final readerProvider =
     NotifierProviderFamily<ReaderNotifier, ReaderState, ReaderArgs>(
   ReaderNotifier.new,
+);
+
+/// Carries the active reading mode across chapter navigation within a session.
+/// Updated whenever the user toggles a mode or a chapter loads its settings.
+final readerModeProvider =
+    StateProvider<({bool doublePage, bool scrollMode})>(
+  (_) => (doublePage: false, scrollMode: false),
 );
 
 /// Global double-page spine gap in logical pixels. Persisted to prefs.

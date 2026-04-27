@@ -11,6 +11,11 @@ import 'widgets/cover_image.dart';
 import 'widgets/download_button.dart';
 import 'widgets/error_view.dart';
 
+// Fixed tile height — leading thumbnail is 68 px + 12 px vertical padding.
+// Keeping this constant lets ListView skip O(n) layout on large lists.
+const double _kTileHeight = 82.0;
+const double _kHeaderHeight = 32.0;
+
 class ChapterIndexScreen extends ConsumerWidget {
   final String folderId;
   final String folderTitle;
@@ -27,6 +32,10 @@ class ChapterIndexScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final chaptersAsync = ref.watch(chapterProvider(folderId));
     final client = ref.watch(apiClientProvider);
+    // Resolved once here — avoids one authProvider watch per tile.
+    final authState = ref.watch(authProvider).valueOrNull;
+    final canDownload =
+        authState is AuthAuthenticated && authState.canDownload;
 
     return Scaffold(
       appBar: AppBar(
@@ -62,41 +71,53 @@ class ChapterIndexScreen extends ConsumerWidget {
             );
           }
 
+          final hasSubfolders = subfolders.isNotEmpty;
           final totalItems =
-              (subfolders.isNotEmpty ? subfolders.length + 1 : 0) +
-              archives.length;
+              (hasSubfolders ? subfolders.length + 1 : 0) + archives.length;
 
           return ListView.builder(
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: totalItems,
+            // Pre-render ~6 extra tiles above/below the viewport.
+            cacheExtent: _kTileHeight * 6,
+            // O(1) scroll-extent calculation regardless of list length.
+            itemExtentBuilder: (i, _) {
+              if (hasSubfolders && i == 0) return _kHeaderHeight;
+              return _kTileHeight;
+            },
             itemBuilder: (_, i) {
-              if (subfolders.isNotEmpty) {
+              if (hasSubfolders) {
                 if (i == 0) {
                   return const _SectionHeader(label: 'Subfolders');
                 }
                 if (i <= subfolders.length) {
+                  final folder = subfolders[i - 1];
                   return _SubfolderTile(
-                    folder: subfolders[i - 1],
-                    coverUrl: client.coverUrl(subfolders[i - 1].id),
+                    folder: folder,
+                    coverUrl: client.coverUrl(folder.id),
                     authHeaders: client.authHeaders,
                     libraryType: libraryType,
                   );
                 }
                 final archiveIndex = i - subfolders.length - 1;
+                final chapter = archives[archiveIndex];
                 return _ChapterTile(
-                  chapter: archives[archiveIndex],
+                  chapter: chapter,
                   index: archiveIndex,
-                  coverUrl: client.coverUrl(archives[archiveIndex].id),
+                  coverUrl: client.coverUrl(chapter.id),
                   authHeaders: client.authHeaders,
                   libraryType: libraryType,
+                  canDownload: canDownload,
                 );
               }
+              final chapter = archives[i];
               return _ChapterTile(
-                chapter: archives[i],
+                chapter: chapter,
                 index: i,
-                coverUrl: client.coverUrl(archives[i].id),
+                coverUrl: client.coverUrl(chapter.id),
                 authHeaders: client.authHeaders,
                 libraryType: libraryType,
+                canDownload: canDownload,
               );
             },
           );
@@ -144,48 +165,57 @@ class _SubfolderTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: Stack(
-        children: [
-          SizedBox(
-            width: 48,
-            height: 68,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: CoverImage(
-                url: coverUrl,
-                headers: authHeaders,
-                borderRadius: BorderRadius.zero,
+    return SizedBox(
+      height: _kTileHeight,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        leading: Stack(
+          children: [
+            SizedBox(
+              width: 48,
+              height: 68,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: CoverImage(
+                  url: coverUrl,
+                  headers: authHeaders,
+                  borderRadius: BorderRadius.zero,
+                ),
               ),
             ),
-          ),
-          Positioned(
-            bottom: 0,
-            right: 0,
-            child: Container(
-              padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(3),
+            Positioned(
+              bottom: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .primary
+                      .withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Icon(Icons.folder,
+                    size: 10,
+                    color: Theme.of(context).colorScheme.onPrimary),
               ),
-              child: Icon(Icons.folder,
-                  size: 10,
-                  color: Theme.of(context).colorScheme.onPrimary),
             ),
-          ),
-        ],
-      ),
-      title: Text(
-        folder.displayTitle,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodyMedium,
-      ),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () => context.push(
-        '/series/${folder.id}',
-        extra: <String, String?>{'title': folder.displayTitle, 'libraryType': libraryType},
+          ],
+        ),
+        title: Text(
+          folder.displayTitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => context.push(
+          '/series/${folder.id}',
+          extra: <String, String?>{
+            'title': folder.displayTitle,
+            'libraryType': libraryType
+          },
+        ),
       ),
     );
   }
@@ -199,12 +229,14 @@ class _ChapterTile extends ConsumerWidget {
   final String coverUrl;
   final Map<String, String> authHeaders;
   final String? libraryType;
+  final bool canDownload;
 
   const _ChapterTile({
     required this.chapter,
     required this.index,
     required this.coverUrl,
     required this.authHeaders,
+    required this.canDownload,
     this.libraryType,
   });
 
@@ -222,61 +254,62 @@ class _ChapterTile extends ConsumerWidget {
     final downloadState = ref.watch(downloadProvider(chapter.id));
     final isOffline = downloadState.status == DownloadStatus.complete;
     final theme = Theme.of(context);
-    final authState = ref.watch(authProvider).valueOrNull;
-    final canDownload =
-        authState is AuthAuthenticated && authState.canDownload;
 
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      leading: Stack(
-        children: [
-          SizedBox(
-            width: 48,
-            height: 68,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: CoverImage(
-                url: coverUrl,
-                headers: authHeaders,
-                borderRadius: BorderRadius.zero,
-              ),
-            ),
-          ),
-          if (isOffline)
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.9),
-                  borderRadius: BorderRadius.circular(3),
+    return SizedBox(
+      height: _kTileHeight,
+      child: ListTile(
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        leading: Stack(
+          children: [
+            SizedBox(
+              width: 48,
+              height: 68,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: CoverImage(
+                  url: coverUrl,
+                  headers: authHeaders,
+                  borderRadius: BorderRadius.zero,
                 ),
-                child: const Icon(Icons.offline_bolt,
-                    size: 10, color: Colors.white),
               ),
             ),
-        ],
+            if (isOffline)
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: const Icon(Icons.offline_bolt,
+                      size: 10, color: Colors.white),
+                ),
+              ),
+          ],
+        ),
+        title: Text(
+          chapter.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodyMedium,
+        ),
+        subtitle: isOffline
+            ? Text('Downloaded',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: Colors.green.shade700))
+            : null,
+        trailing: canDownload
+            ? SizedBox(
+                width: 40,
+                height: 40,
+                child: DownloadButton(media: chapter),
+              )
+            : null,
+        onTap: () => _open(context),
       ),
-      title: Text(
-        chapter.title,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodyMedium,
-      ),
-      subtitle: isOffline
-          ? Text('Downloaded',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: Colors.green.shade700))
-          : null,
-      trailing: canDownload
-          ? SizedBox(
-              width: 40,
-              height: 40,
-              child: DownloadButton(media: chapter),
-            )
-          : null,
-      onTap: () => _open(context),
     );
   }
 }

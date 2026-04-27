@@ -72,13 +72,15 @@ class Prefs {
   Future<void> setDownloadDirectory(String path) =>
       _prefs.setString('download_directory', path);
 
-  // Double-page spread mode (per-series)
-  bool isDoublePage(String key) => _prefs.getBool('double_page_$key') ?? false;
+  // Double-page spread mode (per-media)
+  bool? isDoublePageExplicit(String key) => _prefs.getBool('double_page_$key');
+  bool isDoublePage(String key) => isDoublePageExplicit(key) ?? false;
   Future<void> setDoublePage(String key, {required bool doublePage}) =>
       _prefs.setBool('double_page_$key', doublePage);
 
-  // Vertical scroll mode (per-series)
-  bool isScrollMode(String key) => _prefs.getBool('scroll_mode_$key') ?? false;
+  // Vertical scroll mode (per-media)
+  bool? isScrollModeExplicit(String key) => _prefs.getBool('scroll_mode_$key');
+  bool isScrollMode(String key) => isScrollModeExplicit(key) ?? false;
   Future<void> setScrollMode(String key, {required bool scrollMode}) =>
       _prefs.setBool('scroll_mode_$key', scrollMode);
 
