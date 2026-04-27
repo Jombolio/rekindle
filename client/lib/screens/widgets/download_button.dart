@@ -17,6 +17,10 @@ class DownloadButton extends ConsumerWidget {
 
     final state = ref.watch(downloadProvider(media.id));
 
+    final iconColor = Theme.of(context).brightness == Brightness.dark
+        ? Colors.white
+        : Colors.black;
+
     return switch (state.status) {
       DownloadStatus.idle || DownloadStatus.failed => IconButton(
           icon: Icon(
@@ -25,7 +29,7 @@ class DownloadButton extends ConsumerWidget {
                 : Icons.download_outlined,
             color: state.status == DownloadStatus.failed
                 ? Colors.red
-                : null,
+                : iconColor,
           ),
           tooltip: state.status == DownloadStatus.failed
               ? 'Download failed — retry'

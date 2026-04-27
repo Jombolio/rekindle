@@ -15,6 +15,7 @@ class SourcesNotifier extends Notifier<List<ServerSource>> {
   Future<void> remove(String id) async {
     state = [for (final s in state) if (s.id != id) s];
     await Prefs.instance.setSources(state);
+    await Prefs.instance.clearCachedAuth(id);
   }
 
   Future<void> updateName(String id, String name) async {
@@ -33,6 +34,7 @@ class SourcesNotifier extends Notifier<List<ServerSource>> {
         if (s.id == id) s.copyWith(clearToken: true) else s
     ];
     await Prefs.instance.setSources(state);
+    await Prefs.instance.clearCachedAuth(id);
   }
 }
 

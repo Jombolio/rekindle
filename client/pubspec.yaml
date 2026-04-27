@@ -31,7 +31,6 @@ dependencies:
 
   # Image loading & reader
   cached_network_image: ^3.4.1
-  photo_view: ^0.15.0
 
   # Offline: ZIP/CBZ extraction on-device
   archive: ^3.6.1

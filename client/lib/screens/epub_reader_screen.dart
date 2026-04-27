@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -56,7 +57,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     final bytes = await File(localPath).readAsBytes();
     if (!mounted) return;
 
-    final book = EpubParser.parse(bytes);
+    final book = await Isolate.run(() => EpubParser.parse(bytes));
     final savedChapter = ref.read(readerProvider((widget.mediaId, null))).currentPage;
 
     setState(() {

@@ -75,9 +75,10 @@ Future<String> defaultDownloadDirPath() async {
 }
 
 /// Returns the base directory for default downloads.
-/// Windows always uses Documents so the installer default is consistent.
+/// Windows and Android always use app-private Documents so no special
+/// filesystem permissions are required.
 Future<Directory> _platformDownloadsBase() async {
-  if (Platform.isWindows) {
+  if (Platform.isWindows || Platform.isAndroid) {
     return getApplicationDocumentsDirectory();
   }
   try {

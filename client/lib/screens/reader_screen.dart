@@ -1,13 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:photo_view/photo_view.dart';
-import 'package:photo_view/photo_view_gallery.dart';
 
 import '../core/models/media.dart';
 import '../core/storage/prefs.dart';
@@ -50,13 +47,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   // ── Shared ────────────────────────────────────────────────────────────────
   final FocusNode _focusNode = FocusNode();
 
-  // ── Zoom / pan ────────────────────────────────────────────────────────────
-  double _zoom = 1.0;
-  Offset _panOffset = Offset.zero;
-  Offset? _midMouseAnchor;
-  Offset? _panAtMidAnchor;
-  static const double _minZoom = 1.0;
-  static const double _maxZoom = 5.0;
+  // ── Zoom (paged mode) ──────────────────────────────────────────────────────
+  late final TransformationController _transformCtrl;
+  bool _isZoomed = false;
 
   // ── HUD visibility ────────────────────────────────────────────────────────
   bool _hudVisible = true;
@@ -68,9 +61,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   void initState() {
     super.initState();
     _pageCtrl = PageController();
+    _transformCtrl = TransformationController();
+    _transformCtrl.addListener(_onTransformChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
-      _resetHideTimer(); // start fade-out countdown immediately
+      _resetHideTimer();
     });
   }
 
@@ -80,6 +75,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     _pageCtrl.dispose();
     _scrollCtrl.dispose();
     _focusNode.dispose();
+    _transformCtrl.dispose();
     super.dispose();
   }
 
@@ -107,66 +103,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     }
   }
 
-  // ── Zoom / pan ────────────────────────────────────────────────────────────
+  // ── Zoom (paged mode) ──────────────────────────────────────────────────────
+
+  void _onTransformChanged() {
+    final zoomed = _transformCtrl.value.getMaxScaleOnAxis() > 1.01;
+    if (zoomed != _isZoomed) setState(() => _isZoomed = zoomed);
+  }
 
   void _resetZoom() {
-    if (_zoom == 1.0 && _panOffset == Offset.zero) return;
-    setState(() {
-      _zoom = 1.0;
-      _panOffset = Offset.zero;
-    });
-  }
-
-  /// Clamps [pan] so the scaled content doesn't slide fully off screen.
-  Offset _clampPan(Offset pan, Size screen) {
-    if (_zoom <= 1.0) return Offset.zero;
-    return Offset(
-      pan.dx.clamp(screen.width * (1 - _zoom), 0.0),
-      pan.dy.clamp(screen.height * (1 - _zoom), 0.0),
-    );
-  }
-
-  void _handleScrollZoom(PointerScrollEvent event, Size screen) {
-    final dy = event.scrollDelta.dy;
-    if (dy == 0) return;
-    final scaleFactor = dy > 0 ? (1 / 1.15) : 1.15;
-    final oldZoom = _zoom;
-    final newZoom = (_zoom * scaleFactor).clamp(_minZoom, _maxZoom);
-    if (newZoom == oldZoom) return;
-    // Keep the screen point under the cursor fixed as zoom changes.
-    final f = event.localPosition;
-    final ratio = newZoom / oldZoom;
-    var newPan = f * (1 - ratio) + _panOffset * ratio;
-    if (newZoom <= _minZoom) newPan = Offset.zero;
-    setState(() {
-      _zoom = newZoom;
-      _panOffset = _clampPan(newPan, screen);
-    });
-  }
-
-  void _handlePointerDown(PointerDownEvent event) {
-    if (event.buttons & kMiddleMouseButton != 0) {
-      _midMouseAnchor = event.localPosition;
-      _panAtMidAnchor = _panOffset;
-    }
-  }
-
-  void _handlePointerMove(PointerMoveEvent event, Size screen) {
-    if (_midMouseAnchor == null) return;
-    if (event.buttons & kMiddleMouseButton == 0) {
-      _midMouseAnchor = null;
-      _panAtMidAnchor = null;
-      return;
-    }
-    final newPan = _panAtMidAnchor! + (event.localPosition - _midMouseAnchor!);
-    setState(() => _panOffset = _clampPan(newPan, screen));
-  }
-
-  void _handlePointerUp(PointerUpEvent event) {
-    if (event.buttons & kMiddleMouseButton == 0) {
-      _midMouseAnchor = null;
-      _panAtMidAnchor = null;
-    }
+    if (!_isZoomed) return;
+    _transformCtrl.value = Matrix4.identity();
   }
 
   /// Left-click zone navigation: left third → prev, right third → next.
@@ -259,8 +205,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   int _pageToViewIndex(int page, List<List<int>> slides, bool isRtl) {
     var slideIndex = slides.indexWhere((s) => s.contains(page));
     if (slideIndex < 0) slideIndex = 0;
-    // reverse:isRtl on PhotoViewGallery already places viewIndex 0 on the
-    // visual right, so viewIndex == slideIndex — no extra inversion needed.
+    // In RTL the PageView is reversed, so viewIndex == slideIndex — no extra inversion needed.
     return slideIndex;
   }
 
@@ -546,36 +491,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
           backgroundColor: Colors.black,
           body: Stack(
             children: [
-              // ── Zoom / pan / tap layer ─────────────────────────────────
-              Listener(
-                onPointerSignal: (event) {
-                  if (event is PointerScrollEvent && !scrollMode) {
-                    _handleScrollZoom(event, MediaQuery.sizeOf(context));
+              // ── Content / tap layer ────────────────────────────────────
+              GestureDetector(
+                onSecondaryTap: _toggleHud,
+                onTapUp: (d) {
+                  _showHud();
+                  if (!scrollMode && !_isZoomed) {
+                    _handleTapZone(d, context, siblings, isRtl);
                   }
                 },
-                onPointerDown: _handlePointerDown,
-                onPointerMove: (e) => _handlePointerMove(e, MediaQuery.sizeOf(context)),
-                onPointerUp: _handlePointerUp,
-                child: GestureDetector(
-                  onSecondaryTap: _toggleHud,
-                  onTapUp: scrollMode
-                      ? null
-                      : (d) => _handleTapZone(d, context, siblings, isRtl),
-                  child: Transform(
-                    transform: Matrix4.identity()
-                      ..translate(_panOffset.dx, _panOffset.dy)
-                      ..scale(_zoom),
-                    child: totalPages == 0
-                        ? const SizedBox.expand()
-                        : scrollMode
-                            ? _buildScrollView(
-                                context, readerState, extractedPages, client, siblings)
-                            : _buildPagedView(
-                                context, readerState, extractedPages, client,
-                                totalPages, isRtl, doublePage, slides, pageGap,
-                                siblings),
-                  ),
-                ),
+                child: totalPages == 0
+                    ? const SizedBox.expand()
+                    : scrollMode
+                        ? _buildScrollView(
+                            context, readerState, extractedPages, client, siblings)
+                        : _buildPagedView(
+                            extractedPages, client, isRtl, slides, pageGap),
               ),
 
               // ── Loading indicator (unzoomed) ───────────────────────────
@@ -661,66 +592,60 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   // ── Paged-mode view ───────────────────────────────────────────────────────
 
   Widget _buildPagedView(
-    BuildContext context,
-    ReaderState readerState,
     List<String>? extractedPages,
     dynamic client,
-    int totalPages,
     bool isRtl,
-    bool doublePage,
     List<List<int>> slides,
     double pageGap,
-    List<Media> siblings,
   ) {
-    final slideCount = slides.length;
-    return PhotoViewGallery.builder(
-        pageController: _pageCtrl,
-        scrollDirection: Axis.horizontal,
+    return InteractiveViewer(
+      transformationController: _transformCtrl,
+      minScale: 1.0,
+      maxScale: 5.0,
+      // When zoomed in, pan within the page. When at 1:1, let PageView swipe.
+      panEnabled: _isZoomed,
+      child: PageView.builder(
+        controller: _pageCtrl,
         reverse: isRtl,
-        itemCount: slideCount,
-        backgroundDecoration: const BoxDecoration(color: Colors.black),
-        builder: (context, viewIndex) {
-          final slide = slides[viewIndex];
-          // Single-image slide: a spread page shown full-width, or an orphaned
-          // last page in double-page mode.
-          if (slide.length == 1) {
-            return PhotoViewGalleryPageOptions(
-              imageProvider:
-                  _buildImageProvider(slide[0], extractedPages, client),
-              // Scale locked — outer Transform handles zoom.
-              minScale: PhotoViewComputedScale.contained,
-              maxScale: PhotoViewComputedScale.contained,
-              filterQuality: FilterQuality.medium,
-              errorBuilder: (_, __, ___) => const Center(
-                child:
-                    Icon(Icons.broken_image, color: Colors.white54, size: 64),
-              ),
-            );
-          }
-          // Two-image slide: standard double-page layout.
-          return _buildDoublePageSlide(
-              context, slide[0], slide[1], isRtl, extractedPages, client, pageGap);
-        },
+        physics: _isZoomed
+            ? const NeverScrollableScrollPhysics()
+            : const PageScrollPhysics(),
+        itemCount: slides.length,
         onPageChanged: (viewIndex) {
+          // Reset zoom so the next page starts at fit-to-screen.
+          if (_isZoomed) _resetZoom();
           final pageIndex = slides[viewIndex].first;
           ref
               .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
               .goToPage(pageIndex, widget.mediaId);
         },
-      );
+        itemBuilder: (_, viewIndex) {
+          final slide = slides[viewIndex];
+          if (slide.length == 1) {
+            return Image(
+              image: _buildImageProvider(slide[0], extractedPages, client),
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (_, __, ___) => const Center(
+                child: Icon(Icons.broken_image, color: Colors.white54, size: 64),
+              ),
+            );
+          }
+          return _buildDoublePageSlide(
+              slide[0], slide[1], isRtl, extractedPages, client, pageGap);
+        },
+      ),
+    );
   }
 
-  PhotoViewGalleryPageOptions _buildDoublePageSlide(
-    BuildContext context,
-    int pageA,  // lower page number (LTR: left side, RTL: right side)
-    int pageB,  // higher page number (LTR: right side, RTL: left side)
+  Widget _buildDoublePageSlide(
+    int pageA,
+    int pageB,
     bool isRtl,
     List<String>? extractedPages,
     dynamic client,
     double gap,
   ) {
-    final size = MediaQuery.of(context).size;
-
     // In RTL: pageA (lower number, read first) goes on the right; pageB on left.
     final leftContent  = isRtl ? pageB : pageA;
     final rightContent = isRtl ? pageA : pageB;
@@ -743,18 +668,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       );
     }
 
-    return PhotoViewGalleryPageOptions.customChild(
-      childSize: size,
-      // Scale locked — outer Transform handles zoom.
-      minScale: PhotoViewComputedScale.contained,
-      maxScale: PhotoViewComputedScale.contained,
-      child: Row(
-        children: [
-          Expanded(child: pageWidget(leftContent,  Alignment.centerRight)),
-          SizedBox(width: gap),
-          Expanded(child: pageWidget(rightContent, Alignment.centerLeft)),
-        ],
-      ),
+    return Row(
+      children: [
+        Expanded(child: pageWidget(leftContent,  Alignment.centerRight)),
+        if (gap > 0) SizedBox(width: gap),
+        Expanded(child: pageWidget(rightContent, Alignment.centerLeft)),
+      ],
     );
   }
 
@@ -806,11 +725,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                       ? Icons.view_carousel_outlined
                       : Icons.view_day_outlined),
                   onPressed: () {
+                    _resetZoom();
                     ref
                         .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
                         .toggleScrollMode(widget.mediaId);
-                    // Reset jump flags so the new mode can seek to the
-                    // current page once it renders.
                     _didJump = false;
                     _didScrollJump = false;
                   },
@@ -826,6 +744,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                         ? Icons.menu_book
                         : Icons.auto_stories),
                     onPressed: () {
+                      _resetZoom();
                       ref
                           .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
                           .toggleDoublePage(widget.mediaId);

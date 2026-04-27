@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -88,75 +90,77 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
 
-          const SizedBox(height: 24),
+          if (!Platform.isAndroid) ...[
+            const SizedBox(height: 24),
 
-          // ── Downloads ───────────────────────────────────────────────────
-          _SectionHeader('Downloads'),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Download directory',
-                      style: theme.textTheme.bodyLarge),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Files are saved preserving the server\'s folder structure.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _dirCtrl,
-                          decoration: InputDecoration(
-                            border: const OutlineInputBorder(),
-                            hintText: _defaultDirHint.isNotEmpty
-                                ? _defaultDirHint
-                                : 'Loading default…',
-                            hintStyle: TextStyle(
-                                color: theme.colorScheme.onSurfaceVariant),
-                            prefixIcon: const Icon(Icons.folder_outlined),
-                            suffixIcon: _dirCtrl.text.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear),
-                                    tooltip: 'Reset to default',
-                                    onPressed: () {
-                                      _dirCtrl.clear();
-                                      ref
-                                          .read(settingsProvider.notifier)
-                                          .setDownloadDirectory('');
-                                    },
-                                  )
-                                : null,
-                          ),
-                          onSubmitted: (_) => _saveDownloadDir(),
-                          onChanged: (_) => setState(() {}),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton.tonal(
-                        onPressed: _saveDownloadDir,
-                        child: const Text('Save'),
-                      ),
-                    ],
-                  ),
-                  if (_defaultDirHint.isNotEmpty &&
-                      _dirCtrl.text.isEmpty) ...[
-                    const SizedBox(height: 6),
+            // ── Downloads ─────────────────────────────────────────────────
+            _SectionHeader('Downloads'),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Download directory',
+                        style: theme.textTheme.bodyLarge),
+                    const SizedBox(height: 4),
                     Text(
-                      'Default: $_defaultDirHint',
+                      'Files are saved preserving the server\'s folder structure.',
                       style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant),
                     ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _dirCtrl,
+                            decoration: InputDecoration(
+                              border: const OutlineInputBorder(),
+                              hintText: _defaultDirHint.isNotEmpty
+                                  ? _defaultDirHint
+                                  : 'Loading default…',
+                              hintStyle: TextStyle(
+                                  color: theme.colorScheme.onSurfaceVariant),
+                              prefixIcon: const Icon(Icons.folder_outlined),
+                              suffixIcon: _dirCtrl.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear),
+                                      tooltip: 'Reset to default',
+                                      onPressed: () {
+                                        _dirCtrl.clear();
+                                        ref
+                                            .read(settingsProvider.notifier)
+                                            .setDownloadDirectory('');
+                                      },
+                                    )
+                                  : null,
+                            ),
+                            onSubmitted: (_) => _saveDownloadDir(),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.tonal(
+                          onPressed: _saveDownloadDir,
+                          child: const Text('Save'),
+                        ),
+                      ],
+                    ),
+                    if (_defaultDirHint.isNotEmpty &&
+                        _dirCtrl.text.isEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Default: $_defaultDirHint',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );

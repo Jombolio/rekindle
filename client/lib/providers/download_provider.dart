@@ -53,8 +53,11 @@ class DownloadNotifier extends FamilyNotifier<DownloadState, String> {
 
       // Force any open reader to switch from NetworkImage to local FileImage.
       ref.invalidate(extractedPagesProvider(mediaId));
-    } on DioException catch (e) {
-      if (e.type != DioExceptionType.cancel) rethrow;
+    } on DioException catch (_) {
+      // Cancel: state already idle (set by cancel()).
+      // Network error: state already set to failed by manager.
+    } catch (e) {
+      state = DownloadState(status: DownloadStatus.failed, error: e.toString());
     }
   }
 
@@ -67,6 +70,7 @@ class DownloadNotifier extends FamilyNotifier<DownloadState, String> {
   void cancel() {
     _cancelToken?.cancel('user');
     state = const DownloadState.idle();
+    _manager().then((m) => m.delete(arg));
   }
 
   Future<DownloadManager> _manager() async {

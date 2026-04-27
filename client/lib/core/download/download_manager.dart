@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
 import 'package:dio/dio.dart';
@@ -43,7 +44,8 @@ class DownloadManager {
     // Ensure parent directories exist
     await File(localPath).parent.create(recursive: true);
 
-    await _upsertDownload(mediaId, format, title, DownloadStatus.downloading, 0, null);
+    // Store path immediately so cancel/delete can clean it up even mid-download.
+    await _upsertDownload(mediaId, format, title, DownloadStatus.downloading, 0, localPath);
     onProgress(DownloadState(status: DownloadStatus.downloading));
 
     try {
@@ -60,7 +62,8 @@ class DownloadManager {
         },
       );
     } catch (e) {
-      await _upsertDownload(mediaId, format, title, DownloadStatus.failed, 0, null);
+      if (e is DioException && e.type == DioExceptionType.cancel) rethrow;
+      await _upsertDownload(mediaId, format, title, DownloadStatus.failed, 0, localPath);
       onProgress(DownloadState(
         status: DownloadStatus.failed,
         error: e.toString(),
@@ -94,32 +97,10 @@ class DownloadManager {
     final extractDir = await _extractedDir(mediaId);
 
     final manifest = File('${extractDir.path}/manifest.txt');
-    if (manifest.existsSync()) {
-      return extractDir.path;
+    if (!manifest.existsSync()) {
+      final extractDirPath = extractDir.path;
+      await Isolate.run(() => _extractArchive(localPath, extractDirPath));
     }
-
-    final bytes = File(localPath).readAsBytesSync();
-    final archive = ZipDecoder().decodeBytes(bytes);
-
-    final imageExtensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'};
-    final imageEntries = archive.files
-        .where((f) =>
-            !f.isFile == false &&
-            imageExtensions.contains(_ext(f.name).toLowerCase()))
-        .toList()
-      ..sort((a, b) => naturalCompare(a.name, b.name));
-
-    final pageNames = <String>[];
-    for (var i = 0; i < imageEntries.length; i++) {
-      final entry = imageEntries[i];
-      final ext = _ext(entry.name).toLowerCase();
-      final pageName = '${i.toString().padLeft(5, '0')}$ext';
-      final pageFile = File('${extractDir.path}/$pageName');
-      pageFile.writeAsBytesSync(entry.content as List<int>);
-      pageNames.add(pageName);
-    }
-
-    manifest.writeAsStringSync(pageNames.join('\n'));
 
     onProgress(DownloadState(
       status: DownloadStatus.complete,
@@ -129,6 +110,29 @@ class DownloadManager {
     ));
 
     return extractDir.path;
+  }
+
+  /// Runs in a background isolate — no instance state allowed.
+  static void _extractArchive(String archivePath, String extractDirPath) {
+    final bytes = File(archivePath).readAsBytesSync();
+    final archive = ZipDecoder().decodeBytes(bytes);
+
+    const imageExtensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'};
+    final imageEntries = archive.files
+        .where((f) => f.isFile && imageExtensions.contains(_ext(f.name).toLowerCase()))
+        .toList()
+      ..sort((a, b) => naturalCompare(a.name, b.name));
+
+    final pageNames = <String>[];
+    for (var i = 0; i < imageEntries.length; i++) {
+      final entry = imageEntries[i];
+      final ext = _ext(entry.name).toLowerCase();
+      final pageName = '${i.toString().padLeft(5, '0')}$ext';
+      File('$extractDirPath/$pageName').writeAsBytesSync(entry.content as List<int>);
+      pageNames.add(pageName);
+    }
+
+    File('$extractDirPath/manifest.txt').writeAsStringSync(pageNames.join('\n'));
   }
 
   /// Loads previously extracted page paths, or null if not extracted yet.
@@ -187,10 +191,18 @@ class DownloadManager {
   }
 
   Future<void> delete(String mediaId) async {
-    final path = await localPath(mediaId);
-    if (path != null) {
-      final file = File(path);
-      if (file.existsSync()) file.deleteSync();
+    final rows = await _db.query(
+      'downloads',
+      columns: ['local_path'],
+      where: 'media_id = ?',
+      whereArgs: [mediaId],
+    );
+    if (rows.isNotEmpty) {
+      final path = rows.first['local_path'] as String?;
+      if (path != null) {
+        final file = File(path);
+        if (file.existsSync()) file.deleteSync();
+      }
     }
 
     final extractDir = await _extractedDir(mediaId);

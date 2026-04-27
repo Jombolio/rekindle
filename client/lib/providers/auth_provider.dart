@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/api/api_client.dart';
 import '../core/api/auth_api.dart';
 import '../core/models/server_source.dart';
+import '../core/storage/prefs.dart';
 import 'sources_provider.dart';
 
 // ---------------------------------------------------------------------------
@@ -40,15 +41,43 @@ final sourceAuthProvider =
   try {
     final client = ApiClient(baseUrl: source.baseUrl, token: source.token);
     final data = await AuthApi(client).me();
+
+    final username = data['username'] as String;
+    final permLevel = data['permissionLevel'] as int? ?? 2;
+
+    // Persist for offline fallback (Android process-death resume).
+    await Prefs.instance.setCachedAuth(sourceId, username, permLevel);
+
+    // Only rotate the token when the server actually issued a new one —
+    // writing the same token re-invalidates this provider and creates a loop.
     final freshToken = data['token'] as String?;
-    if (freshToken != null) {
+    if (freshToken != null && freshToken != source.token) {
       await ref.read(sourcesProvider.notifier).setToken(sourceId, freshToken);
     }
-    return AuthAuthenticated(
-      username: data['username'] as String,
-      permissionLevel: data['permissionLevel'] as int? ?? 2,
-    );
+
+    return AuthAuthenticated(username: username, permissionLevel: permLevel);
+  } on DioException catch (e) {
+    if (e.response?.statusCode == 401) {
+      // Definitive auth failure — clear cache and show sign-in prompt.
+      await Prefs.instance.clearCachedAuth(sourceId);
+      return const AuthUnauthenticated();
+    }
+    // Transient network error — fall back to cached credentials so the user
+    // isn't signed out just because the server was briefly unreachable.
+    final cached = Prefs.instance.cachedAuth(sourceId);
+    if (cached != null) {
+      return AuthAuthenticated(
+          username: cached.username,
+          permissionLevel: cached.permissionLevel);
+    }
+    return const AuthUnauthenticated();
   } catch (_) {
+    final cached = Prefs.instance.cachedAuth(sourceId);
+    if (cached != null) {
+      return AuthAuthenticated(
+          username: cached.username,
+          permissionLevel: cached.permissionLevel);
+    }
     return const AuthUnauthenticated();
   }
 });
@@ -119,6 +148,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
             : null) ??
         sources.firstOrNull;
     if (source != null) {
+      await Prefs.instance.clearCachedAuth(source.id);
       await ref.read(sourcesProvider.notifier).clearToken(source.id);
     }
     state = const AsyncData(AuthUnauthenticated());

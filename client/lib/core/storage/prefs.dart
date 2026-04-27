@@ -88,4 +88,23 @@ class Prefs {
   double get doublePageGap => _prefs.getDouble('double_page_gap') ?? 0.0;
   Future<void> setDoublePageGap(double gap) =>
       _prefs.setDouble('double_page_gap', gap);
+
+  // Cached auth — used as a fallback when the server is unreachable on restart.
+  ({String username, int permissionLevel})? cachedAuth(String sourceId) {
+    final username = _prefs.getString('cached_username_$sourceId');
+    if (username == null) return null;
+    final level = _prefs.getInt('cached_permission_$sourceId') ?? 2;
+    return (username: username, permissionLevel: level);
+  }
+
+  Future<void> setCachedAuth(
+      String sourceId, String username, int permissionLevel) async {
+    await _prefs.setString('cached_username_$sourceId', username);
+    await _prefs.setInt('cached_permission_$sourceId', permissionLevel);
+  }
+
+  Future<void> clearCachedAuth(String sourceId) async {
+    await _prefs.remove('cached_username_$sourceId');
+    await _prefs.remove('cached_permission_$sourceId');
+  }
 }
