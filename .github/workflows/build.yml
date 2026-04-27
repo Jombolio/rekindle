@@ -29,16 +29,19 @@ jobs:
         working-directory: client
         run: flutter build linux --release --obfuscate --split-debug-info=symbols/
 
-      - name: Package
-        run: |
-          cp client/linux/rekindle.desktop client/build/linux/x64/release/bundle/data/
-          cd client/build/linux/x64/release
-          zip -r ../../../../../Rekindle-linux-x64.zip bundle/
+      - name: Copy desktop entry into bundle
+        run: cp client/linux/rekindle.desktop client/build/linux/x64/release/bundle/data/
 
       - uses: actions/upload-artifact@v4
         with:
           name: Rekindle-linux-x64
-          path: Rekindle-linux-x64.zip
+          path: client/build/linux/x64/release/bundle/
+
+      - name: Package for release
+        if: github.event_name == 'release'
+        run: |
+          cd client/build/linux/x64/release/bundle
+          zip -r ../../../../../../Rekindle-linux-x64.zip .
 
       - name: Upload to release
         if: github.event_name == 'release'
@@ -60,21 +63,25 @@ jobs:
         working-directory: client
         run: flutter build windows --release --obfuscate --split-debug-info=symbols/
 
-      - name: Package
-        run: |
-          cd client/build/windows/x64/runner
-          Compress-Archive -Path Release/* -DestinationPath ../../../../../Rekindle-windows-x64.zip
+      - name: Build installer
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" client\windows\installer.iss'
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Rekindle-windows-x64
-          path: Rekindle-windows-x64.zip
+          name: RekindleSetup
+          path: client/windows/output/RekindleSetup.exe
+
+      - name: Package portable zip for release
+        if: github.event_name == 'release'
+        run: Compress-Archive -Path client/build/windows/x64/runner/Release/* -DestinationPath Rekindle-windows-x64.zip
 
       - name: Upload to release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: Rekindle-windows-x64.zip
+          files: |
+            client/windows/output/RekindleSetup.exe
+            Rekindle-windows-x64.zip
 
   build-android:
     name: Client — Android
@@ -101,19 +108,16 @@ jobs:
         working-directory: android
         run: ./gradlew assembleRelease
 
-      - name: Rename APK
-        run: mv android/app/build/outputs/apk/release/app-release.apk Rekindle.apk
-
       - uses: actions/upload-artifact@v4
         with:
           name: Rekindle-android
-          path: Rekindle.apk
+          path: android/app/build/outputs/apk/release/app-release.apk
 
       - name: Upload to release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: Rekindle.apk
+          files: android/app/build/outputs/apk/release/app-release.apk
 
   build-server-linux:
     name: Server — Linux
@@ -132,13 +136,16 @@ jobs:
             -c Release -r linux-x64 --self-contained \
             -o ../RekindleServer-linux
 
-      - name: Package
-        run: zip -r RekindleServer-linux-x64.zip RekindleServer-linux/
-
       - uses: actions/upload-artifact@v4
         with:
           name: RekindleServer-linux-x64
-          path: RekindleServer-linux-x64.zip
+          path: RekindleServer-linux/
+
+      - name: Package for release
+        if: github.event_name == 'release'
+        run: |
+          cd RekindleServer-linux
+          zip -r ../RekindleServer-linux-x64.zip .
 
       - name: Upload to release
         if: github.event_name == 'release'
@@ -163,13 +170,16 @@ jobs:
             -c Release -r win-x64 --self-contained \
             -o ../RekindleServer-windows
 
-      - name: Package
-        run: zip -r RekindleServer-windows-x64.zip RekindleServer-windows/
-
       - uses: actions/upload-artifact@v4
         with:
           name: RekindleServer-windows-x64
-          path: RekindleServer-windows-x64.zip
+          path: RekindleServer-windows/
+
+      - name: Package for release
+        if: github.event_name == 'release'
+        run: |
+          cd RekindleServer-windows
+          zip -r ../RekindleServer-windows-x64.zip .
 
       - name: Upload to release
         if: github.event_name == 'release'
