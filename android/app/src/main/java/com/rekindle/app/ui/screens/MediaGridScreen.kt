@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.rekindle.app.domain.model.Media
 import com.rekindle.app.ui.components.MediaCard
+import com.rekindle.app.ui.theme.WindowWidthClass
+import com.rekindle.app.ui.theme.currentWindowWidthClass
 import com.rekindle.app.ui.viewmodel.MediaGridViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,6 +43,11 @@ fun MediaGridScreen(
     val state by vm.state.collectAsState()
     val downloadStates by vm.downloadStates.collectAsState()
     val canDownload by vm.canDownload.collectAsState()
+    val gridCellSize = when (currentWindowWidthClass()) {
+        WindowWidthClass.Expanded -> 180.dp
+        WindowWidthClass.Medium -> 160.dp
+        WindowWidthClass.Compact -> 140.dp
+    }
 
     Scaffold(
         topBar = {
@@ -66,7 +73,7 @@ fun MediaGridScreen(
             ) { Text(state.error!!) }
 
             else -> LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 140.dp),
+                columns = GridCells.Adaptive(minSize = gridCellSize),
                 modifier = Modifier.fillMaxSize().padding(padding).padding(8.dp),
             ) {
                 items(state.items, key = { it.id }) { media ->

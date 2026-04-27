@@ -1,6 +1,7 @@
 package com.rekindle.app.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -62,116 +64,121 @@ fun LoginScreen(
     }
 
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 32.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = if (state.isSetupMode) "Create Admin Account" else "Rekindle",
-                style = MaterialTheme.typography.headlineLarge,
-            )
-            Spacer(Modifier.height(32.dp))
-
-            OutlinedTextField(
-                value = state.serverUrl,
-                onValueChange = vm::onServerUrlChange,
-                label = { Text("Server URL") },
-                placeholder = { Text("http(s)://192.168.1.x:5000") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Uri,
-                    imeAction = ImeAction.Next,
-                ),
-                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 480.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(
-                    Icons.Default.Lock,
-                    contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = MaterialTheme.colorScheme.primary,
+                Text(
+                    text = if (state.isSetupMode) "Create Admin Account" else "Rekindle",
+                    style = MaterialTheme.typography.headlineLarge,
                 )
-                TextButton(
-                    onClick = { showHttpsDialog = true },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp),
-                ) {
-                    Text(
-                        "HTTPS supported — how to set it up",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-            Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(32.dp))
 
-            OutlinedTextField(
-                value = state.username,
-                onValueChange = vm::onUsernameChange,
-                label = { Text("Username") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(12.dp))
-
-            OutlinedTextField(
-                value = state.password,
-                onValueChange = vm::onPasswordChange,
-                label = { Text("Password") },
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Password,
-                    imeAction = if (state.isSetupMode) ImeAction.Next else ImeAction.Done,
-                ),
-                keyboardActions = KeyboardActions(
-                    onNext = { focusManager.moveFocus(FocusDirection.Down) },
-                    onDone = { if (!state.isSetupMode) vm.submit() },
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            if (state.isSetupMode) {
-                Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
-                    value = state.setupToken,
-                    onValueChange = vm::onSetupTokenChange,
-                    label = { Text("Setup token") },
-                    placeholder = { Text("Printed to server log on first boot") },
-                    leadingIcon = { Icon(Icons.Default.VpnKey, null) },
+                    value = state.serverUrl,
+                    onValueChange = vm::onServerUrlChange,
+                    label = { Text("Server URL") },
+                    placeholder = { Text("http(s)://192.168.1.x:5000") },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { vm.submit() }),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Uri,
+                        imeAction = ImeAction.Next,
+                    ),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                     modifier = Modifier.fillMaxWidth(),
                 )
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            if (state.loading) {
-                CircularProgressIndicator()
-            } else {
-                Button(onClick = vm::submit, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (state.isSetupMode) "Create Account" else "Sign In")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Default.Lock,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    TextButton(
+                        onClick = { showHttpsDialog = true },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp),
+                    ) {
+                        Text(
+                            "HTTPS supported — how to set it up",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                 }
-            }
+                Spacer(Modifier.height(4.dp))
 
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = vm::toggleSetupMode) {
-                    Text(if (state.isSetupMode) "Already have an account?" else "First time setup")
+                OutlinedTextField(
+                    value = state.username,
+                    onValueChange = vm::onUsernameChange,
+                    label = { Text("Username") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = state.password,
+                    onValueChange = vm::onPasswordChange,
+                    label = { Text("Password") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = if (state.isSetupMode) ImeAction.Next else ImeAction.Done,
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { focusManager.moveFocus(FocusDirection.Down) },
+                        onDone = { if (!state.isSetupMode) vm.submit() },
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                if (state.isSetupMode) {
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = state.setupToken,
+                        onValueChange = vm::onSetupTokenChange,
+                        label = { Text("Setup token") },
+                        placeholder = { Text("Printed to server log on first boot") },
+                        leadingIcon = { Icon(Icons.Default.VpnKey, null) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { vm.submit() }),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                Spacer(Modifier.height(24.dp))
+
+                if (state.loading) {
+                    CircularProgressIndicator()
+                } else {
+                    Button(onClick = vm::submit, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (state.isSetupMode) "Create Account" else "Sign In")
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = vm::toggleSetupMode) {
+                        Text(if (state.isSetupMode) "Already have an account?" else "First time setup")
+                    }
                 }
             }
         }

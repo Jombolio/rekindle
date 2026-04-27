@@ -181,7 +181,7 @@ private fun wrapHtml(html: String, state: EpubReaderState): String {
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 body { background:$bg; color:$fg; font-size:${fs}px; line-height:1.6;
-       margin:16px; font-family:serif; }
+       padding:16px; max-width:720px; margin:0 auto; font-family:serif; }
 img { max-width:100%; }
 </style></head><body>
 ${extractBody(html)}
