@@ -3,7 +3,77 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/download/download_state.dart';
 import '../../core/models/media.dart';
+import '../../core/models/reading_progress.dart';
 import '../../providers/download_provider.dart';
+
+/// Download button for folder/series items — downloads all contained archives
+/// sequentially, including nested subdirectory contents.
+class FolderDownloadButton extends ConsumerWidget {
+  final String folderId;
+
+  const FolderDownloadButton({super.key, required this.folderId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(folderDownloadProvider(folderId));
+    final iconColor = Theme.of(context).brightness == Brightness.dark
+        ? Colors.white
+        : Colors.black;
+
+    return switch (state.status) {
+      FolderDownloadStatus.idle || FolderDownloadStatus.failed => IconButton(
+          icon: Icon(
+            state.status == FolderDownloadStatus.failed
+                ? Icons.error_outline
+                : Icons.download_outlined,
+            color: state.status == FolderDownloadStatus.failed
+                ? Colors.red
+                : iconColor,
+          ),
+          tooltip: state.status == FolderDownloadStatus.failed
+              ? 'Download failed — retry'
+              : 'Download all for offline',
+          onPressed: () => ref
+              .read(folderDownloadProvider(folderId).notifier)
+              .downloadFolder(folderId),
+        ),
+
+      FolderDownloadStatus.fetching => const SizedBox(
+          width: 40,
+          height: 40,
+          child: Padding(
+            padding: EdgeInsets.all(10),
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+
+      FolderDownloadStatus.downloading => SizedBox(
+          width: 40,
+          height: 40,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              CircularProgressIndicator(
+                value: state.progress > 0 ? state.progress : null,
+                strokeWidth: 2,
+              ),
+              GestureDetector(
+                onTap: () =>
+                    ref.read(folderDownloadProvider(folderId).notifier).cancel(),
+                child: const Icon(Icons.close, size: 14),
+              ),
+            ],
+          ),
+        ),
+
+      FolderDownloadStatus.complete => const IconButton(
+          icon: Icon(Icons.download_done, color: Colors.green),
+          tooltip: 'All chapters downloaded',
+          onPressed: null,
+        ),
+    };
+  }
+}
 
 class DownloadButton extends ConsumerWidget {
   final Media media;
@@ -128,6 +198,41 @@ class FolderBadge extends StatelessWidget {
             Text('Series',
                 style: TextStyle(color: Colors.white, fontSize: 10)),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Progress badge overlaid on a cover — ✓ for completed, … for in-progress.
+/// Returns an empty box when there is no progress or the item was never opened.
+class ReadProgressBadge extends StatelessWidget {
+  final ReadingProgress? progress;
+  const ReadProgressBadge({super.key, required this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    final p = progress;
+    if (p == null) return const SizedBox.shrink();
+
+    final completed = p.isCompleted;
+    final inProgress = !completed && p.currentPage > 0;
+    if (!completed && !inProgress) return const SizedBox.shrink();
+
+    return Positioned(
+      top: 4,
+      left: 4,
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: (completed ? Colors.green : Colors.orange)
+              .withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Icon(
+          completed ? Icons.check : Icons.more_horiz,
+          size: 14,
+          color: Colors.white,
         ),
       ),
     );

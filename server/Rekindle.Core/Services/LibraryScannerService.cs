@@ -8,6 +8,7 @@ namespace Rekindle.Core.Services;
 public class LibraryScannerService(
     MediaRepository mediaRepository,
     Channel<CoverJob> coverQueue,
+    ScanProgressTracker progressTracker,
     ILogger<LibraryScannerService> logger)
 {
     public static readonly HashSet<string> SupportedExtensions =
@@ -20,6 +21,9 @@ public class LibraryScannerService(
         if (!Directory.Exists(library.RootPath))
         {
             logger.LogWarning("Library path does not exist: {Path}", library.RootPath);
+            // Still create a progress entry so the client sees a fast "complete" instead of spinning.
+            var empty = progressTracker.Begin(library.Id, 0);
+            empty.Complete();
             return;
         }
 
@@ -29,6 +33,8 @@ public class LibraryScannerService(
             .Select(n => n.Path)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        var progress = progressTracker.Begin(library.Id, expected.Count);
+
         // Get all existing DB entries for this library
         var existing = (await mediaRepository.GetAllPathsForLibraryAsync(library.Id)).ToList();
 
@@ -36,6 +42,7 @@ public class LibraryScannerService(
         foreach (var stale in existing.Where(e => !expectedPaths.Contains(e.FilePath)))
         {
             await mediaRepository.DeleteByFilePathAsync(stale.FilePath);
+            progress.RecordRemoved();
             logger.LogInformation("Removed stale entry: {Path}", stale.FilePath);
         }
 
@@ -45,10 +52,6 @@ public class LibraryScannerService(
             e => e.FilePath, e => e, StringComparer.OrdinalIgnoreCase);
 
         // ── Additions + re-parenting ─────────────────────────────────────────
-        // Walk the expected tree in DFS order (parents before children).
-        // For each node we either:
-        //   a) insert it if it doesn't exist yet, or
-        //   b) re-parent it if the directory hierarchy changed since the last scan.
         var pathToId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var node in expected)
@@ -59,7 +62,6 @@ public class LibraryScannerService(
 
             if (existingByPath.TryGetValue(node.Path, out var entry))
             {
-                // Entry already in DB — re-parent if needed.
                 if (entry.ParentId != expectedParentId)
                 {
                     await mediaRepository.UpdateParentAsync(entry.Id, expectedParentId);
@@ -69,20 +71,22 @@ public class LibraryScannerService(
             }
             else
             {
-                // New entry.
                 if (node.IsDirectory)
                 {
-                    var newId = await AddFolderEntryAsync(library, node.Path, expectedParentId);
+                    var newId = await AddFolderEntryAsync(library, node.Path, expectedParentId, progress);
                     if (newId is not null)
                         pathToId[node.Path] = newId;
                 }
                 else
                 {
-                    await AddArchiveAsync(library, node.Path, expectedParentId);
+                    await AddArchiveAsync(library, node.Path, expectedParentId, progress);
                 }
             }
+
+            progress.RecordProcessed();
         }
 
+        progress.Complete();
         logger.LogInformation("Scan complete for library '{Name}'", library.Name);
     }
 
@@ -95,12 +99,8 @@ public class LibraryScannerService(
         return nodes;
     }
 
-    /// Recursively collects all nodes that should appear in the DB.
-    /// <paramref name="parentPath"/> is null for items directly under the library root;
-    /// otherwise it is the path of the enclosing folder node.
     private void CollectNodes(string dir, string? parentPath, List<TreeNode> nodes)
     {
-        // Archive files directly inside this directory
         try
         {
             foreach (var file in Directory
@@ -115,7 +115,6 @@ public class LibraryScannerService(
             logger.LogWarning(ex, "Could not enumerate files in: {Dir}", dir);
         }
 
-        // Subdirectories that contain at least one supported file (recursively)
         IEnumerable<string> subDirs;
         try
         {
@@ -134,11 +133,7 @@ public class LibraryScannerService(
 
         foreach (var subDir in subDirs)
         {
-            // The subDir node itself: its parent is the enclosing folder (parentPath),
-            // which is null when subDir is a direct child of the library root.
             nodes.Add(new TreeNode(subDir, IsDirectory: true, ParentPath: parentPath));
-
-            // Items inside subDir have subDir as their parent
             CollectNodes(subDir, parentPath: subDir, nodes);
         }
     }
@@ -146,11 +141,10 @@ public class LibraryScannerService(
     // ── DB entry creators ────────────────────────────────────────────────────
 
     private async Task<string?> AddFolderEntryAsync(
-        Library library, string dirPath, string? parentId)
+        Library library, string dirPath, string? parentId, ScanProgress progress)
     {
         try
         {
-            // Use all descendant files to determine dominant format
             var sampleFiles = Directory
                 .EnumerateFiles(dirPath, "*.*", SearchOption.AllDirectories)
                 .Where(IsSupported)
@@ -182,7 +176,10 @@ public class LibraryScannerService(
             };
 
             await mediaRepository.InsertAsync(folder);
-            await coverQueue.Writer.WriteAsync(new CoverJob(folderId, dirPath));
+            await coverQueue.Writer.WriteAsync(new CoverJob(folderId, dirPath, library.Id));
+
+            progress.RecordFolder();
+            progress.RecordCoverQueued();
 
             logger.LogDebug("Added folder: {Title} (parentId={ParentId})", folder.Title, parentId);
             return folderId;
@@ -194,7 +191,8 @@ public class LibraryScannerService(
         }
     }
 
-    private async Task AddArchiveAsync(Library library, string filePath, string? parentId)
+    private async Task AddArchiveAsync(
+        Library library, string filePath, string? parentId, ScanProgress progress)
     {
         try
         {
@@ -217,7 +215,10 @@ public class LibraryScannerService(
             };
 
             await mediaRepository.InsertAsync(media);
-            await coverQueue.Writer.WriteAsync(new CoverJob(media.Id, filePath));
+            await coverQueue.Writer.WriteAsync(new CoverJob(media.Id, filePath, library.Id));
+
+            progress.RecordAdded();
+            progress.RecordCoverQueued();
 
             logger.LogDebug("Added archive: {Title} ({Format})", media.Title, format);
         }

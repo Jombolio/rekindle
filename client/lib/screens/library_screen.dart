@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/api/api_client.dart';
+import '../core/api/libraries_api.dart';
 import '../core/models/library.dart';
 import '../core/models/server_source.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/sources_provider.dart';
 import 'widgets/error_view.dart';
+import 'widgets/scan_progress_sheet.dart';
 
 class LibraryScreen extends ConsumerWidget {
   const LibraryScreen({super.key});
@@ -353,11 +356,30 @@ class _LibraryList extends StatelessWidget {
             _LibraryDialog(ref: ref, sourceId: sourceId, existing: lib),
       );
     } else if (action == 'scan') {
+      // Build a source-specific API client for polling scan progress.
+      final sources = ref.read(sourcesProvider);
+      final source = sources.where((s) => s.id == sourceId).firstOrNull;
+      if (source == null) return;
+      final api = LibrariesApi(ApiClient(baseUrl: source.baseUrl, token: source.token));
+
       await notifier.scan(lib.id);
+
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Scanning "${lib.name}"…')),
+        await showModalBottomSheet<void>(
+          context: context,
+          isDismissible: false,
+          enableDrag: false,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          builder: (_) => ScanProgressSheet(
+            libraryId: lib.id,
+            libraryName: lib.name,
+            api: api,
+          ),
         );
+        // Refresh the library list so new/removed items are reflected.
+        await notifier.refresh();
       }
     } else if (action == 'delete') {
       final confirm = await showDialog<bool>(

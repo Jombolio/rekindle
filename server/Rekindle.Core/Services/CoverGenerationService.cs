@@ -12,6 +12,7 @@ public sealed class CoverGenerationService(
     Channel<CoverJob> queue,
     ArchiveService archiveService,
     MediaRepository mediaRepository,
+    ScanProgressTracker progressTracker,
     IOptions<RekindleOptions> options,
     ILogger<CoverGenerationService> logger) : BackgroundService
 {
@@ -26,10 +27,13 @@ public sealed class CoverGenerationService(
             try
             {
                 await GenerateCoverAsync(job);
+                progressTracker.Get(job.LibraryId)?.RecordCoverGenerated();
             }
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "Cover generation failed for media {MediaId}", job.MediaId);
+                // Still count as processed so the counter doesn't stall at the last item.
+                progressTracker.Get(job.LibraryId)?.RecordCoverGenerated();
             }
         }
     }
@@ -62,4 +66,4 @@ public sealed class CoverGenerationService(
     }
 }
 
-public record CoverJob(string MediaId, string FilePath);
+public record CoverJob(string MediaId, string FilePath, string LibraryId);

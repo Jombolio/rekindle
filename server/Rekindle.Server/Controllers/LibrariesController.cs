@@ -12,7 +12,8 @@ namespace Rekindle.Server.Controllers;
 [Authorize]
 public class LibrariesController(
     LibraryRepository libraryRepository,
-    LibraryScannerService scanner) : ControllerBase
+    LibraryScannerService scanner,
+    ScanProgressTracker progressTracker) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll()
@@ -103,6 +104,42 @@ public class LibrariesController(
         _ = Task.Run(() => scanner.ScanAsync(library));
 
         return Accepted(new { message = "Scan started." });
+    }
+
+    [HttpGet("{id}/scan/progress")]
+    public async Task<IActionResult> GetScanProgress(string id)
+    {
+        var library = await libraryRepository.GetByIdAsync(id);
+        if (library is null)
+            return NotFound();
+
+        var p = progressTracker.Get(id);
+        if (p is null)
+            return Ok(new
+            {
+                phase = "idle",
+                filesTotal = 0,
+                filesProcessed = 0,
+                added = 0,
+                removed = 0,
+                folders = 0,
+                coversQueued = 0,
+                coversGenerated = 0,
+            });
+
+        return Ok(new
+        {
+            phase           = p.Phase,
+            filesTotal      = p.FilesTotal,
+            filesProcessed  = p.FilesProcessed,
+            added           = p.Added,
+            removed         = p.Removed,
+            folders         = p.Folders,
+            coversQueued    = p.CoversQueued,
+            coversGenerated = p.CoversGenerated,
+            startedAt       = p.StartedAt,
+            completedAt     = p.CompletedAt,
+        });
     }
 
     [HttpDelete("{id}")]

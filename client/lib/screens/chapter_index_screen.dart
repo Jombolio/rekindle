@@ -7,6 +7,7 @@ import '../core/models/media.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chapter_provider.dart';
 import '../providers/download_provider.dart';
+import '../providers/reader_provider.dart';
 import 'widgets/cover_image.dart';
 import 'widgets/download_button.dart';
 import 'widgets/error_view.dart';
@@ -41,6 +42,7 @@ class ChapterIndexScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text(folderTitle),
         actions: [
+          if (canDownload) FolderDownloadButton(folderId: folderId),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
@@ -97,6 +99,7 @@ class ChapterIndexScreen extends ConsumerWidget {
                     coverUrl: client.coverUrl(folder.id),
                     authHeaders: client.authHeaders,
                     libraryType: libraryType,
+                    canDownload: canDownload,
                   );
                 }
                 final archiveIndex = i - subfolders.length - 1;
@@ -155,11 +158,13 @@ class _SubfolderTile extends StatelessWidget {
   final String coverUrl;
   final Map<String, String> authHeaders;
   final String? libraryType;
+  final bool canDownload;
 
   const _SubfolderTile({
     required this.folder,
     required this.coverUrl,
     required this.authHeaders,
+    required this.canDownload,
     this.libraryType,
   });
 
@@ -208,7 +213,13 @@ class _SubfolderTile extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.bodyMedium,
         ),
-        trailing: const Icon(Icons.chevron_right),
+        trailing: canDownload
+            ? SizedBox(
+                width: 40,
+                height: 40,
+                child: FolderDownloadButton(folderId: folder.id),
+              )
+            : const Icon(Icons.chevron_right),
         onTap: () => context.push(
           '/series/${folder.id}',
           extra: <String, String?>{
@@ -253,7 +264,18 @@ class _ChapterTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final downloadState = ref.watch(downloadProvider(chapter.id));
     final isOffline = downloadState.status == DownloadStatus.complete;
+    final progress =
+        ref.watch(localProgressProvider(chapter.id)).valueOrNull;
     final theme = Theme.of(context);
+
+    // Subtitle: show progress status first, then offline indicator.
+    final completed = progress?.isCompleted ?? false;
+    final inProgress = !(progress?.isCompleted ?? true) && (progress?.currentPage ?? 0) > 0;
+    final subtitleParts = [
+      if (completed) 'Read'
+      else if (inProgress) 'In progress',
+      if (isOffline) 'Downloaded',
+    ];
 
     return SizedBox(
       height: _kTileHeight,
@@ -288,18 +310,30 @@ class _ChapterTile extends ConsumerWidget {
                       size: 10, color: Colors.white),
                 ),
               ),
+            ReadProgressBadge(progress: progress),
           ],
         ),
         title: Text(
           chapter.title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.bodyMedium,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: completed
+                ? theme.colorScheme.onSurface.withValues(alpha: 0.5)
+                : null,
+          ),
         ),
-        subtitle: isOffline
-            ? Text('Downloaded',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: Colors.green.shade700))
+        subtitle: subtitleParts.isNotEmpty
+            ? Text(
+                subtitleParts.join(' · '),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: completed
+                      ? Colors.green.shade600
+                      : inProgress
+                          ? Colors.orange.shade700
+                          : theme.colorScheme.onSurfaceVariant,
+                ),
+              )
             : null,
         trailing: canDownload
             ? SizedBox(

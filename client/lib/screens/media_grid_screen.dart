@@ -7,6 +7,7 @@ import '../core/models/media.dart';
 import '../providers/auth_provider.dart';
 import '../providers/download_provider.dart';
 import '../providers/media_provider.dart';
+import '../providers/reader_provider.dart';
 import 'widgets/cover_image.dart';
 import 'widgets/download_button.dart';
 import 'widgets/error_view.dart';
@@ -134,6 +135,8 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
                       ref.watch(downloadProvider(item.id));
                   final isOffline =
                       downloadState.status == DownloadStatus.complete;
+                  final progress =
+                      ref.watch(localProgressProvider(item.id)).valueOrNull;
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -152,6 +155,7 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
                             ),
                             if (isOffline) const OfflineBadge(),
                             if (item.isFolder) const FolderBadge(),
+                            ReadProgressBadge(progress: progress),
                             if (canDownload)
                               Positioned(
                                 bottom: 4,
@@ -164,7 +168,9 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
                                   child: SizedBox(
                                     width: 32,
                                     height: 32,
-                                    child: DownloadButton(media: item),
+                                    child: item.isFolder
+                                        ? FolderDownloadButton(folderId: item.id)
+                                        : DownloadButton(media: item),
                                   ),
                                 ),
                               ),

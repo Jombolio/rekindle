@@ -67,6 +67,7 @@ builder.Services.AddScoped<MediaRepository>();
 builder.Services.AddScoped<ProgressRepository>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddSingleton<SetupTokenService>();
+builder.Services.AddSingleton<ScanProgressTracker>();
 builder.Services.AddScoped<LibraryScannerService>();
 builder.Services.AddSingleton<ArchiveService>();
 

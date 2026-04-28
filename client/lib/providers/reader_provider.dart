@@ -273,6 +273,31 @@ final doublePageGapProvider = StateProvider<double>(
   (ref) => Prefs.instance.doublePageGap,
 );
 
+// ---------------------------------------------------------------------------
+// Local progress badge data — fast DB-only read for grid/list indicators
+// ---------------------------------------------------------------------------
+
+/// Returns local reading progress for [mediaId], or null if never opened.
+/// Uses autoDispose so the value is always fresh when the screen re-enters.
+final localProgressProvider =
+    FutureProvider.autoDispose.family<ReadingProgress?, String>(
+        (ref, mediaId) async {
+  final db = ref.read(localDbProvider);
+  final rows = await db.query(
+    'progress_queue',
+    columns: ['current_page', 'is_completed'],
+    where: 'media_id = ?',
+    whereArgs: [mediaId],
+  );
+  if (rows.isEmpty) return null;
+  return ReadingProgress(
+    userId: '',
+    mediaId: mediaId,
+    currentPage: rows.first['current_page'] as int,
+    isCompleted: (rows.first['is_completed'] as int) == 1,
+  );
+});
+
 /// Flushes all unsynced local progress to the server.
 /// Call this when the app comes back online.
 Future<void> syncPendingProgress(WidgetRef ref) async {

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../core/api/api_client.dart';
 import '../core/api/auth_api.dart';
 import '../core/models/server_source.dart';
+import '../core/storage/prefs.dart';
 import '../providers/auth_provider.dart';
 import '../providers/sources_provider.dart';
 
@@ -109,6 +110,10 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
       }
 
       final withToken = source.copyWith(token: result.token);
+      // Cache before adding the source so sourceAuthProvider finds it
+      // immediately on the first watch — no network call required on restart.
+      await Prefs.instance.setCachedAuth(
+          withToken.id, result.username, result.permissionLevel);
       await ref.read(sourcesProvider.notifier).add(withToken);
       ref.read(activeSourceIdProvider.notifier).state = withToken.id;
 

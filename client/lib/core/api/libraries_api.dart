@@ -1,4 +1,5 @@
 import '../models/library.dart';
+import '../models/scan_progress.dart';
 import 'api_client.dart';
 
 class LibrariesApi {
@@ -45,6 +46,11 @@ class LibrariesApi {
 
   Future<void> scan(String libraryId) =>
       _client.dio.post('api/libraries/$libraryId/scan');
+
+  Future<ScanProgress> getScanProgress(String libraryId) async {
+    final resp = await _client.dio.get('api/libraries/$libraryId/scan/progress');
+    return ScanProgress.fromJson(resp.data as Map<String, dynamic>);
+  }
 
   Future<void> delete(String libraryId) =>
       _client.dio.delete('api/libraries/$libraryId');
