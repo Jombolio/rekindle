@@ -1,6 +1,12 @@
 package com.rekindle.app.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -15,6 +21,7 @@ import com.rekindle.app.ui.screens.LoginScreen
 import com.rekindle.app.ui.screens.MediaGridScreen
 import com.rekindle.app.ui.screens.ReaderScreen
 import com.rekindle.app.ui.screens.SettingsScreen
+import com.rekindle.app.ui.viewmodel.MainViewModel
 
 sealed class Screen(val route: String) {
     data object Login : Screen("login")
@@ -50,10 +57,19 @@ fun Media.openRoute(libraryType: String? = null): String = when {
 }
 
 @Composable
-fun RekindleApp() {
+fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
+    val startDestination by vm.startDestination.collectAsState()
+
+    // Hold an invisible placeholder while DataStore resolves the start route
+    // (typically < 100 ms — imperceptible to the user).
+    if (startDestination == null) {
+        Box(modifier = Modifier.fillMaxSize())
+        return
+    }
+
     val navController = rememberNavController()
 
-    NavHost(navController = navController, startDestination = Screen.Login.route) {
+    NavHost(navController = navController, startDestination = startDestination!!) {
 
         composable(Screen.Login.route) {
             LoginScreen(onLoginSuccess = {

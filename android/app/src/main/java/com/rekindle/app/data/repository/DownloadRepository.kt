@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -178,7 +179,7 @@ class DownloadRepository @Inject constructor(
                 toDownload.forEach { archive ->
                     launch {
                         semaphore.withPermit {
-                            if (!isActive) return@withPermit
+                            if (!coroutineContext.isActive) return@withPermit
                             runCatching {
                                 downloadManager.download(
                                     mediaId = archive.id,
