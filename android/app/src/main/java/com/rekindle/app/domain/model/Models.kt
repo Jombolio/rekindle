@@ -25,6 +25,9 @@ data class Media(
     val parentId: String?,
     val pageCount: Int?,
     val libraryId: String,
+    // Server-assigned cover cache path; changes when the archive is replaced,
+    // used as the Coil disk-cache key to bypass stale entries.
+    val coverCachePath: String? = null,
 ) {
     val displayTitle: String get() = title.ifBlank { sortTitle }
     val isFolder: Boolean get() = mediaType == "folder"

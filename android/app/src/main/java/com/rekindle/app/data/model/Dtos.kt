@@ -23,6 +23,8 @@ data class MediaDto(
     @SerializedName("parentId") val parentId: String? = null,
     val pageCount: Int? = null,
     val libraryId: String,
+    // Server-assigned cover cache path; changes when the archive is replaced.
+    val coverCachePath: String? = null,
 )
 
 data class ReadingProgressDto(
@@ -57,7 +59,8 @@ data class UpdateLibraryRequest(val name: String, val rootPath: String, val type
 // Mappers
 fun LibraryDto.toDomain() = Library(id, name, path, type)
 fun MediaDto.toDomain() = Media(
-    id, title, sortTitle ?: title, format, mediaType, relativePath, parentId, pageCount, libraryId
+    id, title, sortTitle ?: title, format, mediaType, relativePath, parentId, pageCount,
+    libraryId, coverCachePath,
 )
 fun ReadingProgressDto.toDomain() = ReadingProgress(
     mediaId = mediaId ?: "",

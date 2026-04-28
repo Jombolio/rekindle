@@ -3,8 +3,9 @@ package com.rekindle.app.data.di
 import android.content.Context
 import androidx.room.Room
 import com.rekindle.app.data.db.AppDatabase
-import com.rekindle.app.data.db.ProgressQueueDao
 import com.rekindle.app.data.db.DownloadDao
+import com.rekindle.app.data.db.FolderDownloadDao
+import com.rekindle.app.data.db.ProgressQueueDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -30,4 +31,8 @@ object DatabaseModule {
     @Provides
     fun provideDownloadDao(db: AppDatabase): DownloadDao =
         db.downloadDao()
+
+    @Provides
+    fun provideFolderDownloadDao(db: AppDatabase): FolderDownloadDao =
+        db.folderDownloadDao()
 }

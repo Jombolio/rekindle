@@ -53,6 +53,9 @@ class DownloadManager {
         'api/media/$mediaId/download',
         localPath,
         cancelToken: cancelToken,
+        // Override the base receiveTimeout — large archives on slow connections
+        // can legitimately take many minutes to transfer.
+        options: Options(receiveTimeout: const Duration(hours: 2)),
         onReceiveProgress: (received, total) {
           if (total <= 0) return;
           onProgress(DownloadState(
@@ -209,6 +212,56 @@ class DownloadManager {
     if (extractDir.existsSync()) extractDir.deleteSync(recursive: true);
 
     await _db.delete('downloads', where: 'media_id = ?', whereArgs: [mediaId]);
+  }
+
+  // ── Folder-level persistence ───────────────────────────────────────────
+
+  /// Returns the persisted [FolderDownloadState] for [folderId], or null if
+  /// the folder has never been fully downloaded.
+  Future<FolderDownloadState?> restoreFolder(String folderId) async {
+    final rows = await _db.query(
+      'folder_downloads',
+      where: 'folder_id = ?',
+      whereArgs: [folderId],
+    );
+    if (rows.isEmpty) return null;
+    final row = rows.first;
+    final status =
+        FolderDownloadStatus.values.byName(row['status'] as String);
+    return FolderDownloadState(
+      status: status,
+      total: row['total'] as int,
+      completed: row['completed'] as int,
+    );
+  }
+
+  /// Persists a completed folder download so the UI survives app restarts.
+  Future<void> saveFolderComplete(
+      String folderId, int total, int completed) async {
+    await _db.insert(
+      'folder_downloads',
+      {
+        'folder_id': folderId,
+        'status': FolderDownloadStatus.complete.name,
+        'total': total,
+        'completed': completed,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Returns the subset of [mediaIds] that are already fully downloaded.
+  Future<Set<String>> completedMediaIds(Iterable<String> mediaIds) async {
+    final ids = mediaIds.toSet();
+    if (ids.isEmpty) return {};
+    final rows = await _db.query(
+      'downloads',
+      columns: ['media_id'],
+      where: 'status = ?',
+      whereArgs: [DownloadStatus.complete.name],
+    );
+    final allComplete = rows.map((r) => r['media_id'] as String).toSet();
+    return allComplete.intersection(ids);
   }
 
   // ── Private helpers ────────────────────────────────────────────────────

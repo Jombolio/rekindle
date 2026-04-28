@@ -3,6 +3,8 @@ package com.rekindle.app.core.download
 import android.content.Context
 import com.rekindle.app.data.db.DownloadDao
 import com.rekindle.app.data.db.DownloadEntity
+import com.rekindle.app.data.db.FolderDownloadDao
+import com.rekindle.app.data.db.FolderDownloadEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,6 +20,7 @@ class DownloadManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val okHttpClient: OkHttpClient,
     private val downloadDao: DownloadDao,
+    private val folderDownloadDao: FolderDownloadDao,
 ) {
     private val imageExtensions = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp")
 
@@ -145,7 +148,6 @@ class DownloadManager @Inject constructor(
         downloadDao.delete(mediaId)
     }
 
-    /** Cleans up an incomplete (cancelled) download without touching extracted pages. */
     suspend fun cancelIncomplete(mediaId: String) = withContext(Dispatchers.IO) {
         val entity = downloadDao.getByMediaId(mediaId) ?: return@withContext
         if (entity.status != DownloadStatus.COMPLETE.name) {
@@ -154,7 +156,33 @@ class DownloadManager @Inject constructor(
         }
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
+    // ── Folder-level helpers ──────────────────────────────────────────────────
+
+    /** Returns the subset of [mediaIds] that are already fully downloaded. */
+    suspend fun completedMediaIds(mediaIds: Set<String>): Set<String> =
+        withContext(Dispatchers.IO) {
+            val allComplete = downloadDao.getAllCompleteMediaIds().toSet()
+            allComplete.intersect(mediaIds)
+        }
+
+    /** Restores persisted folder download state, or null if never completed. */
+    suspend fun restoreFolder(folderId: String): FolderDownloadState? =
+        withContext(Dispatchers.IO) {
+            val entity = folderDownloadDao.getByFolderId(folderId) ?: return@withContext null
+            val status = runCatching { FolderDownloadStatus.valueOf(entity.status) }
+                .getOrDefault(FolderDownloadStatus.IDLE)
+            FolderDownloadState(status = status, total = entity.total, completed = entity.completed)
+        }
+
+    /** Persists a completed folder download so the UI survives app restarts. */
+    suspend fun saveFolderComplete(folderId: String, total: Int, completed: Int) =
+        withContext(Dispatchers.IO) {
+            folderDownloadDao.upsert(
+                FolderDownloadEntity(folderId, FolderDownloadStatus.COMPLETE.name, total, completed)
+            )
+        }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
 
     private fun destinationFile(mediaId: String, format: String, relativePath: String): File {
         val base = context.getExternalFilesDir(null)?.let { File(it, "Downloads") }

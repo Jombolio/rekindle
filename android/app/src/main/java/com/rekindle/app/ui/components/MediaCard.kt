@@ -1,6 +1,7 @@
 package com.rekindle.app.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,10 +18,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -43,20 +44,23 @@ fun MediaCard(
     val isOffline = downloadState.status == DownloadStatus.COMPLETE
 
     Column(modifier = modifier) {
+        // Cover — no rounding, ContentScale.Fit so the full image is visible.
         Box(
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp)),
+                .fillMaxWidth(),
         ) {
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
                     .data(coverUrl)
                     .addHeader("Authorization", authHeader)
+                    // Use coverCachePath as disk-cache key so Coil fetches a
+                    // fresh image when the server regenerates the cover.
+                    .diskCacheKey(media.coverCachePath ?: media.id)
                     .crossfade(true)
                     .build(),
                 contentDescription = media.displayTitle,
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.Fit,
                 modifier = Modifier.matchParentSize(),
             )
 
@@ -102,29 +106,42 @@ fun MediaCard(
                     )
                 }
             }
-        }
 
-        // Title + download button row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = media.displayTitle,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 2,
-                modifier = Modifier.weight(1f).padding(start = 4.dp),
-            )
-            if (!media.isFolder && canDownload) {
-                DownloadButton(
-                    media = media,
-                    downloadState = downloadState,
-                    onDownload = onDownload,
-                    onDelete = onDeleteDownload,
-                    onCancel = onCancelDownload,
-                    modifier = Modifier.size(36.dp),
-                )
+            // Download button — bottom-right
+            if (canDownload) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(4.dp)
+                        .background(
+                            color = Color.Black.copy(alpha = 0.55f),
+                            shape = RoundedCornerShape(6.dp),
+                        )
+                        .size(32.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    DownloadButton(
+                        media = media,
+                        downloadState = downloadState,
+                        onDownload = onDownload,
+                        onDelete = onDeleteDownload,
+                        onCancel = onCancelDownload,
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
             }
         }
+
+        // Title — single line, auto-scrolling marquee, centred.
+        Text(
+            text = media.displayTitle,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp, start = 2.dp, end = 2.dp)
+                .basicMarquee(),
+        )
     }
 }

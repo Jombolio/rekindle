@@ -8,10 +8,44 @@ import '../../providers/download_provider.dart';
 
 /// Download button for folder/series items — downloads all contained archives
 /// sequentially, including nested subdirectory contents.
+///
+/// Set [showConfirm] to true (e.g. in an AppBar) to prompt the user before
+/// starting the bulk download.
 class FolderDownloadButton extends ConsumerWidget {
   final String folderId;
+  final bool showConfirm;
 
-  const FolderDownloadButton({super.key, required this.folderId});
+  const FolderDownloadButton({
+    super.key,
+    required this.folderId,
+    this.showConfirm = false,
+  });
+
+  Future<void> _handlePress(BuildContext context, WidgetRef ref) async {
+    if (showConfirm) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Download all chapters?'),
+          content: const Text(
+            'All chapters in this series will be downloaded for offline reading. This may use significant storage.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Download'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+    ref.read(folderDownloadProvider(folderId).notifier).downloadFolder(folderId);
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -33,9 +67,9 @@ class FolderDownloadButton extends ConsumerWidget {
           tooltip: state.status == FolderDownloadStatus.failed
               ? 'Download failed — retry'
               : 'Download all for offline',
-          onPressed: () => ref
-              .read(folderDownloadProvider(folderId).notifier)
-              .downloadFolder(folderId),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          onPressed: () => _handlePress(context, ref),
         ),
 
       FolderDownloadStatus.fetching => const SizedBox(
@@ -69,6 +103,8 @@ class FolderDownloadButton extends ConsumerWidget {
       FolderDownloadStatus.complete => const IconButton(
           icon: Icon(Icons.download_done, color: Colors.green),
           tooltip: 'All chapters downloaded',
+          padding: EdgeInsets.zero,
+          constraints: BoxConstraints(),
           onPressed: null,
         ),
     };
@@ -104,6 +140,8 @@ class DownloadButton extends ConsumerWidget {
           tooltip: state.status == DownloadStatus.failed
               ? 'Download failed — retry'
               : 'Download for offline',
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
           onPressed: () => ref
               .read(downloadProvider(media.id).notifier)
               .download(
@@ -145,6 +183,8 @@ class DownloadButton extends ConsumerWidget {
       DownloadStatus.complete => IconButton(
           icon: const Icon(Icons.download_done, color: Colors.green),
           tooltip: 'Downloaded — tap to delete',
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
           onPressed: () => _confirmDelete(context, ref),
         ),
     };

@@ -11,6 +11,7 @@ import '../providers/reader_provider.dart';
 import 'widgets/cover_image.dart';
 import 'widgets/download_button.dart';
 import 'widgets/error_view.dart';
+import 'widgets/marquee_text.dart';
 
 // Fixed tile height — leading thumbnail is 68 px + 12 px vertical padding.
 // Keeping this constant lets ListView skip O(n) layout on large lists.
@@ -42,7 +43,8 @@ class ChapterIndexScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text(folderTitle),
         actions: [
-          if (canDownload) FolderDownloadButton(folderId: folderId),
+          if (canDownload)
+            FolderDownloadButton(folderId: folderId, showConfirm: true),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
@@ -50,6 +52,9 @@ class ChapterIndexScreen extends ConsumerWidget {
           ),
         ],
       ),
+      bottomNavigationBar: canDownload
+          ? _DownloadProgressBar(folderId: folderId)
+          : null,
       body: chaptersAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => ErrorView(
@@ -179,13 +184,10 @@ class _SubfolderTile extends StatelessWidget {
             SizedBox(
               width: 48,
               height: 68,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: CoverImage(
-                  url: coverUrl,
-                  headers: authHeaders,
-                  borderRadius: BorderRadius.zero,
-                ),
+              child: CoverImage(
+                url: coverUrl,
+                headers: authHeaders,
+                cacheKey: folder.coverCachePath ?? folder.id,
               ),
             ),
             Positioned(
@@ -207,10 +209,8 @@ class _SubfolderTile extends StatelessWidget {
             ),
           ],
         ),
-        title: Text(
-          folder.displayTitle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        title: MarqueeText(
+          text: folder.displayTitle,
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         trailing: canDownload
@@ -287,13 +287,10 @@ class _ChapterTile extends ConsumerWidget {
             SizedBox(
               width: 48,
               height: 68,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: CoverImage(
-                  url: coverUrl,
-                  headers: authHeaders,
-                  borderRadius: BorderRadius.zero,
-                ),
+              child: CoverImage(
+                url: coverUrl,
+                headers: authHeaders,
+                cacheKey: chapter.coverCachePath ?? chapter.id,
               ),
             ),
             if (isOffline)
@@ -313,10 +310,8 @@ class _ChapterTile extends ConsumerWidget {
             ReadProgressBadge(progress: progress),
           ],
         ),
-        title: Text(
-          chapter.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        title: MarqueeText(
+          text: chapter.title,
           style: theme.textTheme.bodyMedium?.copyWith(
             color: completed
                 ? theme.colorScheme.onSurface.withValues(alpha: 0.5)
@@ -343,6 +338,106 @@ class _ChapterTile extends ConsumerWidget {
               )
             : null,
         onTap: () => _open(context),
+      ),
+    );
+  }
+}
+
+// ── Download progress bar ─────────────────────────────────────────────────────
+
+/// Persistent bottom bar that appears while a folder download is in progress.
+/// Slides in/out smoothly and shows determinate progress once transfer begins.
+class _DownloadProgressBar extends ConsumerWidget {
+  final String folderId;
+  const _DownloadProgressBar({required this.folderId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dl = ref.watch(folderDownloadProvider(folderId));
+    final scheme = Theme.of(context).colorScheme;
+
+    final visible = dl.status == FolderDownloadStatus.fetching ||
+        dl.status == FolderDownloadStatus.downloading ||
+        dl.status == FolderDownloadStatus.failed;
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeInOut,
+      child: visible ? _buildBar(context, ref, dl, scheme) : const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildBar(
+    BuildContext context,
+    WidgetRef ref,
+    FolderDownloadState dl,
+    ColorScheme scheme,
+  ) {
+    final isError = dl.status == FolderDownloadStatus.failed;
+    final isFetching = dl.status == FolderDownloadStatus.fetching;
+
+    final String label;
+    final double? progressValue;
+
+    if (isFetching) {
+      label = 'Preparing download…';
+      progressValue = null; // indeterminate
+    } else if (isError) {
+      label = dl.error ?? 'Download failed';
+      progressValue = 0;
+    } else {
+      label = 'Downloading ${dl.completed} / ${dl.total}';
+      progressValue = dl.progress;
+    }
+
+    return Material(
+      color: scheme.surfaceContainerHigh,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          LinearProgressIndicator(
+            value: progressValue,
+            minHeight: 3,
+            color: isError ? scheme.error : scheme.primary,
+            backgroundColor: scheme.surfaceContainerHighest,
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+            child: Row(
+              children: [
+                Icon(
+                  isError ? Icons.error_outline : Icons.download_outlined,
+                  size: 16,
+                  color: isError ? scheme.error : scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: isError
+                              ? scheme.error
+                              : scheme.onSurfaceVariant,
+                        ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (!isError)
+                  TextButton(
+                    onPressed: () => ref
+                        .read(folderDownloadProvider(folderId).notifier)
+                        .cancel(),
+                    style: TextButton.styleFrom(
+                      foregroundColor: scheme.error,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

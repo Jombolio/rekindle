@@ -11,6 +11,7 @@ import '../providers/reader_provider.dart';
 import 'widgets/cover_image.dart';
 import 'widgets/download_button.dart';
 import 'widgets/error_view.dart';
+import 'widgets/marquee_text.dart';
 
 class MediaGridScreen extends ConsumerStatefulWidget {
   final String libraryId;
@@ -150,7 +151,7 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
                               child: CoverImage(
                                 url: client.coverUrl(item.id),
                                 headers: client.authHeaders,
-                                borderRadius: BorderRadius.circular(8),
+                                cacheKey: item.coverCachePath ?? item.id,
                               ),
                             ),
                             if (isOffline) const OfflineBadge(),
@@ -177,15 +178,13 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       GestureDetector(
                         onTap: () => _openItem(context, item),
-                        child: Text(
-                          item.displayTitle,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
+                        child: MarqueeText(
+                          text: item.displayTitle,
                           style: Theme.of(context).textTheme.bodySmall,
+                          textAlign: TextAlign.center,
                         ),
                       ),
                     ],

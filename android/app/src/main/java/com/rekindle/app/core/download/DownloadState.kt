@@ -13,3 +13,18 @@ data class DownloadState(
     val isAvailableOffline: Boolean get() = isDownloaded
     val isExtracted: Boolean get() = extractedDir != null
 }
+
+// ---------------------------------------------------------------------------
+// Folder-level download state
+// ---------------------------------------------------------------------------
+
+enum class FolderDownloadStatus { IDLE, FETCHING, DOWNLOADING, COMPLETE, FAILED }
+
+data class FolderDownloadState(
+    val status: FolderDownloadStatus = FolderDownloadStatus.IDLE,
+    val total: Int = 0,
+    val completed: Int = 0,
+    val error: String? = null,
+) {
+    val progress: Float get() = if (total == 0) 0f else completed.toFloat() / total
+}
