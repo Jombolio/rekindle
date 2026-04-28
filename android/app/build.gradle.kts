@@ -108,6 +108,9 @@ dependencies {
     implementation(libs.hilt.workmanager)
     ksp(libs.hilt.workmanager.compiler)
 
+    // Storage Access Framework helpers (SAF folder picker)
+    implementation("androidx.documentfile:documentfile:1.0.1")
+
     // WebView + Jsoup (EPUB reader)
     implementation(libs.androidx.webkit)
     implementation(libs.jsoup)

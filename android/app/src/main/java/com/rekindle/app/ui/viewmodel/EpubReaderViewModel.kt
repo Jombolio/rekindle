@@ -1,5 +1,7 @@
 package com.rekindle.app.ui.viewmodel
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,6 +11,7 @@ import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.data.repository.DownloadRepository
 import com.rekindle.app.data.repository.MediaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,6 +35,7 @@ enum class EpubTheme { LIGHT, DARK, SEPIA }
 
 @HiltViewModel
 class EpubReaderViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle,
     private val downloadRepo: DownloadRepository,
     private val mediaRepo: MediaRepository,
@@ -62,7 +66,15 @@ class EpubReaderViewModel @Inject constructor(
                 return
             }
         runCatching {
-            val book = withContext(Dispatchers.IO) { EpubParser.parse(File(localPath)) }
+            val book = withContext(Dispatchers.IO) {
+                val stream = if (localPath.startsWith("content://")) {
+                    context.contentResolver.openInputStream(Uri.parse(localPath))
+                        ?: error("Cannot open content URI: $localPath")
+                } else {
+                    File(localPath).inputStream()
+                }
+                stream.use { EpubParser.parse(it) }
+            }
             val savedChapter = _state.value.chapterIndex.coerceIn(0, (book.chapters.size - 1).coerceAtLeast(0))
             _state.update { it.copy(book = book, chapterIndex = savedChapter) }
         }.onFailure { e ->

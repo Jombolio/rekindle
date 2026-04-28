@@ -109,11 +109,23 @@ class PrefsStore @Inject constructor(
     val downloadDirectory: Flow<String> = store.data.map { it[Keys.DOWNLOAD_DIR] ?: "" }
     val spineGap: Flow<Float> = store.data.map { it[Keys.SPINE_GAP] ?: 0f }
 
+    /**
+     * Content URI string granted via ACTION_OPEN_DOCUMENT_TREE.
+     * Empty = use app-private external storage (no permission needed).
+     */
+    val downloadSafUri: Flow<String> = store.data.map { it[Keys.DOWNLOAD_SAF_URI] ?: "" }
+
     suspend fun setThemeMode(mode: String) =
         store.edit { it[Keys.THEME_MODE] = mode }
 
     suspend fun setDownloadDirectory(path: String) =
         store.edit { it[Keys.DOWNLOAD_DIR] = path }
+
+    suspend fun setDownloadSafUri(uri: String) =
+        store.edit { it[Keys.DOWNLOAD_SAF_URI] = uri }
+
+    suspend fun clearDownloadSafUri() =
+        store.edit { it.remove(Keys.DOWNLOAD_SAF_URI) }
 
     suspend fun setSpineGap(gap: Float) =
         store.edit { it[Keys.SPINE_GAP] = gap }
@@ -147,6 +159,7 @@ class PrefsStore @Inject constructor(
         val PERMISSION_LEVEL = intPreferencesKey("permission_level")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val DOWNLOAD_DIR = stringPreferencesKey("download_directory")
+        val DOWNLOAD_SAF_URI = stringPreferencesKey("download_saf_uri")
         val SPINE_GAP = floatPreferencesKey("spine_gap")
         val SOURCES_JSON = stringPreferencesKey("sources_json")
         val ACTIVE_SOURCE_ID = stringPreferencesKey("active_source_id")

@@ -1,5 +1,6 @@
 package com.rekindle.app.data.repository
 
+import android.net.Uri
 import com.rekindle.app.core.download.DownloadManager
 import com.rekindle.app.core.download.DownloadState
 import com.rekindle.app.core.download.DownloadStatus
@@ -61,9 +62,14 @@ class DownloadRepository @Inject constructor(
         val current = stateFor(mediaId).status
         if (current == DownloadStatus.DOWNLOADING || current == DownloadStatus.EXTRACTING) return
 
+        // Immediately reflect the queued state so the button blocks duplicate taps
+        // and shows feedback even while waiting for a semaphore slot to open.
+        update(mediaId, DownloadState(status = DownloadStatus.DOWNLOADING))
+
         val job = scope.launch {
             val baseUrl = prefs.serverUrl.first()
             val token = prefs.token.first() ?: ""
+            val safUri = resolveSafUri()
             runCatching {
                 val localPath = semaphore.withPermit {
                     downloadManager.download(
@@ -74,6 +80,7 @@ class DownloadRepository @Inject constructor(
                         serverBaseUrl = baseUrl,
                         authHeader = "Bearer $token",
                         onProgress = { update(mediaId, it) },
+                        safBaseUri = safUri,
                     )
                 }
                 // State is already COMPLETE (set by download() via onProgress).
@@ -146,6 +153,7 @@ class DownloadRepository @Inject constructor(
         val job = scope.launch {
             val baseUrl = prefs.serverUrl.first()
             val token = prefs.token.first() ?: ""
+            val safUri = resolveSafUri()
 
             val alreadyDone = downloadManager.completedMediaIds(archives.map { it.id }.toSet())
             val toDownload = archives.filter { it.id !in alreadyDone }
@@ -189,6 +197,7 @@ class DownloadRepository @Inject constructor(
                                     serverBaseUrl = baseUrl,
                                     authHeader = "Bearer $token",
                                     onProgress = {},
+                                    safBaseUri = safUri,
                                 )
                             }.onSuccess { path ->
                                 successfulIds.add(archive.id)
@@ -241,6 +250,12 @@ class DownloadRepository @Inject constructor(
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /** Returns the SAF base URI if the user has selected a custom folder, or null for app-private storage. */
+    private suspend fun resolveSafUri(): Uri? {
+        val uriString = prefs.downloadSafUri.first()
+        return if (uriString.isNotBlank()) Uri.parse(uriString) else null
+    }
 
     private fun update(mediaId: String, state: DownloadState) {
         _states.update { it + (mediaId to state) }

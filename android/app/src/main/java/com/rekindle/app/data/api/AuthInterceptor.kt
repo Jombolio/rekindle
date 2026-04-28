@@ -14,7 +14,7 @@ class AuthInterceptor @Inject constructor(
         val token = runBlocking { prefs.token.first() }
         val request = if (token != null) {
             chain.request().newBuilder()
-                .addHeader("Authorization", "Bearer $token")
+                .header("Authorization", "Bearer $token")
                 .build()
         } else {
             chain.request()

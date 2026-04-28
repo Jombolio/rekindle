@@ -1,6 +1,8 @@
 package com.rekindle.app.core.download
 
 import android.content.Context
+import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import com.rekindle.app.data.db.DownloadDao
 import com.rekindle.app.data.db.DownloadEntity
 import com.rekindle.app.data.db.FolderDownloadDao
@@ -11,6 +13,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.zip.ZipInputStream
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -45,6 +49,14 @@ class DownloadManager @Inject constructor(
         }
     }
 
+    /**
+     * Downloads the archive for [mediaId].
+     *
+     * When [safBaseUri] is provided the file is written into the SAF tree the
+     * user selected; otherwise it lands in the app-private external directory.
+     * Returns the stored path — either an absolute filesystem path or a
+     * `content://` URI string when SAF is active.
+     */
     suspend fun download(
         mediaId: String,
         format: String,
@@ -53,45 +65,61 @@ class DownloadManager @Inject constructor(
         serverBaseUrl: String,
         authHeader: String,
         onProgress: (DownloadState) -> Unit,
+        safBaseUri: Uri? = null,
     ): String = withContext(Dispatchers.IO) {
-        val destFile = destinationFile(mediaId, format, relativePath)
-        destFile.parentFile?.mkdirs()
-
         upsert(mediaId, format, title, DownloadStatus.DOWNLOADING, 0f, null)
         onProgress(DownloadState(status = DownloadStatus.DOWNLOADING))
+
+        // Resolve destination — either a SAF document or a plain File.
+        val (localPath, outputStream) = if (safBaseUri != null) {
+            val docUri = createSafFile(safBaseUri, mediaId, relativePath, format)
+                ?: error("Cannot create file in the selected folder — check storage permission")
+            Pair(docUri.toString(), context.contentResolver.openOutputStream(docUri)
+                ?: error("Cannot open output stream for selected folder"))
+        } else {
+            val destFile = appDestinationFile(mediaId, format, relativePath)
+            destFile.parentFile?.mkdirs()
+            Pair(destFile.absolutePath, destFile.outputStream())
+        }
 
         val url = "${serverBaseUrl.trimEnd('/')}/api/media/$mediaId/download"
         val request = Request.Builder().url(url).header("Authorization", authHeader).build()
 
-        okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("HTTP ${response.code}")
-            val body = response.body ?: error("Empty body")
-            val total = body.contentLength().takeIf { it > 0 }
+        try {
+            outputStream.use { out ->
+                okHttpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) error("HTTP ${response.code}")
+                    val body = response.body ?: error("Empty body")
+                    val total = body.contentLength().takeIf { it > 0 }
 
-            destFile.outputStream().use { out ->
-                var downloaded = 0L
-                val buf = ByteArray(8192)
-                body.byteStream().use { input ->
-                    var n: Int
-                    while (input.read(buf).also { n = it } != -1) {
-                        out.write(buf, 0, n)
-                        downloaded += n
-                        total?.let {
-                            onProgress(
-                                DownloadState(
-                                    status = DownloadStatus.DOWNLOADING,
-                                    progress = downloaded.toFloat() / it,
+                    var downloaded = 0L
+                    val buf = ByteArray(8192)
+                    body.byteStream().use { input ->
+                        var n: Int
+                        while (input.read(buf).also { n = it } != -1) {
+                            out.write(buf, 0, n)
+                            downloaded += n
+                            total?.let {
+                                onProgress(
+                                    DownloadState(
+                                        status = DownloadStatus.DOWNLOADING,
+                                        progress = downloaded.toFloat() / it,
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
                 }
             }
+        } catch (e: Exception) {
+            // Clean up the partial file on failure.
+            deleteByPath(localPath)
+            throw e
         }
 
-        upsert(mediaId, format, title, DownloadStatus.COMPLETE, 1f, destFile.absolutePath)
-        onProgress(DownloadState(status = DownloadStatus.COMPLETE, progress = 1f, localPath = destFile.absolutePath))
-        destFile.absolutePath
+        upsert(mediaId, format, title, DownloadStatus.COMPLETE, 1f, localPath)
+        onProgress(DownloadState(status = DownloadStatus.COMPLETE, progress = 1f, localPath = localPath))
+        localPath
     }
 
     suspend fun extractPages(
@@ -104,11 +132,13 @@ class DownloadManager @Inject constructor(
         val dir = extractedDir(mediaId)
         dir.mkdirs()
         val manifest = File(dir, "manifest.txt")
-
         if (manifest.exists()) return@withContext dir.absolutePath
 
+        // Open the archive from either a content URI or a plain file path.
+        val archiveStream: InputStream = openInputStream(localPath)
+
         val entries = mutableListOf<Pair<String, ByteArray>>()
-        ZipInputStream(File(localPath).inputStream().buffered()).use { zip ->
+        ZipInputStream(archiveStream.buffered()).use { zip ->
             var entry = zip.nextEntry
             while (entry != null) {
                 val ext = entry.name.substringAfterLast('.', "").lowercase()
@@ -143,7 +173,7 @@ class DownloadManager @Inject constructor(
 
     suspend fun delete(mediaId: String) = withContext(Dispatchers.IO) {
         val entity = downloadDao.getByMediaId(mediaId)
-        entity?.localPath?.let { File(it).delete() }
+        entity?.localPath?.let { deleteByPath(it) }
         extractedDir(mediaId).deleteRecursively()
         downloadDao.delete(mediaId)
     }
@@ -151,21 +181,19 @@ class DownloadManager @Inject constructor(
     suspend fun cancelIncomplete(mediaId: String) = withContext(Dispatchers.IO) {
         val entity = downloadDao.getByMediaId(mediaId) ?: return@withContext
         if (entity.status != DownloadStatus.COMPLETE.name) {
-            entity.localPath?.let { File(it).delete() }
+            entity.localPath?.let { deleteByPath(it) }
             downloadDao.delete(mediaId)
         }
     }
 
-    // ── Folder-level helpers ──────────────────────────────────────────────────
+    // ── Folder-level persistence ──────────────────────────────────────────────
 
-    /** Returns the subset of [mediaIds] that are already fully downloaded. */
     suspend fun completedMediaIds(mediaIds: Set<String>): Set<String> =
         withContext(Dispatchers.IO) {
             val allComplete = downloadDao.getAllCompleteMediaIds().toSet()
             allComplete.intersect(mediaIds)
         }
 
-    /** Restores persisted folder download state, or null if never completed. */
     suspend fun restoreFolder(folderId: String): FolderDownloadState? =
         withContext(Dispatchers.IO) {
             val entity = folderDownloadDao.getByFolderId(folderId) ?: return@withContext null
@@ -174,7 +202,6 @@ class DownloadManager @Inject constructor(
             FolderDownloadState(status = status, total = entity.total, completed = entity.completed)
         }
 
-    /** Persists a completed folder download so the UI survives app restarts. */
     suspend fun saveFolderComplete(folderId: String, total: Int, completed: Int) =
         withContext(Dispatchers.IO) {
             folderDownloadDao.upsert(
@@ -184,15 +211,66 @@ class DownloadManager @Inject constructor(
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    private fun destinationFile(mediaId: String, format: String, relativePath: String): File {
-        val base = context.getExternalFilesDir(null)?.let { File(it, "Downloads") }
-            ?: File(context.filesDir, "Downloads")
+    /**
+     * Creates (or replaces) a file in the SAF tree rooted at [baseUri],
+     * mirroring the [relativePath] directory structure.
+     * [mediaId] is used as the filename fallback when [relativePath] is blank.
+     */
+    private fun createSafFile(baseUri: Uri, mediaId: String, relativePath: String, format: String): Uri? {
+        var dir = DocumentFile.fromTreeUri(context, baseUri) ?: return null
+        val mimeType = mimeTypeFor(format)
+
+        if (relativePath.isNotBlank()) {
+            val parts = relativePath.replace('\\', '/').split('/')
+            // Traverse / create subdirectories for everything except the final filename.
+            for (i in 0 until parts.size - 1) {
+                dir = dir.findFile(parts[i])
+                    ?: dir.createDirectory(parts[i])
+                    ?: return null
+            }
+            val filename = parts.last()
+            dir.findFile(filename)?.delete() // remove stale partial download
+            return dir.createFile(mimeType, filename)?.uri
+        } else {
+            val filename = "$mediaId.$format"
+            dir.findFile(filename)?.delete()
+            return dir.createFile(mimeType, filename)?.uri
+        }
+    }
+
+    private fun openInputStream(path: String): InputStream =
+        if (path.startsWith("content://")) {
+            context.contentResolver.openInputStream(Uri.parse(path))
+                ?: error("Cannot open content URI: $path")
+        } else {
+            File(path).inputStream()
+        }
+
+    private fun deleteByPath(path: String) {
+        if (path.startsWith("content://")) {
+            runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, Uri.parse(path)) }
+        } else {
+            File(path).delete()
+        }
+    }
+
+    private fun appDestinationFile(mediaId: String, format: String, relativePath: String): File {
+        val base = context.getExternalFilesDir(null)?.let { File(it, "Rekindle Downloads") }
+            ?: File(context.filesDir, "Rekindle Downloads")
         return if (relativePath.isNotBlank()) File(base, relativePath)
         else File(base, "$mediaId.$format")
     }
 
     private fun extractedDir(mediaId: String): File =
         File(context.cacheDir, "rekindle/extracted/$mediaId")
+
+    private fun mimeTypeFor(format: String): String = when (format.lowercase()) {
+        "cbz", "zip" -> "application/zip"
+        "cbr", "rar" -> "application/x-rar-compressed"
+        "pdf"        -> "application/pdf"
+        "epub"       -> "application/epub+zip"
+        else         -> "application/octet-stream"
+    }
 
     private suspend fun upsert(
         mediaId: String,
@@ -205,3 +283,4 @@ class DownloadManager @Inject constructor(
         DownloadEntity(mediaId, status.name, progress, path, format, title)
     )
 }
+
