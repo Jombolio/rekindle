@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -100,9 +101,17 @@ fun LibraryScreen(
                     ListItem(
                         headlineContent = { Text(lib.name) },
                         supportingContent = { Text(lib.type) },
-                        trailingContent = if (state.scanning == lib.id) ({
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        }) else null,
+                        trailingContent = when {
+                            state.scanning == lib.id -> ({
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                            })
+                            isAdmin -> ({
+                                IconButton(onClick = { vm.scan(lib.id) }) {
+                                    Icon(Icons.Default.Refresh, contentDescription = "Scan library")
+                                }
+                            })
+                            else -> null
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onLibraryClick(lib.id, lib.name, lib.type) },

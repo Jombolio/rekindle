@@ -13,15 +13,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material.icons.filled.OfflineBolt
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -44,7 +47,7 @@ fun MediaCard(
     val isOffline = downloadState.status == DownloadStatus.COMPLETE
 
     Column(modifier = modifier) {
-        // Cover — no rounding, ContentScale.Fit so the full image is visible.
+        // Cover image — fills the box via ContentScale.Crop so covers are always visible.
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -60,7 +63,7 @@ fun MediaCard(
                     .crossfade(true)
                     .build(),
                 contentDescription = media.displayTitle,
-                contentScale = ContentScale.Fit,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier.matchParentSize(),
             )
 
@@ -107,27 +110,32 @@ fun MediaCard(
                 }
             }
 
-            // Download button — bottom-right
+            // Download button — bottom-right overlay.
+            // LocalMinimumInteractiveComponentSize suppresses the 48dp Material3
+            // minimum touch target so the button's clickable area is exactly its
+            // 32dp visual size and does not bleed into the image tap area.
             if (canDownload) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(4.dp)
-                        .background(
-                            color = Color.Black.copy(alpha = 0.55f),
-                            shape = RoundedCornerShape(6.dp),
+                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides Dp.Unspecified) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(4.dp)
+                            .background(
+                                color = Color.Black.copy(alpha = 0.55f),
+                                shape = RoundedCornerShape(6.dp),
+                            )
+                            .size(32.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        DownloadButton(
+                            media = media,
+                            downloadState = downloadState,
+                            onDownload = onDownload,
+                            onDelete = onDeleteDownload,
+                            onCancel = onCancelDownload,
+                            modifier = Modifier.size(32.dp),
                         )
-                        .size(32.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    DownloadButton(
-                        media = media,
-                        downloadState = downloadState,
-                        onDownload = onDownload,
-                        onDelete = onDeleteDownload,
-                        onCancel = onCancelDownload,
-                        modifier = Modifier.size(32.dp),
-                    )
+                    }
                 }
             }
         }
