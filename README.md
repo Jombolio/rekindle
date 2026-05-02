@@ -46,6 +46,7 @@ Point the Rekindle Server at a folder of archives (CBZ, CBR, EPUB, MOBI, PDF) an
 | Books | Left-to-right |
 
 The reading direction can be toggled at anytime while browsing.
+
 ---
 
 ## Client Setup
