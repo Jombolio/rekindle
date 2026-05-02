@@ -1,0 +1,8 @@
+Rekindle is a self-hosted comic, manga, and book reader that allows you to manage and enjoy your digital library.
+
+Features:
+- Self-hosted: Connect to your own Rekindle server instance.
+- Multi-format: Supports EPUB, CBZ, and CBR file formats.
+- Cross-platform: Enjoy your library seamlessly across all your devices.
+- Offline reading: Download chapters and read offline.
+- Built-in reader: A powerful reading experience with progress tracking.

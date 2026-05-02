@@ -1,0 +1,20 @@
+Categories:
+  - Reading
+License: GPL-3.0-only
+SourceCode: https://github.com/Jombolio/rekindle
+IssueTracker: https://github.com/Jombolio/rekindle/issues
+
+AutoName: Rekindle
+
+Builds:
+  - versionName: 1.0.0
+    versionCode: 1
+    commit: v1.0.0 # Make sure to tag your release on your Git host!
+    subdir: android
+    gradle:
+      - yes
+
+AutoUpdateMode: Version v%v
+UpdateCheckMode: Tags
+CurrentVersion: 1.0.0
+CurrentVersionCode: 1
