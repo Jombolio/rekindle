@@ -12,6 +12,16 @@ using Rekindle.Core.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Configure large file uploads globally to prevent Kestrel connection resets
+builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>(options =>
+{
+    options.Limits.MaxRequestBodySize = 4_294_967_296; // 4 GB
+});
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 4_294_967_296; // 4 GB
+});
+
 // ------------------------------------------------------------------
 // Options
 // ------------------------------------------------------------------

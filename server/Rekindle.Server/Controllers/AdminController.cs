@@ -49,8 +49,8 @@ public class AdminController(
     // ── Upload ───────────────────────────────────────────────────────────────
 
     [HttpPost("upload")]
-    [RequestSizeLimit(2_147_483_648)]          // 2 GB
-    [RequestFormLimits(MultipartBodyLengthLimit = 2_147_483_648)]
+    [RequestSizeLimit(4_294_967_296)]          // 4 GB
+    [RequestFormLimits(MultipartBodyLengthLimit = 4_294_967_296)]
     public async Task<IActionResult> Upload(
         [FromForm] string libraryId,
         [FromForm] string? relativePath,       // e.g. "Absolute Superman" or "Manga/One Piece"

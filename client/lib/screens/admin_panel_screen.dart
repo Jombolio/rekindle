@@ -536,7 +536,7 @@ class _UploadTabState extends ConsumerState<_UploadTab> {
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['cbz', 'cbr', 'pdf', 'epub', 'mobi'],
+      allowedExtensions: ['cbz', 'cbr', 'pdf', 'epub', 'mobi', 'CBZ', 'CBR', 'PDF', 'EPUB', 'MOBI'],
       allowMultiple: false,
     );
     if (result == null || result.files.isEmpty) return;
