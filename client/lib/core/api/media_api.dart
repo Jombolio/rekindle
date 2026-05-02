@@ -50,6 +50,21 @@ class MediaApi {
     return (count: count, spreads: spreads);
   }
 
+  /// Returns all folder-type items in [libraryId] whose title contains [query].
+  /// Archives and individual chapters are never included.
+  Future<List<Media>> searchFolders({
+    required String libraryId,
+    required String query,
+  }) async {
+    final resp = await _client.dio.get(
+      'api/media/search',
+      queryParameters: {'libraryId': libraryId, 'q': query},
+    );
+    return (resp.data as List<dynamic>)
+        .map((e) => Media.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<Media>> getChapters(String folderId) async {
     final resp = await _client.dio.get('api/media/$folderId/chapters');
     return (resp.data as List<dynamic>)

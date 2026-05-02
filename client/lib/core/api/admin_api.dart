@@ -102,12 +102,14 @@ class AdminApi {
 
   Future<String> uploadFile({
     required String libraryId,
+    String? relativePath,
     required String filePath,
     required String fileName,
     void Function(int sent, int total)? onProgress,
   }) async {
     final formData = FormData.fromMap({
       'libraryId': libraryId,
+      if (relativePath != null && relativePath.isNotEmpty) 'relativePath': relativePath,
       'file': await MultipartFile.fromFile(filePath, filename: fileName),
     });
 

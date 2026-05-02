@@ -51,7 +51,10 @@ public class AdminController(
     [HttpPost("upload")]
     [RequestSizeLimit(2_147_483_648)]          // 2 GB
     [RequestFormLimits(MultipartBodyLengthLimit = 2_147_483_648)]
-    public async Task<IActionResult> Upload([FromForm] string libraryId, IFormFile? file)
+    public async Task<IActionResult> Upload(
+        [FromForm] string libraryId,
+        [FromForm] string? relativePath,       // e.g. "Absolute Superman" or "Manga/One Piece"
+        IFormFile? file)
     {
         if (file is null || file.Length == 0)
             return BadRequest(new { error = "No file provided." });
@@ -72,9 +75,34 @@ public class AdminController(
         if (string.IsNullOrWhiteSpace(safeName))
             return BadRequest(new { error = "Invalid file name." });
 
-        var destPath = Path.Combine(library.RootPath, safeName);
+        // Resolve destination directory.
+        // If a relativePath is supplied, create the directory tree inside the
+        // library root (idempotent) and verify the resolved path stays within it.
+        string destDir;
+        if (!string.IsNullOrWhiteSpace(relativePath))
+        {
+            // Normalise separators and strip leading/trailing slashes.
+            var normRel = relativePath.Replace('\\', '/').Trim('/');
+            var resolved = Path.GetFullPath(Path.Combine(library.RootPath, normRel));
+            var libraryRoot = Path.GetFullPath(library.RootPath);
+
+            // Security: reject any path that escapes the library root.
+            if (!resolved.StartsWith(libraryRoot + Path.DirectorySeparatorChar,
+                    StringComparison.OrdinalIgnoreCase)
+                && !resolved.Equals(libraryRoot, StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { error = "Relative path escapes the library root." });
+
+            Directory.CreateDirectory(resolved);
+            destDir = resolved;
+        }
+        else
+        {
+            destDir = library.RootPath;
+        }
+
+        var destPath = Path.Combine(destDir, safeName);
         if (System.IO.File.Exists(destPath))
-            return Conflict(new { error = $"'{safeName}' already exists in this library." });
+            return Conflict(new { error = $"'{safeName}' already exists in the target location." });
 
         try
         {
@@ -89,7 +117,8 @@ public class AdminController(
 
         _ = Task.Run(() => scanner.ScanAsync(library));
 
-        logger.LogInformation("Admin uploaded '{FileName}' to library {LibraryId}", safeName, libraryId);
+        logger.LogInformation("Admin uploaded '{FileName}' to library {LibraryId} at '{RelPath}'",
+            safeName, libraryId, relativePath ?? "root");
         return Ok(new { message = "Upload complete. Library scan started.", fileName = safeName });
     }
 

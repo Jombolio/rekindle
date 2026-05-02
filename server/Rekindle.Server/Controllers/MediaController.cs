@@ -42,6 +42,20 @@ public class MediaController(
         });
     }
 
+    /// Searches folders (directories/subdirectories) by title across a library.
+    /// Archives and individual chapters are never returned.
+    [HttpGet("search")]
+    public async Task<IActionResult> Search(
+        [FromQuery] string libraryId,
+        [FromQuery] string q)
+    {
+        if (string.IsNullOrWhiteSpace(libraryId) || string.IsNullOrWhiteSpace(q))
+            return BadRequest(new { error = "libraryId and q are required." });
+
+        var folders = await mediaRepository.SearchFoldersAsync(libraryId, q.Trim());
+        return Ok(folders);
+    }
+
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(string id)
     {

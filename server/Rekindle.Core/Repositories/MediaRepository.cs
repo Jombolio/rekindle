@@ -49,6 +49,25 @@ public class MediaRepository(DbConnectionFactory factory)
             new { id });
     }
 
+    /// Returns all folders in a library whose title contains [query] (case-insensitive),
+    /// at any nesting depth. Archives are excluded — mediaType must be "folder".
+    public async Task<IEnumerable<Media>> SearchFoldersAsync(string libraryId, string query)
+    {
+        using var conn = factory.Create();
+        var pattern = $"%{query}%";
+        var rows = await conn.QueryAsync<Media>(
+            $"""
+            SELECT {SelectColumns}
+            FROM media
+            WHERE library_id = @libraryId
+              AND media_type = 'folder'
+              AND (title LIKE @pattern OR sort_title LIKE @pattern)
+            ORDER BY relative_path;
+            """,
+            new { libraryId, pattern });
+        return rows;
+    }
+
     /// Returns all chapter entries for a folder, natural-sorted by file path.
     public async Task<IEnumerable<Media>> GetChaptersAsync(string parentId)
     {

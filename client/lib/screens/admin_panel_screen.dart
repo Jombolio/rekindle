@@ -6,8 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/api/admin_api.dart';
 import '../core/api/api_client.dart';
 import '../core/api/libraries_api.dart';
+import '../core/api/media_api.dart';
 import '../core/models/library.dart';
+import '../core/models/media.dart';
 import '../providers/sources_provider.dart';
+import 'widgets/cover_image.dart';
 
 // ── Per-source providers ──────────────────────────────────────────────────
 
@@ -493,12 +496,42 @@ class _UploadTab extends ConsumerStatefulWidget {
 
 class _UploadTabState extends ConsumerState<_UploadTab> {
   Library? _selectedLibrary;
+  // Relative path to upload into (null = library root). Updated whenever the
+  // text field changes, so no explicit confirm step is needed.
+  String? _uploadRelPath;
+  List<Media> _folders = [];
+  bool _loadingFolders = false;
+  Key _locationKey = UniqueKey();
+
   String? _filePath;
   String? _fileName;
   double? _progress;
   String? _error;
   String? _success;
   bool _uploading = false;
+
+  Future<void> _onLibraryChanged(Library? lib) async {
+    setState(() {
+      _selectedLibrary = lib;
+      _uploadRelPath = null;
+      _folders = [];
+      _loadingFolders = lib != null;
+      _locationKey = UniqueKey();
+    });
+    if (lib == null) return;
+    try {
+      final client = ref.read(_sourceClientProvider(widget.sourceId));
+      final page = await MediaApi(client).getPaged(libraryId: lib.id, pageSize: 200);
+      if (mounted) {
+        setState(() {
+          _folders = page.items.where((m) => m.isFolder).toList();
+          _loadingFolders = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingFolders = false);
+    }
+  }
 
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
@@ -518,11 +551,11 @@ class _UploadTabState extends ConsumerState<_UploadTab> {
   Future<void> _upload() async {
     if (_selectedLibrary == null || _filePath == null) return;
     setState(() { _uploading = true; _progress = 0; _error = null; _success = null; });
-
     try {
       final client = ref.read(_sourceClientProvider(widget.sourceId));
       final msg = await AdminApi(client).uploadFile(
         libraryId: _selectedLibrary!.id,
+        relativePath: _uploadRelPath,
         filePath: _filePath!,
         fileName: _fileName!,
         onProgress: (sent, total) {
@@ -548,6 +581,7 @@ class _UploadTabState extends ConsumerState<_UploadTab> {
   @override
   Widget build(BuildContext context) {
     final librariesState = ref.watch(_librariesProvider(widget.sourceId));
+    final client = ref.read(_sourceClientProvider(widget.sourceId));
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -567,20 +601,40 @@ class _UploadTabState extends ConsumerState<_UploadTab> {
               _SuccessText(_success!),
               const SizedBox(height: 16),
             ],
+
+            // ── Library ──────────────────────────────────────────────────
             librariesState.when(
-              loading: () => const CircularProgressIndicator(),
+              loading: () => const LinearProgressIndicator(),
               error: (e, _) => _ErrorText(e.toString()),
               data: (libs) => DropdownButtonFormField<Library>(
                 value: _selectedLibrary,
                 decoration: const InputDecoration(
-                    labelText: 'Target Library',
+                    labelText: 'Target library',
                     border: OutlineInputBorder()),
                 items: libs
                     .map((l) => DropdownMenuItem(value: l, child: Text(l.name)))
                     .toList(),
-                onChanged: (v) => setState(() => _selectedLibrary = v),
+                onChanged: _uploading ? null : _onLibraryChanged,
               ),
             ),
+
+            // ── Location ─────────────────────────────────────────────────
+            const SizedBox(height: 16),
+            if (_loadingFolders)
+              const LinearProgressIndicator(minHeight: 2)
+            else
+              _FolderLocationField(
+                key: _locationKey,
+                folders: _folders,
+                client: client,
+                enabled: _selectedLibrary != null && !_uploading,
+                hint: _selectedLibrary == null
+                    ? 'Select a library first'
+                    : 'Library root — search or type a path',
+                onChange: (path) => setState(() => _uploadRelPath = path),
+              ),
+
+            // ── File picker ───────────────────────────────────────────────
             const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: _uploading ? null : _pickFile,
@@ -588,11 +642,13 @@ class _UploadTabState extends ConsumerState<_UploadTab> {
               label: Text(_fileName ?? 'Choose file…'),
             ),
             if (_fileName != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(_fileName!,
                   style: Theme.of(context).textTheme.bodySmall,
                   overflow: TextOverflow.ellipsis),
             ],
+
+            // ── Progress + submit ─────────────────────────────────────────
             const SizedBox(height: 24),
             if (_progress != null) ...[
               LinearProgressIndicator(value: _progress),
@@ -602,18 +658,354 @@ class _UploadTabState extends ConsumerState<_UploadTab> {
               const SizedBox(height: 16),
             ],
             FilledButton.icon(
-              onPressed: (_uploading ||
-                      _selectedLibrary == null ||
-                      _filePath == null)
-                  ? null
-                  : _upload,
+              onPressed:
+                  (_uploading || _selectedLibrary == null || _filePath == null)
+                      ? null
+                      : _upload,
               icon: _uploading
                   ? const SizedBox(
-                      width: 18,
-                      height: 18,
+                      width: 18, height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.cloud_upload_outlined),
               label: Text(_uploading ? 'Uploading…' : 'Upload'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Folder location autocomplete ──────────────────────────────────────────
+
+// Option type used by the Autocomplete widget.
+// _ExistingFolder wraps an existing Media folder from the library.
+// _NewFolder represents a user-defined path that may not yet exist on disk.
+sealed class _FolderOption { const _FolderOption(); }
+final class _ExistingFolder extends _FolderOption {
+  final Media folder;
+  const _ExistingFolder(this.folder);
+}
+final class _NewFolder extends _FolderOption {
+  final String path; // raw text in the field at the time this option was built
+  const _NewFolder(this.path);
+}
+
+/// Autocomplete text field for choosing (or creating) a destination folder.
+///
+/// * Text always reflects the relative path with a trailing slash, e.g.
+///   `Absolute Superman/` or `Manga/One Piece/Volume 3/`.
+/// * The first entry in the dropdown is always a "Create …" option so the
+///   user can create new directories without them existing yet.
+/// * Selecting an existing folder fills the field with `relativePath/` and
+///   shows the folder's cover thumbnail as the prefix icon.
+/// * Every keystroke fires [onChange] so the parent always has the latest
+///   path even if the user never taps a suggestion.
+class _FolderLocationField extends StatefulWidget {
+  final List<Media> folders;
+  final ApiClient client;
+  final bool enabled;
+  final String hint;
+  final void Function(String? relativePath) onChange;
+
+  const _FolderLocationField({
+    super.key,
+    required this.folders,
+    required this.client,
+    required this.enabled,
+    required this.hint,
+    required this.onChange,
+  });
+
+  @override
+  State<_FolderLocationField> createState() => _FolderLocationFieldState();
+}
+
+class _FolderLocationFieldState extends State<_FolderLocationField> {
+  // The Autocomplete widget owns its TextEditingController; we get a reference
+  // in fieldViewBuilder and attach our listener exactly once per controller.
+  TextEditingController? _ctrl;
+  // Folder whose cover is shown as the prefix icon (null = plain folder icon).
+  Media? _previewFolder;
+
+  @override
+  void dispose() {
+    _ctrl?.removeListener(_onTextChanged);
+    super.dispose();
+  }
+
+  // Attach listener once; safe to call on every build because it checks identity.
+  void _attach(TextEditingController ctrl) {
+    if (_ctrl == ctrl) return;
+    _ctrl?.removeListener(_onTextChanged);
+    _ctrl = ctrl;
+    ctrl.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    final ctrl = _ctrl;
+    if (ctrl == null) return;
+    // Strip the display-only trailing slash to get the real path.
+    final raw = ctrl.text;
+    final path = raw.endsWith('/') ? raw.substring(0, raw.length - 1) : raw;
+    final trimmed = path.trim();
+
+    // Update the cover preview when the text exactly matches a known folder.
+    Media? matched;
+    if (trimmed.isNotEmpty) {
+      for (final f in widget.folders) {
+        if (f.relativePath.toLowerCase() == trimmed.toLowerCase() ||
+            f.displayTitle.toLowerCase() == trimmed.toLowerCase()) {
+          matched = f;
+          break;
+        }
+      }
+    }
+    if (matched != _previewFolder) setState(() => _previewFolder = matched);
+    widget.onChange(trimmed.isEmpty ? null : trimmed);
+  }
+
+  void _clear(TextEditingController ctrl) {
+    ctrl.clear();
+    setState(() => _previewFolder = null);
+    widget.onChange(null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Autocomplete<_FolderOption>(
+      // What goes into the text field after a selection.
+      displayStringForOption: (opt) => switch (opt) {
+        _ExistingFolder(:final folder) => '${folder.relativePath}/',
+        _NewFolder(:final path) when path.isNotEmpty =>
+            path.endsWith('/') ? path : '$path/',
+        _ => '',
+      },
+      optionsBuilder: (textValue) {
+        final raw = textValue.text;
+        // Strip trailing slash before matching so "Absolute Superman/" still
+        // shows "Absolute Superman" in the list.
+        final q = (raw.endsWith('/')
+                ? raw.substring(0, raw.length - 1)
+                : raw)
+            .trim()
+            .toLowerCase();
+
+        final existing = widget.folders
+            .where((f) =>
+                q.isEmpty ||
+                f.displayTitle.toLowerCase().contains(q) ||
+                f.relativePath.toLowerCase().contains(q))
+            .map((f) => _ExistingFolder(f) as _FolderOption);
+
+        // "Create" option is always first so it's immediately reachable.
+        return [_NewFolder(q), ...existing];
+      },
+      onSelected: (opt) {
+        switch (opt) {
+          case _ExistingFolder(:final folder):
+            setState(() => _previewFolder = folder);
+            widget.onChange(folder.relativePath);
+          case _NewFolder(:final path) when path.isNotEmpty:
+            setState(() => _previewFolder = null);
+            widget.onChange(path);
+          default:
+            break; // empty path — user hasn't typed yet; do nothing
+        }
+      },
+      fieldViewBuilder: (context, ctrl, focusNode, onSubmit) {
+        _attach(ctrl);
+        return TextField(
+          controller: ctrl,
+          focusNode: focusNode,
+          enabled: widget.enabled,
+          onSubmitted: (_) => onSubmit(),
+          decoration: InputDecoration(
+            labelText: 'Upload into…',
+            hintText: widget.hint,
+            border: const OutlineInputBorder(),
+            prefixIcon: _previewFolder != null
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: CoverImage(
+                        url: widget.client.coverUrl(_previewFolder!.id),
+                        headers: widget.client.authHeaders,
+                        cacheKey: _previewFolder!.coverCachePath,
+                        fit: BoxFit.cover,
+                        width: 30,
+                        height: 42,
+                      ),
+                    ),
+                  )
+                : const Icon(Icons.folder_outlined),
+            prefixIconConstraints:
+                const BoxConstraints(minWidth: 52, minHeight: 52),
+            suffixIcon: ctrl.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear),
+                    tooltip: 'Upload to library root',
+                    onPressed: widget.enabled ? () => _clear(ctrl) : null,
+                  )
+                : null,
+          ),
+        );
+      },
+      optionsViewBuilder: (context, onOptionSelected, options) => Align(
+        alignment: Alignment.topLeft,
+        child: Material(
+          elevation: 4,
+          borderRadius: BorderRadius.circular(8),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 320, maxWidth: 560),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (context, i) {
+                  final opt = options.elementAt(i);
+                  final highlighted =
+                      AutocompleteHighlightedOption.of(context) == i;
+                  final hlColor = highlighted
+                      ? Theme.of(context)
+                          .colorScheme
+                          .primaryContainer
+                          .withOpacity(0.4)
+                      : null;
+                  return switch (opt) {
+                    _NewFolder(:final path) => _NewFolderTile(
+                        path: path,
+                        color: hlColor,
+                        onTap: path.isNotEmpty
+                            ? () => onOptionSelected(opt)
+                            : null,
+                      ),
+                    _ExistingFolder(:final folder) => _ExistingFolderTile(
+                        folder: folder,
+                        client: widget.client,
+                        color: hlColor,
+                        onTap: () => onOptionSelected(opt),
+                      ),
+                  };
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NewFolderTile extends StatelessWidget {
+  final String path;
+  final Color? color;
+  final VoidCallback? onTap;
+  const _NewFolderTile(
+      {required this.path, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final active = path.isNotEmpty;
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        color: active ? color : null,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Icon(
+              Icons.create_new_folder_outlined,
+              size: 20,
+              color: active ? cs.primary : cs.onSurface.withOpacity(0.38),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: active
+                  ? RichText(
+                      text: TextSpan(
+                        style: Theme.of(context).textTheme.bodyMedium,
+                        children: [
+                          TextSpan(
+                              text: 'Create ',
+                              style: TextStyle(color: cs.primary)),
+                          TextSpan(
+                              text: '"$path/"',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w500)),
+                        ],
+                      ),
+                    )
+                  : Text(
+                      'Type a path to create a new folder',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: cs.onSurface.withOpacity(0.38)),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ExistingFolderTile extends StatelessWidget {
+  final Media folder;
+  final ApiClient client;
+  final Color? color;
+  final VoidCallback onTap;
+  const _ExistingFolderTile(
+      {required this.folder,
+      required this.client,
+      required this.color,
+      required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        color: color,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 44,
+              height: 62,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: CoverImage(
+                  url: client.coverUrl(folder.id),
+                  headers: client.authHeaders,
+                  cacheKey: folder.coverCachePath,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    folder.displayTitle,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${folder.relativePath}/',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color:
+                            Theme.of(context).colorScheme.onSurfaceVariant),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
             ),
           ],
         ),

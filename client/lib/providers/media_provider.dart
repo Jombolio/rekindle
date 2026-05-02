@@ -76,6 +76,24 @@ final mediaListProvider =
 );
 
 // ---------------------------------------------------------------------------
+// Folder search
+// ---------------------------------------------------------------------------
+
+/// Returns all [Media] items with mediaType == "folder" whose title contains
+/// [query] at any depth inside [libraryId]. Empty query returns nothing.
+final folderSearchProvider = FutureProvider.autoDispose
+    .family<List<Media>, ({String libraryId, String query})>(
+  (ref, args) async {
+    if (args.query.isEmpty) return [];
+    final client = ref.read(apiClientProvider);
+    return MediaApi(client).searchFolders(
+      libraryId: args.libraryId,
+      query: args.query,
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Single media item
 // ---------------------------------------------------------------------------
 

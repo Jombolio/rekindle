@@ -11,7 +11,9 @@ import com.rekindle.app.domain.model.Media
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -50,6 +52,15 @@ class MediaGridViewModel @Inject constructor(
         false,
     )
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
+
+    /** Items filtered by the current search query (case-insensitive title match). */
+    val filteredItems: StateFlow<List<Media>> = combine(_state, _searchQuery) { s, q ->
+        if (q.isBlank()) s.items
+        else s.items.filter { it.displayTitle.contains(q, ignoreCase = true) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     var authHeader: String = ""
         private set
     private var baseUrl: String = ""
@@ -76,6 +87,8 @@ class MediaGridViewModel @Inject constructor(
                 .onFailure { e -> _state.update { it.copy(loading = false, error = e.message) } }
         }
     }
+
+    fun setSearchQuery(query: String) { _searchQuery.value = query }
 
     fun downloadStateFor(mediaId: String): DownloadState = downloadStates.value[mediaId] ?: DownloadState()
 
