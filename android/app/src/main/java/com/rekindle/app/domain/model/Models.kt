@@ -48,3 +48,32 @@ data class PagedResponse<T>(
     val pageSize: Int,
     val totalPages: Int,
 )
+
+data class AdminUser(
+    val id: String,
+    val username: String,
+    val permissionLevel: Int,
+    val createdAt: String,
+) {
+    val isAdmin: Boolean get() = permissionLevel >= 4
+    val permissionLabel: String get() = when (permissionLevel) {
+        1 -> "Read-only"
+        2 -> "Download"
+        3 -> "Manage Media"
+        4 -> "Admin"
+        else -> "Level $permissionLevel"
+    }
+}
+
+data class AdminStats(
+    val userCount: Int,
+    val libraryCount: Int,
+    val mediaCount: Int,
+    val cacheSizeBytes: Long,
+) {
+    val cacheSizeLabel: String get() {
+        val mb = cacheSizeBytes / (1024.0 * 1024.0)
+        return if (mb < 1024) "%.1f MB".format(mb)
+        else "%.2f GB".format(mb / 1024.0)
+    }
+}

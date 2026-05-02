@@ -75,3 +75,39 @@ fun <T, R> PagedResponseDto<T>.toDomain(mapper: (T) -> R) = PagedResponse(
     pageSize = pageSize,
     totalPages = totalPages,
 )
+
+// ── Admin ─────────────────────────────────────────────────────────────────
+
+data class AdminUserDto(
+    val id: String,
+    val username: String,
+    val permissionLevel: Int,
+    val createdAt: String,
+)
+
+data class AdminStatsDto(
+    val userCount: Int,
+    val libraryCount: Int,
+    val mediaCount: Int,
+    val cacheSizeBytes: Long,
+)
+
+data class ScanProgressDto(
+    val phase: String = "idle",
+    val filesTotal: Int = 0,
+    val filesProcessed: Int = 0,
+    val added: Int = 0,
+    val removed: Int = 0,
+    val folders: Int = 0,
+    val coversQueued: Int = 0,
+    val coversGenerated: Int = 0,
+)
+
+data class CreateUserRequest(val username: String, val password: String, val permissionLevel: Int = 2)
+data class UpdatePermissionRequest(val permissionLevel: Int)
+data class UpdatePasswordRequest(val password: String)
+data class UploadResponseDto(val message: String, val fileName: String? = null)
+data class ClearCacheResponseDto(val message: String, val freedBytes: Long = 0)
+
+fun AdminUserDto.toDomain() = com.rekindle.app.domain.model.AdminUser(id, username, permissionLevel, createdAt)
+fun AdminStatsDto.toDomain() = com.rekindle.app.domain.model.AdminStats(userCount, libraryCount, mediaCount, cacheSizeBytes)

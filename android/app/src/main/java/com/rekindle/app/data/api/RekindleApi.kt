@@ -1,22 +1,34 @@
 package com.rekindle.app.data.api
 
+import com.rekindle.app.data.model.AdminStatsDto
+import com.rekindle.app.data.model.AdminUserDto
+import com.rekindle.app.data.model.ClearCacheResponseDto
 import com.rekindle.app.data.model.CreateLibraryRequest
+import com.rekindle.app.data.model.CreateUserRequest
 import com.rekindle.app.data.model.LibraryDto
 import com.rekindle.app.data.model.LoginRequest
 import com.rekindle.app.data.model.LoginResponse
-import com.rekindle.app.data.model.SetupRequest
 import com.rekindle.app.data.model.MediaDto
 import com.rekindle.app.data.model.PageCountDto
 import com.rekindle.app.data.model.PagedResponseDto
 import com.rekindle.app.data.model.ReadingProgressDto
 import com.rekindle.app.data.model.SaveProgressRequest
+import com.rekindle.app.data.model.ScanProgressDto
+import com.rekindle.app.data.model.SetupRequest
 import com.rekindle.app.data.model.UpdateLibraryRequest
+import com.rekindle.app.data.model.UpdatePasswordRequest
+import com.rekindle.app.data.model.UpdatePermissionRequest
+import com.rekindle.app.data.model.UploadResponseDto
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.PUT
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Streaming
@@ -84,4 +96,53 @@ interface RekindleApi {
 
     @POST("api/libraries/{id}/scan")
     suspend fun scanLibrary(@Path("id") libraryId: String)
+
+    // ── Users (admin) ────────────────────────────────────────────────────────
+    @GET("api/users")
+    suspend fun getUsers(): List<AdminUserDto>
+
+    @POST("api/users")
+    suspend fun createUser(@Body request: CreateUserRequest): AdminUserDto
+
+    @PUT("api/users/{id}/permission")
+    suspend fun updateUserPermission(
+        @Path("id") userId: String,
+        @Body request: UpdatePermissionRequest,
+    )
+
+    @PUT("api/users/{id}/password")
+    suspend fun updateUserPassword(
+        @Path("id") userId: String,
+        @Body request: UpdatePasswordRequest,
+    )
+
+    @DELETE("api/users/{id}")
+    suspend fun deleteUser(@Path("id") userId: String)
+
+    // ── Admin stats & cache ───────────────────────────────────────────────────
+    @GET("api/admin/stats")
+    suspend fun getAdminStats(): AdminStatsDto
+
+    @DELETE("api/admin/cache")
+    suspend fun clearCache(): ClearCacheResponseDto
+
+    // ── Admin upload ──────────────────────────────────────────────────────────
+    @Multipart
+    @POST("api/admin/upload")
+    suspend fun uploadArchive(
+        @Part("libraryId") libraryId: RequestBody,
+        @Part("relativePath") relativePath: RequestBody?,
+        @Part file: MultipartBody.Part,
+    ): UploadResponseDto
+
+    // ── Folder search ─────────────────────────────────────────────────────────
+    @GET("api/media/search")
+    suspend fun searchFolders(
+        @Query("libraryId") libraryId: String,
+        @Query("q") query: String,
+    ): List<MediaDto>
+
+    // ── Scan progress ─────────────────────────────────────────────────────────
+    @GET("api/libraries/{id}/scan/progress")
+    suspend fun getScanProgress(@Path("id") libraryId: String): ScanProgressDto
 }
