@@ -61,7 +61,7 @@ public class MediaRepository(DbConnectionFactory factory)
             FROM media
             WHERE library_id = @libraryId
               AND media_type = 'folder'
-              AND (title LIKE @pattern OR sort_title LIKE @pattern)
+              AND (title LIKE @pattern OR series LIKE @pattern)
             ORDER BY relative_path;
             """,
             new { libraryId, pattern });
