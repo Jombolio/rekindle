@@ -89,7 +89,7 @@ fun ChapterIndexScreen(
     val folderDlState by vm.folderDownloadState.collectAsState()
     val canDownload by vm.canDownload.collectAsState()
     val isAdmin by vm.isAdmin.collectAsState()
-    val isManga = vm.libraryType == "manga"
+    val showAbout = vm.libraryType == "manga" || vm.libraryType == "comic"
 
     // ── Metadata dialogs ──────────────────────────────────────────────────────
 
@@ -205,9 +205,9 @@ fun ChapterIndexScreen(
             ) { Text(state.error!!) }
 
             else -> LazyColumn(Modifier.fillMaxSize().padding(padding)) {
-                if (isManga) {
+                if (showAbout) {
                     item(key = "about") {
-                        MangaAboutSection(
+                        AboutSection(
                             metadata = state.metadata,
                             isLoading = state.metadataLoading,
                             isScraping = state.metadataScraping,
@@ -284,7 +284,7 @@ fun ChapterIndexScreen(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MangaAboutSection(
+private fun AboutSection(
     metadata: MangaMetadata?,
     isLoading: Boolean,
     isScraping: Boolean,

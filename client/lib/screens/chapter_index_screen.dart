@@ -11,7 +11,7 @@ import '../providers/reader_provider.dart';
 import 'widgets/cover_image.dart';
 import 'widgets/download_button.dart';
 import 'widgets/error_view.dart';
-import 'widgets/manga_about_section.dart';
+import 'widgets/about_section.dart';
 import 'widgets/marquee_text.dart';
 
 // Fixed tile height — leading thumbnail is 68 px + 12 px vertical padding.
@@ -66,12 +66,12 @@ class ChapterIndexScreen extends ConsumerWidget {
           final subfolders = items.where((m) => m.isFolder).toList();
           final archives = items.where((m) => !m.isFolder).toList();
 
-          final isManga = libraryType == 'manga';
+          final showAbout = libraryType == 'manga' || libraryType == 'comic';
 
           if (subfolders.isEmpty && archives.isEmpty) {
             return Column(
               children: [
-                if (isManga) MangaAboutSection(mediaId: folderId),
+                if (showAbout) AboutSection(mediaId: folderId),
                 const Expanded(
                   child: Center(
                     child: Column(
@@ -138,11 +138,11 @@ class ChapterIndexScreen extends ConsumerWidget {
             },
           );
 
-          if (!isManga) return list;
+          if (!showAbout) return list;
 
           return Column(
             children: [
-              MangaAboutSection(mediaId: folderId),
+              AboutSection(mediaId: folderId),
               Expanded(child: list),
             ],
           );

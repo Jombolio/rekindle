@@ -12,16 +12,16 @@ import '../../providers/metadata_provider.dart';
 ///   created   → refreshes and shows a snackbar
 ///   no_change → snackbar only, no write
 ///   conflict  → diff dialog before committing
-class MangaAboutSection extends ConsumerStatefulWidget {
+class AboutSection extends ConsumerStatefulWidget {
   final String mediaId;
 
-  const MangaAboutSection({super.key, required this.mediaId});
+  const AboutSection({super.key, required this.mediaId});
 
   @override
-  ConsumerState<MangaAboutSection> createState() => _MangaAboutSectionState();
+  ConsumerState<AboutSection> createState() => _AboutSectionState();
 }
 
-class _MangaAboutSectionState extends ConsumerState<MangaAboutSection> {
+class _AboutSectionState extends ConsumerState<AboutSection> {
   bool _expanded = false;
   bool _scraping = false;
 
