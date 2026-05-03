@@ -42,6 +42,10 @@ public class DbInitializer(DbConnectionFactory factory, ILogger<DbInitializer> l
             await ApplyMigration(connection, 4, Migration_004);
         if (fromVersion < 5)
             await ApplyMigration(connection, 5, Migration_005);
+        if (fromVersion < 6)
+            await ApplyMigration(connection, 6, Migration_006);
+        if (fromVersion < 7)
+            await ApplyMigration(connection, 7, Migration_007);
     }
 
     private static async Task ApplyMigration(SqliteConnection connection, int version, Func<SqliteConnection, Task> migration)
@@ -52,6 +56,36 @@ public class DbInitializer(DbConnectionFactory factory, ILogger<DbInitializer> l
             "INSERT INTO schema_version (version) VALUES (@version);",
             new { version }, tx);
         tx.Commit();
+    }
+
+    private static async Task Migration_007(SqliteConnection connection)
+    {
+        await connection.ExecuteAsync(
+            "ALTER TABLE manga_metadata ADD COLUMN comicvine_id INTEGER;");
+    }
+
+    private static async Task Migration_006(SqliteConnection connection)
+    {
+        await connection.ExecuteAsync("""
+            CREATE TABLE IF NOT EXISTS manga_metadata (
+                media_id        TEXT PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE,
+                title           TEXT,
+                synopsis        TEXT,
+                genres          TEXT,
+                score           REAL,
+                status          TEXT,
+                year            INTEGER,
+                mal_id          INTEGER,
+                anilist_id      INTEGER,
+                source          TEXT,
+                last_scraped_at DATETIME
+            );
+
+            CREATE TABLE IF NOT EXISTS metadata_config (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            """);
     }
 
     private static async Task Migration_005(SqliteConnection connection)

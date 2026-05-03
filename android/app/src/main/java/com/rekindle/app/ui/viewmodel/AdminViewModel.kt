@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.data.api.RekindleApi
+import com.rekindle.app.data.repository.MetadataRepository
 import com.rekindle.app.data.model.CreateUserRequest
 import com.rekindle.app.data.model.MediaDto
 import com.rekindle.app.data.model.UpdatePasswordRequest
@@ -48,11 +49,19 @@ data class AdminScreenState(
     val uploadError: String? = null,
     val uploadSuccess: String? = null,
     val uploadFolders: List<Media> = emptyList(),
+    // Metadata / APIs tab
+    val malKeySet: Boolean = false,
+    val cvKeySet: Boolean = false,
+    val apisLoading: Boolean = false,
+    val apisSaving: Boolean = false,
+    val apisError: String? = null,
+    val apisSaveSuccess: Boolean = false,
 )
 
 @HiltViewModel
 class AdminViewModel @Inject constructor(
     private val api: RekindleApi,
+    private val metadataRepo: MetadataRepository,
     private val prefs: PrefsStore,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
@@ -218,4 +227,37 @@ class AdminViewModel @Inject constructor(
             cursor.moveToFirst()
             if (idx >= 0) cursor.getString(idx) else null
         } ?: uri.lastPathSegment ?: "upload"
+
+    // ── Metadata API config ───────────────────────────────────────────────────
+
+    fun loadApisConfig() {
+        viewModelScope.launch {
+            _state.update { it.copy(apisLoading = true, apisError = null) }
+            runCatching { metadataRepo.getConfig() }
+                .onSuccess { cfg ->
+                    _state.update {
+                        it.copy(malKeySet = cfg.malClientIdSet, cvKeySet = cfg.comicvineApiKeySet, apisLoading = false)
+                    }
+                }
+                .onFailure { e -> _state.update { it.copy(apisLoading = false, apisError = e.message) } }
+        }
+    }
+
+    fun saveApiKeys(malClientId: String?, comicvineApiKey: String?) {
+        viewModelScope.launch {
+            _state.update { it.copy(apisSaving = true, apisError = null, apisSaveSuccess = false) }
+            runCatching { metadataRepo.saveConfig(malClientId = malClientId, comicvineApiKey = comicvineApiKey) }
+                .onSuccess {
+                    _state.update {
+                        it.copy(
+                            apisSaving = false,
+                            apisSaveSuccess = true,
+                            malKeySet = if (!malClientId.isNullOrBlank()) true else it.malKeySet,
+                            cvKeySet = if (!comicvineApiKey.isNullOrBlank()) true else it.cvKeySet,
+                        )
+                    }
+                }
+                .onFailure { e -> _state.update { it.copy(apisSaving = false, apisError = e.message) } }
+        }
+    }
 }

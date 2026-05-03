@@ -111,3 +111,31 @@ data class ClearCacheResponseDto(val message: String, val freedBytes: Long = 0)
 
 fun AdminUserDto.toDomain() = com.rekindle.app.domain.model.AdminUser(id, username, permissionLevel, createdAt)
 fun AdminStatsDto.toDomain() = com.rekindle.app.domain.model.AdminStats(userCount, libraryCount, mediaCount, cacheSizeBytes)
+
+// ── Metadata ──────────────────────────────────────────────────────────────
+
+data class MangaMetadataDto(
+    val mediaId: String,
+    val title: String? = null,
+    val synopsis: String? = null,
+    val genres: String? = null,
+    val score: Double? = null,
+    val status: String? = null,
+    val year: Int? = null,
+    val malId: Int? = null,
+    val anilistId: Int? = null,
+    val comicvineId: Int? = null,
+    val source: String? = null,
+    val lastScrapedAt: String? = null,
+)
+
+data class MetadataConfigDto(
+    val malClientIdSet: Boolean = false,
+    val comicvineApiKeySet: Boolean = false,
+)
+data class SetMetadataConfigRequest(val malClientId: String?, val comicvineApiKey: String? = null)
+
+fun MangaMetadataDto.toDomain() = com.rekindle.app.domain.model.MangaMetadata(
+    mediaId, title, synopsis, genres, score, status, year, malId, anilistId, comicvineId, source, lastScrapedAt,
+)
+fun MetadataConfigDto.toDomain() = com.rekindle.app.domain.model.MetadataConfig(malClientIdSet, comicvineApiKeySet)

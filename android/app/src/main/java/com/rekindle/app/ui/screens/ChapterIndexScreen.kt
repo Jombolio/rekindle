@@ -1,33 +1,50 @@
 package com.rekindle.app.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -41,11 +58,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.rekindle.app.core.download.FolderDownloadStatus
+import com.rekindle.app.domain.model.MangaMetadata
 import com.rekindle.app.domain.model.Media
 import com.rekindle.app.ui.components.DownloadButton
 import com.rekindle.app.ui.viewmodel.ChapterIndexViewModel
@@ -63,6 +82,8 @@ fun ChapterIndexScreen(
     val downloadStates by vm.downloadStates.collectAsState()
     val folderDlState by vm.folderDownloadState.collectAsState()
     val canDownload by vm.canDownload.collectAsState()
+    val isAdmin by vm.isAdmin.collectAsState()
+    val isManga = vm.libraryType == "manga"
 
     var showConfirmDialog by remember { mutableStateOf(false) }
 
@@ -157,6 +178,19 @@ fun ChapterIndexScreen(
             ) { Text(state.error!!) }
 
             else -> LazyColumn(Modifier.fillMaxSize().padding(padding)) {
+                if (isManga) {
+                    item(key = "about") {
+                        MangaAboutSection(
+                            metadata = state.metadata,
+                            isLoading = state.metadataLoading,
+                            isScraping = state.metadataScraping,
+                            isAdmin = isAdmin,
+                            onScrape = { vm.scrapeMetadata() },
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        )
+                    }
+                }
+
                 items(state.chapters, key = { it.id }) { chapter ->
                     val dlState = downloadStates[chapter.id] ?: vm.downloadStateFor(chapter.id)
                     val progress = state.readProgress[chapter.id]
@@ -213,6 +247,135 @@ fun ChapterIndexScreen(
                             .padding(horizontal = 4.dp)
                             .clickable { onChapterClick(chapter) },
                     )
+                }
+            }
+        }
+    }
+}
+
+// ── Manga About section ───────────────────────────────────────────────────────
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MangaAboutSection(
+    metadata: MangaMetadata?,
+    isLoading: Boolean,
+    isScraping: Boolean,
+    isAdmin: Boolean,
+    onScrape: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var showFullSynopsis by remember { mutableStateOf(false) }
+    val hasMeta = metadata != null
+
+    if (!hasMeta && !isAdmin && !isLoading) return
+
+    ElevatedCard(modifier = modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.animateContentSize()) {
+            // Header row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = hasMeta) { expanded = !expanded }
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    text = when {
+                        isLoading -> "Loading metadata…"
+                        hasMeta -> metadata!!.title ?: "About"
+                        else -> "No metadata scraped"
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                if (isAdmin) {
+                    if (isScraping) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        IconButton(onClick = onScrape, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Scrape metadata", modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+            }
+
+            // Expanded body
+            if (hasMeta && expanded) {
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+
+                    // Info chips
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        metadata!!.year?.let {
+                            SuggestionChip(
+                                onClick = {},
+                                label = { Text("$it", style = MaterialTheme.typography.labelSmall) },
+                                icon = { Icon(Icons.Default.CalendarToday, null, modifier = Modifier.size(14.dp)) },
+                            )
+                        }
+                        metadata.score?.let {
+                            SuggestionChip(
+                                onClick = {},
+                                label = { Text("%.1f".format(it), style = MaterialTheme.typography.labelSmall) },
+                                icon = { Icon(Icons.Default.Star, null, modifier = Modifier.size(14.dp)) },
+                            )
+                        }
+                        metadata.status?.let {
+                            SuggestionChip(
+                                onClick = {},
+                                label = { Text(metadata.formatStatus(), style = MaterialTheme.typography.labelSmall) },
+                            )
+                        }
+                        metadata.source?.let {
+                            SuggestionChip(
+                                onClick = {},
+                                label = { Text(if (it == "mal") "MAL" else "AniList", style = MaterialTheme.typography.labelSmall) },
+                                icon = { Icon(Icons.Default.Public, null, modifier = Modifier.size(14.dp)) },
+                            )
+                        }
+                    }
+
+                    // Genres
+                    if (metadata!!.genreList.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            metadata.genreList.forEach { genre ->
+                                AssistChip(
+                                    onClick = {},
+                                    label = { Text(genre, style = MaterialTheme.typography.labelSmall) },
+                                )
+                            }
+                        }
+                    }
+
+                    // Synopsis
+                    val synopsis = metadata.synopsis?.replace(Regex("<[^>]*>"), "")?.trim()
+                    if (!synopsis.isNullOrEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = synopsis,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = if (showFullSynopsis) Int.MAX_VALUE else 4,
+                            overflow = if (showFullSynopsis) TextOverflow.Visible else TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = if (showFullSynopsis) "Show less" else "Show more",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable { showFullSynopsis = !showFullSynopsis },
+                        )
+                    }
                 }
             }
         }

@@ -1,6 +1,9 @@
 package com.rekindle.app.data.api
 
 import com.rekindle.app.data.model.AdminStatsDto
+import com.rekindle.app.data.model.MangaMetadataDto
+import com.rekindle.app.data.model.MetadataConfigDto
+import com.rekindle.app.data.model.SetMetadataConfigRequest
 import com.rekindle.app.data.model.AdminUserDto
 import com.rekindle.app.data.model.ClearCacheResponseDto
 import com.rekindle.app.data.model.CreateLibraryRequest
@@ -145,4 +148,17 @@ interface RekindleApi {
     // ── Scan progress ─────────────────────────────────────────────────────────
     @GET("api/libraries/{id}/scan/progress")
     suspend fun getScanProgress(@Path("id") libraryId: String): ScanProgressDto
+
+    // ── Manga metadata ────────────────────────────────────────────────────────
+    @GET("api/metadata/{mediaId}")
+    suspend fun getMetadata(@Path("mediaId") mediaId: String): MangaMetadataDto
+
+    @POST("api/metadata/{mediaId}/scrape")
+    suspend fun scrapeMetadata(@Path("mediaId") mediaId: String): MangaMetadataDto
+
+    @GET("api/admin/metadata/config")
+    suspend fun getMetadataConfig(): MetadataConfigDto
+
+    @PUT("api/admin/metadata/config")
+    suspend fun setMetadataConfig(@Body request: SetMetadataConfigRequest)
 }

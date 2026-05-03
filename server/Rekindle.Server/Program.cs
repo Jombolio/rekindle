@@ -9,6 +9,7 @@ using Rekindle.Server.Authorization;
 using Rekindle.Core.Database;
 using Rekindle.Core.Repositories;
 using Rekindle.Core.Services;
+using Rekindle.Server.Controllers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -80,6 +81,11 @@ builder.Services.AddSingleton<SetupTokenService>();
 builder.Services.AddSingleton<ScanProgressTracker>();
 builder.Services.AddScoped<LibraryScannerService>();
 builder.Services.AddSingleton<ArchiveService>();
+builder.Services.AddScoped<MetadataRepository>();
+builder.Services.AddSingleton<AniListService>();
+builder.Services.AddSingleton<MalService>();
+builder.Services.AddSingleton<ComicVineService>();
+builder.Services.AddScoped<MetadataScraperService>();
 
 var coverChannel = Channel.CreateUnbounded<CoverJob>(new UnboundedChannelOptions { SingleReader = true });
 builder.Services.AddSingleton(coverChannel);

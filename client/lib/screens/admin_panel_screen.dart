@@ -7,6 +7,7 @@ import '../core/api/admin_api.dart';
 import '../core/api/api_client.dart';
 import '../core/api/libraries_api.dart';
 import '../core/api/media_api.dart';
+import '../core/api/metadata_api.dart';
 import '../core/models/library.dart';
 import '../core/models/media.dart';
 import '../providers/sources_provider.dart';
@@ -89,7 +90,7 @@ class AdminPanelScreen extends ConsumerWidget {
     final sourceName = source?.name ?? 'Admin Panel';
 
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: Text('$sourceName — Admin'),
@@ -98,6 +99,7 @@ class AdminPanelScreen extends ConsumerWidget {
               Tab(icon: Icon(Icons.people_outline), text: 'Users'),
               Tab(icon: Icon(Icons.upload_file_outlined), text: 'Upload'),
               Tab(icon: Icon(Icons.monitor_heart_outlined), text: 'System'),
+              Tab(icon: Icon(Icons.api_outlined), text: 'APIs'),
             ],
           ),
         ),
@@ -106,6 +108,7 @@ class AdminPanelScreen extends ConsumerWidget {
             _UsersTab(sourceId: sourceId),
             _UploadTab(sourceId: sourceId),
             _SystemTab(sourceId: sourceId),
+            _ApisTab(sourceId: sourceId),
           ],
         ),
       ),
@@ -1184,6 +1187,248 @@ class _ClearCacheButtonState extends ConsumerState<_ClearCacheButton> {
               child: CircularProgressIndicator(strokeWidth: 2))
           : const Icon(Icons.delete_sweep_outlined),
       label: const Text('Clear Page Cache'),
+    );
+  }
+}
+
+// ── APIs tab ──────────────────────────────────────────────────────────────
+
+class _ApisTab extends ConsumerStatefulWidget {
+  final String sourceId;
+  const _ApisTab({required this.sourceId});
+
+  @override
+  ConsumerState<_ApisTab> createState() => _ApisTabState();
+}
+
+class _ApisTabState extends ConsumerState<_ApisTab> {
+  final _malCtrl = TextEditingController();
+  final _cvCtrl = TextEditingController();
+  bool _obscureMal = true;
+  bool _obscureCv = true;
+  bool _saving = false;
+  bool _loading = true;
+  bool _malKeySet = false;
+  bool _cvKeySet = false;
+  String? _error;
+  String? _success;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadConfig();
+  }
+
+  @override
+  void dispose() {
+    _malCtrl.dispose();
+    _cvCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadConfig() async {
+    try {
+      final client = ref.read(_sourceClientProvider(widget.sourceId));
+      final config = await MetadataApi(client).getConfig();
+      if (mounted) setState(() {
+        _malKeySet = config.malKeySet;
+        _cvKeySet = config.comicvineKeySet;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _save() async {
+    final mal = _malCtrl.text.trim();
+    final cv = _cvCtrl.text.trim();
+    if (mal.isEmpty && cv.isEmpty) {
+      setState(() => _error = 'Enter at least one API key.');
+      return;
+    }
+    setState(() { _saving = true; _error = null; _success = null; });
+    try {
+      final client = ref.read(_sourceClientProvider(widget.sourceId));
+      await MetadataApi(client).saveConfig(
+        malClientId: mal.isEmpty ? null : mal,
+        comicvineApiKey: cv.isEmpty ? null : cv,
+      );
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          if (mal.isNotEmpty) { _malKeySet = true; _malCtrl.clear(); }
+          if (cv.isNotEmpty) { _cvKeySet = true; _cvCtrl.clear(); }
+          _success = 'API keys saved.';
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _saving = false; _error = _apiError(e); });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator());
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Metadata API Keys',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text(
+              'API keys are stored securely on the server and only used for '
+              'scraping manga metadata. AniList works without a key.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 24),
+            if (_error != null) ...[
+              _ErrorText(_error!),
+              const SizedBox(height: 16),
+            ],
+            if (_success != null) ...[
+              _SuccessText(_success!),
+              const SizedBox(height: 16),
+            ],
+
+            // ── ComicVine ─────────────────────────────────────────────────
+            Row(
+              children: [
+                const Icon(Icons.menu_book_outlined, size: 20),
+                const SizedBox(width: 8),
+                Text('ComicVine',
+                    style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(width: 8),
+                if (_cvKeySet)
+                  Chip(
+                    label: const Text('Key set'),
+                    avatar: const Icon(Icons.check_circle,
+                        size: 14, color: Colors.green),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Used for comic metadata. Register at comicvine.gamespot.com/api to get an API key. '
+              'Rate limit: 200 requests/resource/hour.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _cvCtrl,
+              obscureText: _obscureCv,
+              decoration: InputDecoration(
+                labelText: _cvKeySet
+                    ? 'New ComicVine API Key (leave blank to keep current)'
+                    : 'ComicVine API Key',
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                      _obscureCv ? Icons.visibility_off : Icons.visibility),
+                  onPressed: () =>
+                      setState(() => _obscureCv = !_obscureCv),
+                ),
+              ),
+              onSubmitted: (_) => _save(),
+            ),
+
+            const SizedBox(height: 24),
+            const Divider(),
+            const SizedBox(height: 16),
+
+            // ── MAL ──────────────────────────────────────────────────────
+            Row(
+              children: [
+                const Icon(Icons.public, size: 20),
+                const SizedBox(width: 8),
+                Text('MyAnimeList',
+                    style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(width: 8),
+                if (_malKeySet)
+                  Chip(
+                    label: const Text('Key set'),
+                    avatar: const Icon(Icons.check_circle,
+                        size: 14, color: Colors.green),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Used for manga metadata. Register at myanimelist.net/apiconfig to obtain a Client ID.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _malCtrl,
+              obscureText: _obscureMal,
+              decoration: InputDecoration(
+                labelText: _malKeySet
+                    ? 'New MAL Client ID (leave blank to keep current)'
+                    : 'MAL Client ID',
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                      _obscureMal ? Icons.visibility_off : Icons.visibility),
+                  onPressed: () =>
+                      setState(() => _obscureMal = !_obscureMal),
+                ),
+              ),
+              onSubmitted: (_) => _save(),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _saving ? null : _save,
+              icon: _saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.save_outlined),
+              label: const Text('Save API Keys'),
+            ),
+
+            const SizedBox(height: 32),
+            const Divider(),
+            const SizedBox(height: 16),
+
+            // ── AniList ──────────────────────────────────────────────────
+            Row(
+              children: [
+                const Icon(Icons.public, size: 20),
+                const SizedBox(width: 8),
+                Text('AniList',
+                    style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(width: 8),
+                const Chip(
+                  label: Text('No key needed'),
+                  avatar: Icon(Icons.check_circle,
+                      size: 14, color: Colors.green),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'AniList public GraphQL API is available without authentication. '
+              'Rekindle enforces a 30-request/minute rate limit to stay within AniList\'s burst limit.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

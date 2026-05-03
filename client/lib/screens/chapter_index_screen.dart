@@ -11,6 +11,7 @@ import '../providers/reader_provider.dart';
 import 'widgets/cover_image.dart';
 import 'widgets/download_button.dart';
 import 'widgets/error_view.dart';
+import 'widgets/manga_about_section.dart';
 import 'widgets/marquee_text.dart';
 
 // Fixed tile height — leading thumbnail is 68 px + 12 px vertical padding.
@@ -65,16 +66,25 @@ class ChapterIndexScreen extends ConsumerWidget {
           final subfolders = items.where((m) => m.isFolder).toList();
           final archives = items.where((m) => !m.isFolder).toList();
 
+          final isManga = libraryType == 'manga';
+
           if (subfolders.isEmpty && archives.isEmpty) {
-            return const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.folder_open_outlined, size: 64),
-                  SizedBox(height: 16),
-                  Text('No chapters found. Try scanning the library.'),
-                ],
-              ),
+            return Column(
+              children: [
+                if (isManga) MangaAboutSection(mediaId: folderId),
+                const Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.folder_open_outlined, size: 64),
+                        SizedBox(height: 16),
+                        Text('No chapters found. Try scanning the library.'),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             );
           }
 
@@ -82,12 +92,10 @@ class ChapterIndexScreen extends ConsumerWidget {
           final totalItems =
               (hasSubfolders ? subfolders.length + 1 : 0) + archives.length;
 
-          return ListView.builder(
+          Widget list = ListView.builder(
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: totalItems,
-            // Pre-render ~6 extra tiles above/below the viewport.
             cacheExtent: _kTileHeight * 6,
-            // O(1) scroll-extent calculation regardless of list length.
             itemExtentBuilder: (i, _) {
               if (hasSubfolders && i == 0) return _kHeaderHeight;
               return _kTileHeight;
@@ -128,6 +136,15 @@ class ChapterIndexScreen extends ConsumerWidget {
                 canDownload: canDownload,
               );
             },
+          );
+
+          if (!isManga) return list;
+
+          return Column(
+            children: [
+              MangaAboutSection(mediaId: folderId),
+              Expanded(child: list),
+            ],
           );
         },
       ),

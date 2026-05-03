@@ -11,6 +11,8 @@ import com.rekindle.app.data.db.ProgressQueueDao
 import com.rekindle.app.data.db.ProgressQueueEntity
 import com.rekindle.app.data.repository.DownloadRepository
 import com.rekindle.app.data.repository.MediaRepository
+import com.rekindle.app.data.repository.MetadataRepository
+import com.rekindle.app.domain.model.MangaMetadata
 import com.rekindle.app.domain.model.Media
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
@@ -31,6 +33,10 @@ data class ChapterIndexState(
     val readProgress: Map<String, ProgressQueueEntity> = emptyMap(),
     val loading: Boolean = true,
     val error: String? = null,
+    val metadata: MangaMetadata? = null,
+    val metadataLoading: Boolean = false,
+    val metadataScraping: Boolean = false,
+    val metadataError: String? = null,
 )
 
 @HiltViewModel
@@ -38,11 +44,13 @@ class ChapterIndexViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repo: MediaRepository,
     private val downloadRepo: DownloadRepository,
+    private val metadataRepo: MetadataRepository,
     private val progressDao: ProgressQueueDao,
     private val prefs: PrefsStore,
 ) : ViewModel() {
 
     private val folderId: String = checkNotNull(savedStateHandle["folderId"])
+    val libraryType: String? = savedStateHandle["libraryType"]
 
     private val _state = MutableStateFlow(ChapterIndexState())
     val state = _state.asStateFlow()
@@ -67,6 +75,12 @@ class ChapterIndexViewModel @Inject constructor(
         false,
     )
 
+    val isAdmin = prefs.permissionLevel.map { it >= 4 }.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        false,
+    )
+
     var authHeader: String = ""
         private set
     private var baseUrl: String = ""
@@ -85,6 +99,23 @@ class ChapterIndexViewModel @Inject constructor(
                     downloadRepo.restoreFolderIfNeeded(folderId)
                 }
                 .onFailure { e -> _state.update { it.copy(loading = false, error = e.message) } }
+
+            // Load metadata for manga libraries
+            if (libraryType == "manga") {
+                _state.update { it.copy(metadataLoading = true) }
+                val meta = metadataRepo.getMetadata(folderId)
+                _state.update { it.copy(metadata = meta, metadataLoading = false) }
+            }
+        }
+    }
+
+    fun scrapeMetadata() {
+        if (_state.value.metadataScraping) return
+        viewModelScope.launch {
+            _state.update { it.copy(metadataScraping = true, metadataError = null) }
+            runCatching { metadataRepo.scrapeMetadata(folderId) }
+                .onSuccess { meta -> _state.update { it.copy(metadata = meta, metadataScraping = false) } }
+                .onFailure { e -> _state.update { it.copy(metadataScraping = false, metadataError = e.message) } }
         }
     }
 

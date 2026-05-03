@@ -65,6 +65,31 @@ data class AdminUser(
     }
 }
 
+data class MangaMetadata(
+    val mediaId: String,
+    val title: String?,
+    val synopsis: String?,
+    val genres: String?,
+    val score: Double?,
+    val status: String?,
+    val year: Int?,
+    val malId: Int?,
+    val anilistId: Int?,
+    val comicvineId: Int?,
+    val source: String?,
+    val lastScrapedAt: String?,
+) {
+    val genreList: List<String> get() =
+        genres?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+
+    fun formatStatus(): String = status
+        ?.split("_")
+        ?.joinToString(" ") { w -> w.lowercase().replaceFirstChar { it.uppercase() } }
+        ?: ""
+}
+
+data class MetadataConfig(val malClientIdSet: Boolean, val comicvineApiKeySet: Boolean = false)
+
 data class AdminStats(
     val userCount: Int,
     val libraryCount: Int,

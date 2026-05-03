@@ -118,6 +118,7 @@ fun AdminScreen(
         when (selectedTab) {
             1 -> adminVm.loadUsers()
             3 -> adminVm.loadStats()
+            4 -> adminVm.loadApisConfig()
         }
     }
 
@@ -147,7 +148,7 @@ fun AdminScreen(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             TabRow(selectedTabIndex = selectedTab) {
-                listOf("Libraries", "Users", "Upload", "System").forEachIndexed { idx, title ->
+                listOf("Libraries", "Users", "Upload", "System", "APIs").forEachIndexed { idx, title ->
                     Tab(
                         selected = selectedTab == idx,
                         onClick = { selectedTab = idx },
@@ -177,6 +178,10 @@ fun AdminScreen(
                     adminState = adminState,
                 )
                 3 -> SystemTabContent(
+                    adminVm = adminVm,
+                    adminState = adminState,
+                )
+                4 -> ApisTabContent(
                     adminVm = adminVm,
                     adminState = adminState,
                 )
@@ -747,6 +752,149 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+// ── APIs tab ──────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ApisTabContent(
+    adminVm: AdminViewModel,
+    adminState: AdminScreenState,
+) {
+    var malClientId by rememberSaveable { mutableStateOf("") }
+    var comicvineApiKey by rememberSaveable { mutableStateOf("") }
+    var obscureMal by rememberSaveable { mutableStateOf(true) }
+    var obscureCv by rememberSaveable { mutableStateOf(true) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text("Metadata API Keys", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "API keys are stored on the server and used to scrape manga metadata. " +
+                "AniList works without a key.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        if (adminState.apisLoading) {
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+            return@Column
+        }
+
+        adminState.apisError?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+        if (adminState.apisSaveSuccess) {
+            Text("API key saved.", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+        }
+
+        // ComicVine
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("ComicVine", style = MaterialTheme.typography.titleSmall)
+                    if (adminState.cvKeySet) SuggestionChip(onClick = {}, label = { Text("Key set") })
+                }
+                Text(
+                    "Used for comic metadata. Register at comicvine.gamespot.com/api. " +
+                        "Rate limit: 200 requests/resource/hour.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = comicvineApiKey,
+                    onValueChange = { comicvineApiKey = it },
+                    label = { Text(if (adminState.cvKeySet) "New API Key (blank = keep current)" else "ComicVine API Key") },
+                    visualTransformation = if (obscureCv) androidx.compose.ui.text.input.PasswordVisualTransformation()
+                    else androidx.compose.ui.text.input.VisualTransformation.None,
+                    trailingIcon = {
+                        IconButton(onClick = { obscureCv = !obscureCv }) {
+                            Icon(
+                                if (obscureCv) androidx.compose.material.icons.Icons.Default.Lock
+                                else androidx.compose.material.icons.Icons.Default.Edit,
+                                contentDescription = null, modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+
+        // MAL
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("MyAnimeList", style = MaterialTheme.typography.titleSmall)
+                    if (adminState.malKeySet) SuggestionChip(onClick = {}, label = { Text("Key set") })
+                }
+                Text(
+                    "Used for manga metadata. Register at myanimelist.net/apiconfig to get a Client ID.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = malClientId,
+                    onValueChange = { malClientId = it },
+                    label = { Text(if (adminState.malKeySet) "New Client ID (blank = keep current)" else "MAL Client ID") },
+                    visualTransformation = if (obscureMal) androidx.compose.ui.text.input.PasswordVisualTransformation()
+                    else androidx.compose.ui.text.input.VisualTransformation.None,
+                    trailingIcon = {
+                        IconButton(onClick = { obscureMal = !obscureMal }) {
+                            Icon(
+                                if (obscureMal) androidx.compose.material.icons.Icons.Default.Lock
+                                else androidx.compose.material.icons.Icons.Default.Edit,
+                                contentDescription = null, modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+
+        // Save button
+        Button(
+            onClick = {
+                adminVm.saveApiKeys(
+                    malClientId = malClientId.trim().ifBlank { null },
+                    comicvineApiKey = comicvineApiKey.trim().ifBlank { null },
+                )
+            },
+            enabled = (malClientId.isNotBlank() || comicvineApiKey.isNotBlank()) && !adminState.apisSaving,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (adminState.apisSaving) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+            }
+            Text("Save API Keys")
+        }
+
+        // AniList
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("AniList", style = MaterialTheme.typography.titleSmall)
+                    SuggestionChip(onClick = {}, label = { Text("No key needed") })
+                }
+                Text(
+                    "AniList public GraphQL API requires no authentication. " +
+                        "Rekindle enforces a 30-request/minute rate limit.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
