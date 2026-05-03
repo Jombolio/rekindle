@@ -130,7 +130,7 @@ Edit `appsettings.json` in the same directory as the server binary before first 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `Rekindle.DataPath` | `data` | Directory where your media libraries are stored |
-| `Rekindle.CachePath` | `cache` | Directory for extracted page cache |
+| `Rekindle.CachePath` | `data/cache` | Directory for extracted page cache |
 | `Rekindle.CacheMaxSizeBytes` | `10737418240` | Maximum cache size in bytes (default 10 GB) |
 | `Jwt.Secret` | *(auto-generated)* | JWT signing secret — generated and saved to `data/jwt_secret.key` on first run. Set manually to share a secret across multiple instances. |
 | `Urls` | `http://0.0.0.0:8080` | Bind address and port |
@@ -359,6 +359,26 @@ This means re-scraping a series never silently overwrites data you may have manu
 ```bash
 cd server
 dotnet run --project Rekindle.Server
+```
+
+For a release build:
+
+```bash
+# Linux
+dotnet publish Rekindle.Server /p:PublishProfile=linux-x64
+
+# Windows
+dotnet publish Rekindle.Server /p:PublishProfile=win-x64
+```
+
+Output goes to `Rekindle.Server/bin/publish/{platform}/` and contains only five files:
+
+```
+Rekindle.Server          (or Rekindle.Server.exe on Windows)
+libe_sqlite3.so          (native SQLite — libsqlite3.dll on Windows)
+pdfium.so                (native PDF renderer — pdfium.dll on Windows)
+appsettings.json
+LICENSE
 ```
 
 ### Client

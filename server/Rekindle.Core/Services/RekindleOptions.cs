@@ -3,7 +3,7 @@ namespace Rekindle.Core.Services;
 public class RekindleOptions
 {
     public string DataPath { get; set; } = "/config";
-    public string CachePath { get; set; } = "/cache";
+    public string CachePath { get; set; } = "/config/cache";
     public long CacheMaxSizeBytes { get; set; } = 10L * 1024 * 1024 * 1024;
     public JwtOptions Jwt { get; set; } = new();
 }

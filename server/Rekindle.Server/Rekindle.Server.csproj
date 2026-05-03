@@ -3,6 +3,7 @@
   <PropertyGroup>
     <AssemblyName>Rekindle.Server</AssemblyName>
     <RootNamespace>Rekindle.Server</RootNamespace>
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,5 +13,10 @@
   <ItemGroup>
     <ProjectReference Include="..\Rekindle.Core\Rekindle.Core.csproj" />
   </ItemGroup>
+
+  <!-- Remove dev-only web SDK artefacts from the publish output -->
+  <Target Name="CleanPublishOutput" AfterTargets="Publish">
+    <Delete Files="$(PublishDir)Rekindle.Server.staticwebassets.endpoints.json" />
+  </Target>
 
 </Project>
