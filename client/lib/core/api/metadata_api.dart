@@ -20,25 +20,35 @@ class MetadataApi {
     return ScrapeResult.fromJson(resp.data as Map<String, dynamic>);
   }
 
-  Future<MangaMetadata> commit(String mediaId, MangaMetadata metadata) async {
-    final resp = await _client.dio.post(
-      'api/metadata/$mediaId/commit',
-      data: {
-        'mediaId':     metadata.mediaId,
-        'title':       metadata.title,
-        'synopsis':    metadata.synopsis,
-        'genres':      metadata.genres,
-        'score':       metadata.score,
-        'status':      metadata.status,
-        'year':        metadata.year,
-        'malId':       metadata.malId,
-        'anilistId':   metadata.anilistId,
-        'comicvineId': metadata.comicvineId,
-        'source':      metadata.source,
-      },
+  Future<MangaMetadata> update(String mediaId, MangaMetadata metadata) async {
+    final resp = await _client.dio.put(
+      'api/metadata/$mediaId',
+      data: _metadataToJson(mediaId, metadata),
     );
     return MangaMetadata.fromJson(resp.data as Map<String, dynamic>);
   }
+
+  Future<MangaMetadata> commit(String mediaId, MangaMetadata metadata) async {
+    final resp = await _client.dio.post(
+      'api/metadata/$mediaId/commit',
+      data: _metadataToJson(mediaId, metadata),
+    );
+    return MangaMetadata.fromJson(resp.data as Map<String, dynamic>);
+  }
+
+  static Map<String, dynamic> _metadataToJson(String mediaId, MangaMetadata m) => {
+    'mediaId':     mediaId,
+    'title':       m.title,
+    'synopsis':    m.synopsis,
+    'genres':      m.genres,
+    'score':       m.score,
+    'status':      m.status,
+    'year':        m.year,
+    'malId':       m.malId,
+    'anilistId':   m.anilistId,
+    'comicvineId': m.comicvineId,
+    'source':      m.source,
+  };
 
   Future<({bool malKeySet, bool comicvineKeySet})> getConfig() async {
     final resp = await _client.dio.get('api/admin/metadata/config');

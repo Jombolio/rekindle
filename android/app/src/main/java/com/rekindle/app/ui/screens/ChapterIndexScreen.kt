@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Download
@@ -67,7 +68,12 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.OutlinedTextField
 import com.rekindle.app.core.download.FolderDownloadStatus
 import com.rekindle.app.domain.model.MangaMetadata
 import com.rekindle.app.domain.model.Media
@@ -88,7 +94,8 @@ fun ChapterIndexScreen(
     val downloadStates by vm.downloadStates.collectAsState()
     val folderDlState by vm.folderDownloadState.collectAsState()
     val canDownload by vm.canDownload.collectAsState()
-    val isAdmin by vm.isAdmin.collectAsState()
+    val isAdmin        by vm.isAdmin.collectAsState()
+    val canManageMedia by vm.canManageMedia.collectAsState()
     val showAbout = vm.libraryType == "manga" || vm.libraryType == "comic"
 
     // ── Metadata dialogs ──────────────────────────────────────────────────────
@@ -223,7 +230,9 @@ fun ChapterIndexScreen(
                             isLoading = state.metadataLoading,
                             isScraping = state.metadataScraping,
                             isAdmin = isAdmin,
+                            canEdit = canManageMedia,
                             onScrape = { vm.scrapeMetadata() },
+                            onEdit = { vm.updateMetadata(it) },
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         )
                     }
@@ -300,14 +309,25 @@ private fun AboutSection(
     isLoading: Boolean,
     isScraping: Boolean,
     isAdmin: Boolean,
+    canEdit: Boolean,
     onScrape: () -> Unit,
+    onEdit: (MangaMetadata) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var showFullSynopsis by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
     val hasMeta = metadata != null
 
     if (!hasMeta && !isAdmin && !isLoading) return
+
+    if (showEditDialog && metadata != null) {
+        MetadataEditDialog(
+            initial = metadata,
+            onDismiss = { showEditDialog = false },
+            onSave = { edited -> onEdit(edited); showEditDialog = false },
+        )
+    }
 
     ElevatedCard(modifier = modifier.fillMaxWidth()) {
         Column(modifier = Modifier.animateContentSize()) {
@@ -330,6 +350,12 @@ private fun AboutSection(
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f),
                 )
+                if (canEdit && hasMeta) {
+                    IconButton(onClick = { showEditDialog = true }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Edit, "Edit metadata", modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(Modifier.size(4.dp))
+                }
                 if (isAdmin) {
                     if (isScraping)
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -402,6 +428,102 @@ private fun AboutSection(
             }
         }
     }
+}
+
+// ── Metadata edit dialog ──────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MetadataEditDialog(
+    initial: MangaMetadata,
+    onDismiss: () -> Unit,
+    onSave: (MangaMetadata) -> Unit,
+) {
+    var title    by remember { mutableStateOf(initial.title    ?: "") }
+    var synopsis by remember { mutableStateOf(initial.synopsis ?: "") }
+    var genres   by remember { mutableStateOf(initial.genres   ?: "") }
+    var score    by remember { mutableStateOf(initial.score?.let { "%.1f".format(it) } ?: "") }
+    var year     by remember { mutableStateOf(initial.year?.toString() ?: "") }
+    var status   by remember { mutableStateOf(initial.status) }
+    var statusExpanded by remember { mutableStateOf(false) }
+
+    val statuses = listOf(null, "FINISHED", "RELEASING", "NOT_YET_RELEASED", "CANCELLED", "HIATUS")
+    fun statusLabel(s: String?) = when (s) {
+        "FINISHED"         -> "Finished"
+        "RELEASING"        -> "Releasing"
+        "NOT_YET_RELEASED" -> "Not yet released"
+        "CANCELLED"        -> "Cancelled"
+        "HIATUS"           -> "Hiatus"
+        else               -> "Unknown"
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit metadata") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                OutlinedTextField(value = title, onValueChange = { title = it },
+                    label = { Text("Title") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+
+                OutlinedTextField(value = synopsis, onValueChange = { synopsis = it },
+                    label = { Text("Synopsis") }, modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 6)
+
+                OutlinedTextField(value = genres, onValueChange = { genres = it },
+                    label = { Text("Genres (comma-separated)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(value = score, onValueChange = { score = it },
+                        label = { Text("Score (0–10)") },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                        modifier = Modifier.weight(1f), singleLine = true)
+                    OutlinedTextField(value = year, onValueChange = { year = it },
+                        label = { Text("Year") },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                        modifier = Modifier.weight(1f), singleLine = true)
+                }
+
+                ExposedDropdownMenuBox(
+                    expanded = statusExpanded,
+                    onExpandedChange = { statusExpanded = it },
+                ) {
+                    OutlinedTextField(
+                        value = statusLabel(status),
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Status") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(statusExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                    )
+                    ExposedDropdownMenu(expanded = statusExpanded, onDismissRequest = { statusExpanded = false }) {
+                        statuses.forEach { s ->
+                            DropdownMenuItem(
+                                text = { Text(statusLabel(s)) },
+                                onClick = { status = s; statusExpanded = false },
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            FilledTonalButton(onClick = {
+                onSave(initial.copy(
+                    title    = title.trim().ifBlank { null },
+                    synopsis = synopsis.trim().ifBlank { null },
+                    genres   = genres.trim().ifBlank { null },
+                    score    = score.trim().toDoubleOrNull(),
+                    year     = year.trim().toIntOrNull(),
+                    status   = status,
+                ))
+            }) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 // ── Metadata conflict dialog ──────────────────────────────────────────────────

@@ -88,6 +88,12 @@ class ChapterIndexViewModel @Inject constructor(
         false,
     )
 
+    val canManageMedia = prefs.permissionLevel.map { it >= 3 }.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        false,
+    )
+
     var authHeader: String = ""
         private set
     private var baseUrl: String = ""
@@ -140,6 +146,14 @@ class ChapterIndexViewModel @Inject constructor(
             runCatching { metadataRepo.commitMetadata(folderId, metadata) }
                 .onSuccess { saved -> _state.update { it.copy(metadata = saved, metadataConflict = null) } }
                 .onFailure { e -> _state.update { it.copy(metadataError = e.message, metadataConflict = null) } }
+        }
+    }
+
+    fun updateMetadata(metadata: MangaMetadata) {
+        viewModelScope.launch {
+            runCatching { metadataRepo.updateMetadata(folderId, metadata) }
+                .onSuccess { saved -> _state.update { it.copy(metadata = saved) } }
+                .onFailure { e -> _state.update { it.copy(metadataError = e.friendlyMessage()) } }
         }
     }
 

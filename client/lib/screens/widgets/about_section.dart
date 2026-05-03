@@ -26,6 +26,27 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
   bool _expanded = false;
   bool _scraping = false;
 
+  Future<void> _openEdit(MangaMetadata current) async {
+    final client = ref.read(apiClientProvider);
+    final saved = await showDialog<MangaMetadata>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _EditMetadataDialog(
+        mediaId: widget.mediaId,
+        initial: current,
+      ),
+    );
+    if (saved != null && mounted) {
+      try {
+        await MetadataApi(client).update(widget.mediaId, saved);
+        ref.invalidate(mangaMetadataProvider(widget.mediaId));
+        _showSnackBar('Metadata saved.');
+      } catch (e) {
+        _showSnackBar(_errorMessage(e), isError: true);
+      }
+    }
+  }
+
   Future<void> _scrape() async {
     setState(() => _scraping = true);
     try {
@@ -84,11 +105,12 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
 
   @override
   Widget build(BuildContext context) {
-    final metaAsync = ref.watch(mangaMetadataProvider(widget.mediaId));
-    final authState = ref.watch(authProvider).valueOrNull;
-    final isAdmin   = authState is AuthAuthenticated && authState.permissionLevel >= 4;
-    final theme     = Theme.of(context);
-    final cs        = theme.colorScheme;
+    final metaAsync  = ref.watch(mangaMetadataProvider(widget.mediaId));
+    final authState  = ref.watch(authProvider).valueOrNull;
+    final isAdmin    = authState is AuthAuthenticated && authState.isAdmin;
+    final canEdit    = authState is AuthAuthenticated && authState.canManageMedia;
+    final theme      = Theme.of(context);
+    final cs         = theme.colorScheme;
 
     return metaAsync.when(
       loading: () => const SizedBox.shrink(),
@@ -118,6 +140,17 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
                           style: theme.textTheme.titleSmall,
                         ),
                       ),
+                      if (canEdit && hasMeta) ...[
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined),
+                          tooltip: 'Edit metadata',
+                          iconSize: 18,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => _openEdit(meta!),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
                       if (isAdmin) ...[
                         if (_scraping)
                           const SizedBox(
@@ -217,6 +250,157 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
     'comicvine' => 'ComicVine',
     _           => source,
   };
+}
+
+// ── Edit dialog ───────────────────────────────────────────────────────────────
+
+class _EditMetadataDialog extends StatefulWidget {
+  final String mediaId;
+  final MangaMetadata initial;
+  const _EditMetadataDialog({required this.mediaId, required this.initial});
+
+  @override
+  State<_EditMetadataDialog> createState() => _EditMetadataDialogState();
+}
+
+class _EditMetadataDialogState extends State<_EditMetadataDialog> {
+  late final TextEditingController _title;
+  late final TextEditingController _synopsis;
+  late final TextEditingController _genres;
+  late final TextEditingController _score;
+  late final TextEditingController _year;
+  late String? _status;
+
+  static const _statuses = [
+    null,
+    'FINISHED',
+    'RELEASING',
+    'NOT_YET_RELEASED',
+    'CANCELLED',
+    'HIATUS',
+  ];
+
+  static String _statusLabel(String? s) => switch (s) {
+    'FINISHED'          => 'Finished',
+    'RELEASING'         => 'Releasing',
+    'NOT_YET_RELEASED'  => 'Not yet released',
+    'CANCELLED'         => 'Cancelled',
+    'HIATUS'            => 'Hiatus',
+    _                   => 'Unknown',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    final m = widget.initial;
+    _title    = TextEditingController(text: m.title ?? '');
+    _synopsis = TextEditingController(text: m.synopsis ?? '');
+    _genres   = TextEditingController(text: m.genres ?? '');
+    _score    = TextEditingController(
+        text: m.score != null ? m.score!.toStringAsFixed(1) : '');
+    _year     = TextEditingController(
+        text: m.year?.toString() ?? '');
+    _status   = m.status;
+  }
+
+  @override
+  void dispose() {
+    _title.dispose(); _synopsis.dispose(); _genres.dispose();
+    _score.dispose(); _year.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final m = widget.initial;
+    Navigator.pop(
+      context,
+      MangaMetadata(
+        mediaId:     m.mediaId,
+        title:       _title.text.trim().isEmpty   ? null : _title.text.trim(),
+        synopsis:    _synopsis.text.trim().isEmpty ? null : _synopsis.text.trim(),
+        genres:      _genres.text.trim().isEmpty   ? null : _genres.text.trim(),
+        score:       double.tryParse(_score.text.trim()),
+        status:      _status,
+        year:        int.tryParse(_year.text.trim()),
+        malId:       m.malId,
+        anilistId:   m.anilistId,
+        comicvineId: m.comicvineId,
+        source:      m.source,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('Edit metadata'),
+      content: SizedBox(
+        width: 480,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _field(_title,    'Title'),
+              const SizedBox(height: 12),
+              _field(_synopsis, 'Synopsis', maxLines: 4),
+              const SizedBox(height: 12),
+              _field(_genres,   'Genres (comma-separated)'),
+              const SizedBox(height: 12),
+              Row(children: [
+                Expanded(child: _field(_score, 'Score (0–10)',
+                    type: TextInputType.number)),
+                const SizedBox(width: 12),
+                Expanded(child: _field(_year, 'Year',
+                    type: TextInputType.number)),
+              ]),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String?>(
+                value: _status,
+                decoration: const InputDecoration(
+                  labelText: 'Status',
+                  border: OutlineInputBorder(),
+                ),
+                items: _statuses
+                    .map((s) => DropdownMenuItem(
+                          value: s,
+                          child: Text(_statusLabel(s)),
+                        ))
+                    .toList(),
+                onChanged: (v) => setState(() => _status = v),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _save,
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
+
+  Widget _field(
+    TextEditingController ctrl,
+    String label, {
+    int maxLines = 1,
+    TextInputType type = TextInputType.text,
+  }) =>
+      TextField(
+        controller: ctrl,
+        maxLines: maxLines,
+        keyboardType: type,
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+        ),
+      );
 }
 
 // ── Conflict dialog ───────────────────────────────────────────────────────────

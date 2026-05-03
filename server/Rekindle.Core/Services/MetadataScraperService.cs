@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Rekindle.Core.Models;
 using Rekindle.Core.Repositories;
@@ -29,7 +30,10 @@ public class MetadataScraperService(
         string? comicVineApiKey,
         CancellationToken ct = default)
     {
-        var searchTitle = media.Series ?? media.Title;
+        var rawTitle    = media.Series ?? media.Title;
+        var searchTitle = StripParentheses(rawTitle);
+        if (searchTitle != rawTitle)
+            logger.LogInformation("Search title normalised: '{Raw}' → '{Clean}'", rawTitle, searchTitle);
         logger.LogInformation("Scraping metadata for '{Title}' (library type: {Type})", searchTitle, libraryType);
 
         var (proposed, failResult) = await FetchAsync(media, libraryType, malClientId, comicVineApiKey, searchTitle, ct);
@@ -192,4 +196,11 @@ public class MetadataScraperService(
         if (x is null || y is null) return false;
         return Math.Round(x.Value, 1) == Math.Round(y.Value, 1);
     }
+
+    /// <summary>
+    /// Removes parenthetical suffixes from a folder title before querying APIs.
+    /// e.g. "One Piece (Color)" → "One Piece", "MAD (OTORI Yusuke)" → "MAD".
+    /// </summary>
+    private static string StripParentheses(string title) =>
+        Regex.Replace(title, @"\s*\([^)]*\)", string.Empty).Trim();
 }

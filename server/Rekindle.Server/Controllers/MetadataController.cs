@@ -64,6 +64,21 @@ public class MetadataController(
         };
     }
 
+    // ── Manual edit (level 3+) ───────────────────────────────────────────────
+
+    /// <summary>Saves manually edited metadata, overwriting the stored entry.</summary>
+    [HttpPut("{mediaId}")]
+    [Authorize(Policy = PermissionPolicies.CanManageMedia)]
+    public async Task<IActionResult> UpdateMetadata(string mediaId, [FromBody] MangaMetadata metadata)
+    {
+        if (metadata.MediaId != mediaId)
+            return BadRequest(new { error = "mediaId in body does not match the route." });
+
+        metadata.LastScrapedAt = DateTime.UtcNow;
+        await metadataRepo.UpsertAsync(metadata);
+        return Ok(metadata);
+    }
+
     // ── Admin commit ─────────────────────────────────────────────────────────
 
     /// <summary>

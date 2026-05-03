@@ -163,6 +163,12 @@ interface RekindleApi {
         @Body metadata: MangaMetadataDto,
     ): MangaMetadataDto
 
+    @PUT("api/metadata/{mediaId}")
+    suspend fun updateMetadata(
+        @Path("mediaId") mediaId: String,
+        @Body metadata: MangaMetadataDto,
+    ): MangaMetadataDto
+
     @GET("api/admin/metadata/config")
     suspend fun getMetadataConfig(): MetadataConfigDto
 

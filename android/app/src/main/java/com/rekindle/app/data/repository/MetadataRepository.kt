@@ -26,6 +26,9 @@ class MetadataRepository @Inject constructor(private val api: RekindleApi) {
     suspend fun commitMetadata(mediaId: String, metadata: MangaMetadata): MangaMetadata =
         api.commitMetadata(mediaId, metadata.toDto()).toDomain()
 
+    suspend fun updateMetadata(mediaId: String, metadata: MangaMetadata): MangaMetadata =
+        api.updateMetadata(mediaId, metadata.toDto()).toDomain()
+
     suspend fun getConfig(): MetadataConfig =
         api.getMetadataConfig().toDomain()
 
