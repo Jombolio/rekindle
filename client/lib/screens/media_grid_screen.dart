@@ -4,9 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../core/download/download_state.dart';
 import '../core/models/media.dart';
-import '../providers/auth_provider.dart';
 import '../providers/download_provider.dart';
 import '../providers/media_provider.dart';
 import '../providers/reader_provider.dart';
@@ -40,6 +38,9 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   String _debouncedQuery = '';
   Timer? _debounce;
 
+  // ── Pagination ──────────────────────────────────────────────────────────
+  bool _fetchingMore = false;
+
   @override
   void initState() {
     super.initState();
@@ -63,9 +64,19 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   void _onScroll() {
     if (_scrollCtrl.position.pixels >=
         _scrollCtrl.position.maxScrollExtent - 300) {
-      ref
-          .read(mediaListProvider(widget.libraryId).notifier)
-          .fetchNext(widget.libraryId);
+      _triggerFetchMore();
+    }
+  }
+
+  Future<void> _triggerFetchMore() async {
+    if (_fetchingMore) return;
+    final notifier = ref.read(mediaListProvider(widget.libraryId).notifier);
+    if (!notifier.hasMore) return;
+    setState(() => _fetchingMore = true);
+    try {
+      await notifier.fetchNext(widget.libraryId);
+    } finally {
+      if (mounted) setState(() => _fetchingMore = false);
     }
   }
 
@@ -258,9 +269,10 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
     );
   }
 
-  Widget _gridBody(
-      BuildContext context, bool canDownload, List<Media> items) {
+  Widget _gridBody(BuildContext context, List<Media> items) {
     final client = ref.watch(apiClientProvider);
+    final hasMore =
+        ref.read(mediaListProvider(widget.libraryId).notifier).hasMore;
 
     if (items.isEmpty) {
       return const Center(
@@ -278,21 +290,21 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final columns = (constraints.maxWidth / 180).floor().clamp(2, 8);
-        return GridView.builder(
-          controller: _scrollCtrl,
-          padding: const EdgeInsets.all(16),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            childAspectRatio: 2 / 3,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-          ),
-          itemCount: items.length,
-          itemBuilder: (_, i) {
+        return Stack(
+          children: [
+            GridView.builder(
+              controller: _scrollCtrl,
+              padding: EdgeInsets.fromLTRB(
+                  16, 16, 16, (_fetchingMore || hasMore) ? 56 : 16),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                childAspectRatio: 2 / 3,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+              ),
+              itemCount: items.length,
+              itemBuilder: (_, i) {
             final item = items[i];
-            final downloadState = ref.watch(downloadProvider(item.id));
-            final isOffline =
-                downloadState.status == DownloadStatus.complete;
             final progress =
                 ref.watch(localProgressProvider(item.id)).valueOrNull;
 
@@ -311,28 +323,12 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
                           cacheKey: item.coverCachePath ?? item.id,
                         ),
                       ),
-                      if (isOffline) const OfflineBadge(),
                       if (item.isFolder) const FolderBadge(),
                       ReadProgressBadge(progress: progress),
-                      if (canDownload)
-                        Positioned(
-                          bottom: 4,
-                          right: 4,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: Colors.black
-                                  .withValues(alpha: 0.55),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: SizedBox(
-                              width: 32,
-                              height: 32,
-                              child: item.isFolder
-                                  ? FolderDownloadButton(folderId: item.id)
-                                  : DownloadButton(media: item),
-                            ),
-                          ),
-                        ),
+                      DownloadStatusBadge(
+                        mediaId: item.id,
+                        isFolder: item.isFolder,
+                      ),
                     ],
                   ),
                 ),
@@ -348,6 +344,17 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
               ],
             );
           },
+            ),
+
+            // Bottom progress bar — visible while the next page is loading.
+            if (_fetchingMore)
+              const Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: LinearProgressIndicator(),
+              ),
+          ],
         );
       },
     );
@@ -355,10 +362,6 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authProvider).valueOrNull;
-    final canDownload =
-        authState is AuthAuthenticated && authState.canDownload;
-
     if (_searchActive) {
       return Scaffold(
         appBar: _searchAppBar(context),
@@ -377,7 +380,7 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
               .read(mediaListProvider(widget.libraryId).notifier)
               .refresh(widget.libraryId),
         ),
-        data: (items) => _gridBody(context, canDownload, items),
+        data: (items) => _gridBody(context, items),
       ),
     );
   }

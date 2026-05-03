@@ -34,7 +34,7 @@ class MediaListNotifier extends FamilyAsyncNotifier<List<Media>, String> {
     try {
       final client = ref.read(apiClientProvider);
       final result = await MediaApi(client)
-          .getPaged(libraryId: libraryId, page: _page, pageSize: 50);
+          .getPaged(libraryId: libraryId, page: _page, pageSize: 24);
       _items.addAll(result.items);
       _hasMore = result.hasMore;
       _page++;

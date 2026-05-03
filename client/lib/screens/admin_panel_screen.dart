@@ -325,6 +325,7 @@ class _CreateUserDialogState extends State<_CreateUserDialog> {
                 DropdownMenuItem(value: 1, child: Text('1 — Read-only')),
                 DropdownMenuItem(value: 2, child: Text('2 — Download')),
                 DropdownMenuItem(value: 3, child: Text('3 — Manage Media')),
+                DropdownMenuItem(value: 4, child: Text('4 — Admin')),
               ],
               onChanged: (v) => setState(() => _level = v!),
             ),
@@ -391,6 +392,7 @@ class _EditPermissionDialogState extends State<_EditPermissionDialog> {
                 DropdownMenuItem(value: 1, child: Text('1 — Read-only')),
                 DropdownMenuItem(value: 2, child: Text('2 — Download')),
                 DropdownMenuItem(value: 3, child: Text('3 — Manage Media')),
+                DropdownMenuItem(value: 4, child: Text('4 — Admin')),
               ],
               onChanged: (v) => setState(() => _level = v!),
             ),
@@ -783,13 +785,14 @@ class _FolderLocationFieldState extends State<_FolderLocationField> {
       },
       optionsBuilder: (textValue) {
         final raw = textValue.text;
-        // Strip trailing slash before matching so "Absolute Superman/" still
-        // shows "Absolute Superman" in the list.
-        final q = (raw.endsWith('/')
+        // Strip trailing slash — preserve original case for the Create option
+        // and the value sent to the server.
+        final display = (raw.endsWith('/')
                 ? raw.substring(0, raw.length - 1)
                 : raw)
-            .trim()
-            .toLowerCase();
+            .trim();
+        // Lowercase only for case-insensitive matching.
+        final q = display.toLowerCase();
 
         final existing = widget.folders
             .where((f) =>
@@ -799,7 +802,7 @@ class _FolderLocationFieldState extends State<_FolderLocationField> {
             .map((f) => _ExistingFolder(f) as _FolderOption);
 
         // "Create" option is always first so it's immediately reachable.
-        return [_NewFolder(q), ...existing];
+        return [_NewFolder(display), ...existing];
       },
       onSelected: (opt) {
         switch (opt) {

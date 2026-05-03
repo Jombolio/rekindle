@@ -97,6 +97,21 @@ public class MediaController(
         if (media is null)
             return NotFound();
 
+        // ── Custom cover: rekindle-cover.{ext} takes priority ─────────────────
+        // For folders the cover file sits in the directory itself;
+        // for archives it sits alongside the archive file.
+        var searchDir = media.MediaType == "folder"
+            ? media.FilePath
+            : Path.GetDirectoryName(media.FilePath);
+
+        if (searchDir is not null)
+        {
+            var custom = FindCustomCover(searchDir);
+            if (custom is not null)
+                return PhysicalFile(custom, MimeTypeFor(custom));
+        }
+
+        // ── Generated cache ────────────────────────────────────────────────────
         if (media.CoverCachePath is not null)
         {
             var coverPath = Path.IsPathRooted(media.CoverCachePath)
@@ -106,13 +121,36 @@ public class MediaController(
                 return PhysicalFile(coverPath, "image/jpeg");
         }
 
-        // Cover not yet generated — stream first image directly
+        // ── Fallback: stream first image from the archive ──────────────────────
         var stream = await archiveService.OpenCoverStreamAsync(media.FilePath);
         if (stream is null)
             return NotFound(new { error = "No cover image available." });
 
         return File(stream, "image/jpeg");
     }
+
+    private static readonly string[] CustomCoverExtensions =
+        [".png", ".jpg", ".jpeg", ".webp", ".gif"];
+
+    private static string? FindCustomCover(string directory)
+    {
+        foreach (var ext in CustomCoverExtensions)
+        {
+            var path = Path.Combine(directory, $"rekindle-cover{ext}");
+            if (System.IO.File.Exists(path))
+                return path;
+        }
+        return null;
+    }
+
+    private static string MimeTypeFor(string filePath) =>
+        Path.GetExtension(filePath).ToLowerInvariant() switch
+        {
+            ".png"  => "image/png",
+            ".webp" => "image/webp",
+            ".gif"  => "image/gif",
+            _       => "image/jpeg",
+        };
 
     [HttpGet("{id}/page/{pageNum:int}")]
     public async Task<IActionResult> GetPage(string id, int pageNum)

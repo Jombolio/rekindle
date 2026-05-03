@@ -576,6 +576,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
               width: double.infinity,
               fit: BoxFit.fitWidth,
               filterQuality: FilterQuality.medium,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return AspectRatio(
+                  aspectRatio: 2 / 3,
+                  child: const Center(
+                    child: CircularProgressIndicator(color: Colors.white54),
+                  ),
+                );
+              },
               errorBuilder: (_, __, ___) => SizedBox(
                 height: MediaQuery.sizeOf(context).height * 0.5,
                 child: const Center(
@@ -626,6 +635,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
               image: _buildImageProvider(slide[0], extractedPages, client),
               fit: BoxFit.contain,
               filterQuality: FilterQuality.medium,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return const Center(
+                  child: CircularProgressIndicator(color: Colors.white54),
+                );
+              },
               errorBuilder: (_, __, ___) => const Center(
                 child: Icon(Icons.broken_image, color: Colors.white54, size: 64),
               ),
@@ -660,6 +675,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
             image: _buildImageProvider(pageIndex, extractedPages, client),
             fit: BoxFit.contain,
             filterQuality: FilterQuality.medium,
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) return child;
+              return const Center(
+                child: CircularProgressIndicator(color: Colors.white54),
+              );
+            },
             errorBuilder: (_, __, ___) => const Center(
               child: Icon(Icons.broken_image, color: Colors.white54, size: 48),
             ),

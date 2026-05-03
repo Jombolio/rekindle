@@ -25,6 +25,9 @@ interface ProgressQueueDao {
     @Query("SELECT * FROM progress_queue WHERE media_id = :mediaId LIMIT 1")
     suspend fun getByMediaId(mediaId: String): ProgressQueueEntity?
 
+    @Query("SELECT * FROM progress_queue WHERE media_id IN (:mediaIds)")
+    suspend fun getByMediaIds(mediaIds: List<String>): List<ProgressQueueEntity>
+
     @Query("SELECT * FROM progress_queue WHERE synced = 0")
     suspend fun getUnsynced(): List<ProgressQueueEntity>
 

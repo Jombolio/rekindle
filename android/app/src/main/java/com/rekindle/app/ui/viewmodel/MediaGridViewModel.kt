@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -24,6 +23,8 @@ import javax.inject.Inject
 data class MediaGridState(
     val items: List<Media> = emptyList(),
     val loading: Boolean = true,
+    val loadingMore: Boolean = false,
+    val hasMore: Boolean = false,
     val error: String? = null,
 )
 
@@ -37,10 +38,19 @@ class MediaGridViewModel @Inject constructor(
 
     private val libraryId: String = checkNotNull(savedStateHandle["libraryId"])
 
+    private var currentPage = 1
+    private val pageSize = 24
+
     private val _state = MutableStateFlow(MediaGridState())
     val state = _state.asStateFlow()
 
     val downloadStates = downloadRepo.states.stateIn(
+        viewModelScope,
+        SharingStarted.Lazily,
+        emptyMap(),
+    )
+
+    val folderDownloadStates = downloadRepo.folderStates.stateIn(
         viewModelScope,
         SharingStarted.Lazily,
         emptyMap(),
@@ -55,11 +65,11 @@ class MediaGridViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
 
-    /** Items filtered by the current search query (case-insensitive title match). */
-    val filteredItems: StateFlow<List<Media>> = combine(_state, _searchQuery) { s, q ->
-        if (q.isBlank()) s.items
-        else s.items.filter { it.displayTitle.contains(q, ignoreCase = true) }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    private val _searchResults = MutableStateFlow<List<Media>>(emptyList())
+    val searchResults: StateFlow<List<Media>> = _searchResults.asStateFlow()
+
+    private val _searchLoading = MutableStateFlow(false)
+    val searchLoading: StateFlow<Boolean> = _searchLoading.asStateFlow()
 
     var authHeader: String = ""
         private set
@@ -75,11 +85,17 @@ class MediaGridViewModel @Inject constructor(
 
     private fun load() {
         viewModelScope.launch {
+            currentPage = 1
             _state.update { it.copy(loading = true, error = null) }
-            runCatching { repo.getMedia(libraryId) }
+            runCatching { repo.getMedia(libraryId, page = 1, pageSize = pageSize) }
                 .onSuccess { page ->
-                    _state.update { it.copy(items = page.items, loading = false) }
-                    // Restore download state for each non-folder item
+                    _state.update {
+                        it.copy(
+                            items = page.items,
+                            loading = false,
+                            hasMore = page.page < page.totalPages,
+                        )
+                    }
                     page.items.filter { !it.isFolder }.forEach {
                         downloadRepo.restoreIfNeeded(it.id)
                     }
@@ -88,7 +104,44 @@ class MediaGridViewModel @Inject constructor(
         }
     }
 
-    fun setSearchQuery(query: String) { _searchQuery.value = query }
+    fun loadMore() {
+        val s = _state.value
+        if (!s.hasMore || s.loadingMore || s.loading) return
+        viewModelScope.launch {
+            _state.update { it.copy(loadingMore = true) }
+            val nextPage = currentPage + 1
+            runCatching { repo.getMedia(libraryId, page = nextPage, pageSize = pageSize) }
+                .onSuccess { page ->
+                    currentPage = nextPage
+                    _state.update {
+                        it.copy(
+                            items = it.items + page.items,
+                            loadingMore = false,
+                            hasMore = page.page < page.totalPages,
+                        )
+                    }
+                    page.items.filter { !it.isFolder }.forEach {
+                        downloadRepo.restoreIfNeeded(it.id)
+                    }
+                }
+                .onFailure { _state.update { it.copy(loadingMore = false) } }
+        }
+    }
+
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+        if (query.isBlank()) {
+            _searchResults.value = emptyList()
+            return
+        }
+        viewModelScope.launch {
+            _searchLoading.value = true
+            runCatching { repo.searchFolders(libraryId, query) }
+                .onSuccess { _searchResults.value = it }
+                .onFailure { _searchResults.value = emptyList() }
+            _searchLoading.value = false
+        }
+    }
 
     fun downloadStateFor(mediaId: String): DownloadState = downloadStates.value[mediaId] ?: DownloadState()
 

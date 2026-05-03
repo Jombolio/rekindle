@@ -300,3 +300,59 @@ class OfflineBadge extends StatelessWidget {
     );
   }
 }
+
+/// Non-interactive download status badge for grid covers.
+///
+/// Three visible states:
+///  - ALL  (green)  — everything in this item is available offline.
+///  - MIXED (amber) — partially downloaded (download in progress or some
+///                    chapters available, others not).
+///  - null          — nothing downloaded; badge is not shown.
+class DownloadStatusBadge extends ConsumerWidget {
+  final String mediaId;
+  final bool isFolder;
+
+  const DownloadStatusBadge({
+    super.key,
+    required this.mediaId,
+    required this.isFolder,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final Color? badgeColor;
+
+    if (isFolder) {
+      final state = ref.watch(folderDownloadProvider(mediaId));
+      badgeColor = switch (state.status) {
+        FolderDownloadStatus.complete  => Colors.green,
+        FolderDownloadStatus.fetching ||
+        FolderDownloadStatus.downloading => Colors.orange,
+        _ => null,
+      };
+    } else {
+      final state = ref.watch(downloadProvider(mediaId));
+      badgeColor = switch (state.status) {
+        DownloadStatus.complete   => Colors.green,
+        DownloadStatus.downloading ||
+        DownloadStatus.extracting => Colors.orange,
+        _ => null,
+      };
+    }
+
+    if (badgeColor == null) return const SizedBox.shrink();
+
+    return Positioned(
+      bottom: 4,
+      right: 4,
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: badgeColor.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: const Icon(Icons.offline_bolt, size: 14, color: Colors.white),
+      ),
+    );
+  }
+}

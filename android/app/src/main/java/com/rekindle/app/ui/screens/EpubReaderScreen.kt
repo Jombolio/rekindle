@@ -12,8 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.TextDecrease
 import androidx.compose.material.icons.filled.TextIncrease
@@ -133,7 +133,7 @@ fun EpubReaderScreen(
                             onClick = vm::prevChapter,
                             enabled = state.chapterIndex > 0,
                         ) {
-                            Icon(Icons.Default.KeyboardArrowLeft, null, tint = fgColor)
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null, tint = fgColor)
                         }
                         Spacer(Modifier.weight(1f))
                         Text(
@@ -145,7 +145,7 @@ fun EpubReaderScreen(
                             onClick = vm::nextChapter,
                             enabled = state.chapterIndex < book.chapters.size - 1,
                         ) {
-                            Icon(Icons.Default.KeyboardArrowRight, null, tint = fgColor)
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = fgColor)
                         }
                     }
                 }

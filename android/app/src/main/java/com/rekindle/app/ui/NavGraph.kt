@@ -86,11 +86,7 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
                 },
                 onSettingsClick = { navController.navigate(Screen.Settings.route) },
                 onAdminClick = { navController.navigate(Screen.Admin.route) },
-                onLogout = {
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(0) { inclusive = true }
-                    }
-                },
+                onAddSource = { navController.navigate(Screen.Login.route) },
             )
         }
 

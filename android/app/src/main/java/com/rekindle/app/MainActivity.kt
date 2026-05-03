@@ -4,8 +4,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.lifecycle.lifecycleScope
 import com.rekindle.app.core.connectivity.ConnectivityMonitor
+import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.core.sync.SyncWorker
 import com.rekindle.app.ui.RekindleApp
 import com.rekindle.app.ui.theme.RekindleTheme
@@ -18,8 +22,8 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    @Inject
-    lateinit var connectivityMonitor: ConnectivityMonitor
+    @Inject lateinit var connectivityMonitor: ConnectivityMonitor
+    @Inject lateinit var prefs: PrefsStore
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,7 +38,13 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            RekindleTheme {
+            val themeMode by prefs.themeMode.collectAsState(initial = "system")
+            val darkTheme = when (themeMode) {
+                "light" -> false
+                "dark"  -> true
+                else    -> isSystemInDarkTheme()
+            }
+            RekindleTheme(darkTheme = darkTheme) {
                 RekindleApp()
             }
         }

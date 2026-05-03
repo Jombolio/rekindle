@@ -8,8 +8,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,9 +26,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoStories
-import androidx.compose.material.icons.filled.FormatTextdirectionLToR
-import androidx.compose.material.icons.filled.FormatTextdirectionRToL
-import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.automirrored.filled.FormatTextdirectionLToR
+import androidx.compose.material.icons.automirrored.filled.FormatTextdirectionRToL
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ViewCarousel
 import androidx.compose.material.icons.filled.ViewDay
@@ -61,6 +65,9 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import com.rekindle.app.ui.viewmodel.ReaderViewModel
 import kotlinx.coroutines.delay
@@ -161,10 +168,17 @@ fun ReaderScreen(
                 .background(Color.Black)
         ) {
             if (state.totalPages == 0) {
-                androidx.compose.material3.CircularProgressIndicator(
-                    color = Color.White,
+                Column(
                     modifier = Modifier.align(Alignment.Center),
-                )
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    androidx.compose.material3.CircularProgressIndicator(color = Color.White)
+                    androidx.compose.material3.Text(
+                        "Preparing archive…",
+                        color = Color.White.copy(alpha = 0.7f),
+                    )
+                }
             } else if (state.scrollMode) {
                 ScrollModeContent(
                     state = state,
@@ -216,7 +230,7 @@ fun ReaderScreen(
                             if (!state.scrollMode) {
                                 IconButton(onClick = { vm.toggleDoublePage(); showHud() }) {
                                     Icon(
-                                        if (state.doublePage) Icons.Default.MenuBook else Icons.Default.AutoStories,
+                                        if (state.doublePage) Icons.AutoMirrored.Filled.MenuBook else Icons.Default.AutoStories,
                                         contentDescription = if (state.doublePage) "Single page" else "Double page",
                                         tint = Color.White,
                                     )
@@ -245,8 +259,8 @@ fun ReaderScreen(
                             if (!state.scrollMode) {
                                 IconButton(onClick = { vm.toggleDirection(); showHud() }) {
                                     Icon(
-                                        if (state.isRtl) Icons.Default.FormatTextdirectionRToL
-                                        else Icons.Default.FormatTextdirectionLToR,
+                                        if (state.isRtl) Icons.AutoMirrored.Filled.FormatTextdirectionRToL
+                                        else Icons.AutoMirrored.Filled.FormatTextdirectionLToR,
                                         contentDescription = if (state.isRtl) "RTL" else "LTR",
                                         tint = Color.White,
                                     )
@@ -332,14 +346,36 @@ private fun ScrollModeContent(
             .pointerInput(Unit) { detectTapGestures(onTap = { onTap() }) },
     ) {
         items(state.totalPages) { pageIndex ->
-            AsyncImage(
+            SubcomposeAsyncImage(
                 model = imageModelFn(pageIndex),
                 contentDescription = null,
                 contentScale = ContentScale.FillWidth,
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color.Black),
-            )
+            ) {
+                when (painter.state) {
+                    is AsyncImagePainter.State.Loading, is AsyncImagePainter.State.Empty ->
+                        Box(
+                            Modifier.fillMaxWidth().aspectRatio(0.67f),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                color = Color.White,
+                                modifier = Modifier.size(32.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        }
+                    is AsyncImagePainter.State.Error ->
+                        Box(
+                            Modifier.fillMaxWidth().aspectRatio(0.67f),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = Color.White.copy(0.4f), modifier = Modifier.size(48.dp))
+                        }
+                    else -> SubcomposeAsyncImageContent()
+                }
+            }
         }
     }
 }
@@ -474,7 +510,7 @@ private fun ZoomablePageImage(
         onZoomChanged(false)
     }
 
-    AsyncImage(
+    SubcomposeAsyncImage(
         model = model,
         contentDescription = null,
         contentScale = ContentScale.Fit,
@@ -530,7 +566,23 @@ private fun ZoomablePageImage(
                 }
             }
             .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offsetX, translationY = offsetY),
-    )
+    ) {
+        when (painter.state) {
+            is AsyncImagePainter.State.Loading, is AsyncImagePainter.State.Empty ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        color = Color.White,
+                        modifier = Modifier.size(48.dp),
+                        strokeWidth = 3.dp,
+                    )
+                }
+            is AsyncImagePainter.State.Error ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = Color.White.copy(0.4f), modifier = Modifier.size(64.dp))
+                }
+            else -> SubcomposeAsyncImageContent()
+        }
+    }
 }
 
 // ── Extension ─────────────────────────────────────────────────────────────────

@@ -7,6 +7,8 @@ import com.rekindle.app.core.download.DownloadState
 import com.rekindle.app.core.download.FolderDownloadState
 import com.rekindle.app.core.download.FolderDownloadStatus
 import com.rekindle.app.core.prefs.PrefsStore
+import com.rekindle.app.data.db.ProgressQueueDao
+import com.rekindle.app.data.db.ProgressQueueEntity
 import com.rekindle.app.data.repository.DownloadRepository
 import com.rekindle.app.data.repository.MediaRepository
 import com.rekindle.app.domain.model.Media
@@ -26,6 +28,7 @@ import javax.inject.Inject
 
 data class ChapterIndexState(
     val chapters: List<Media> = emptyList(),
+    val readProgress: Map<String, ProgressQueueEntity> = emptyMap(),
     val loading: Boolean = true,
     val error: String? = null,
 )
@@ -35,6 +38,7 @@ class ChapterIndexViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repo: MediaRepository,
     private val downloadRepo: DownloadRepository,
+    private val progressDao: ProgressQueueDao,
     private val prefs: PrefsStore,
 ) : ViewModel() {
 
@@ -73,7 +77,10 @@ class ChapterIndexViewModel @Inject constructor(
             baseUrl = prefs.serverUrl.first()
             runCatching { repo.getChapters(folderId) }
                 .onSuccess { chapters ->
-                    _state.update { it.copy(chapters = chapters, loading = false) }
+                    val ids = chapters.filter { !it.isFolder }.map { it.id }
+                    val progress = progressDao.getByMediaIds(ids)
+                        .associateBy { it.mediaId }
+                    _state.update { it.copy(chapters = chapters, readProgress = progress, loading = false) }
                     chapters.forEach { downloadRepo.restoreIfNeeded(it.id) }
                     downloadRepo.restoreFolderIfNeeded(folderId)
                 }

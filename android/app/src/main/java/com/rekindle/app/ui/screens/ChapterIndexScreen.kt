@@ -159,9 +159,23 @@ fun ChapterIndexScreen(
             else -> LazyColumn(Modifier.fillMaxSize().padding(padding)) {
                 items(state.chapters, key = { it.id }) { chapter ->
                     val dlState = downloadStates[chapter.id] ?: vm.downloadStateFor(chapter.id)
+                    val progress = state.readProgress[chapter.id]
+                    val isCompleted = progress?.isCompleted == true
+                    val inProgress = progress != null && !progress.isCompleted && progress.currentPage > 0
+                    val readLabel = when {
+                        isCompleted -> "Read"
+                        inProgress -> chapter.pageCount
+                            ?.let { "In progress · ${progress!!.currentPage + 1} / $it" }
+                            ?: "In progress"
+                        else -> chapter.pageCount?.let { "$it pages" }
+                    }
+                    val labelColor = when {
+                        isCompleted -> MaterialTheme.colorScheme.primary
+                        inProgress -> MaterialTheme.colorScheme.tertiary
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                     ListItem(
                         leadingContent = {
-                            // Cover — no rounding, full image visible (ContentScale.Fit).
                             AsyncImage(
                                 model = ImageRequest.Builder(LocalContext.current)
                                     .data(vm.coverUrl(chapter.id))
@@ -175,15 +189,14 @@ fun ChapterIndexScreen(
                             )
                         },
                         headlineContent = {
-                            // Single-line title with auto-scrolling marquee on overflow.
                             Text(
                                 text = chapter.displayTitle,
                                 maxLines = 1,
                                 modifier = Modifier.basicMarquee(),
                             )
                         },
-                        supportingContent = chapter.pageCount?.let {
-                            { Text("$it pages") }
+                        supportingContent = readLabel?.let {
+                            { Text(it, color = labelColor, style = MaterialTheme.typography.bodySmall) }
                         },
                         trailingContent = if (canDownload) ({
                             DownloadButton(

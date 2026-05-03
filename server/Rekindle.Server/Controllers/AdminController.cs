@@ -81,19 +81,28 @@ public class AdminController(
         string destDir;
         if (!string.IsNullOrWhiteSpace(relativePath))
         {
-            // Normalise separators and strip leading/trailing slashes.
-            var normRel = relativePath.Replace('\\', '/').Trim('/');
-            var resolved = Path.GetFullPath(Path.Combine(library.RootPath, normRel));
-            var libraryRoot = Path.GetFullPath(library.RootPath);
+            // Normalise separators, strip leading/trailing slashes and whitespace.
+            var normRel = relativePath.Replace('\\', '/').Trim('/').Trim();
 
-            // Security: reject any path that escapes the library root.
-            if (!resolved.StartsWith(libraryRoot + Path.DirectorySeparatorChar,
-                    StringComparison.OrdinalIgnoreCase)
-                && !resolved.Equals(libraryRoot, StringComparison.OrdinalIgnoreCase))
-                return BadRequest(new { error = "Relative path escapes the library root." });
+            if (string.IsNullOrEmpty(normRel))
+            {
+                // All slashes/whitespace — treat as library root.
+                destDir = library.RootPath;
+            }
+            else
+            {
+                var resolved = Path.GetFullPath(Path.Combine(library.RootPath, normRel));
+                var libraryRoot = Path.GetFullPath(library.RootPath);
 
-            Directory.CreateDirectory(resolved);
-            destDir = resolved;
+                // Security: reject any path that escapes the library root.
+                if (!resolved.StartsWith(libraryRoot + Path.DirectorySeparatorChar,
+                        StringComparison.OrdinalIgnoreCase)
+                    && !resolved.Equals(libraryRoot, StringComparison.OrdinalIgnoreCase))
+                    return BadRequest(new { error = "Relative path escapes the library root." });
+
+                Directory.CreateDirectory(resolved);
+                destDir = resolved;
+            }
         }
         else
         {

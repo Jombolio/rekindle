@@ -153,7 +153,14 @@ The server speaks plain HTTP by default. Two ways to add TLS:
 2. Create a `Caddyfile`:
    ```
    your.domain.com {
-       reverse_proxy localhost:8080
+       reverse_proxy localhost:8080 {
+           # Raise transport timeouts so large archive uploads don't get cut off.
+           transport http {
+               read_buffer  32KiB
+               write_timeout 30m
+               dial_timeout  30s
+           }
+       }
    }
    ```
 3. Run Caddy:
@@ -164,6 +171,39 @@ The server speaks plain HTTP by default. Two ways to add TLS:
 Caddy handles port 80/443 and forwards traffic to Rekindle on 8080. No certificate management required.
 
 > For LAN-only use without a domain, use a self-signed certificate or keep plain HTTP and access the server by IP.
+
+#### Option A2 — Nginx reverse proxy
+
+If you prefer Nginx, set `client_max_body_size` and extend the proxy timeouts. The default body limit (1 MB) and read timeout (60 s) will cause large uploads to fail with a connection reset error.
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name your.domain.com;
+
+    # Required: allow large archive uploads (match the Kestrel 4 GB limit).
+    client_max_body_size 4G;
+
+    # Required: give the upload enough time to transfer.
+    proxy_read_timeout    1800;
+    proxy_send_timeout    1800;
+    proxy_connect_timeout   30;
+
+    location / {
+        proxy_pass http://localhost:8080;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Disable request buffering so Kestrel receives the stream directly
+        # instead of Nginx buffering the whole file to disk first.
+        proxy_request_buffering off;
+    }
+}
+```
+
+> **Without `client_max_body_size 4G`** Nginx drops the TCP connection mid-upload and the client sees `Connection reset by peer (errno 104)`. This is the most common upload error when running behind Nginx.
 
 #### Option B — Kestrel direct TLS
 

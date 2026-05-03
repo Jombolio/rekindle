@@ -74,6 +74,9 @@ class MediaRepository @Inject constructor(
         progressDao.getUnsynced().forEach { syncProgress(it.mediaId) }
     }
 
+    suspend fun searchFolders(libraryId: String, query: String): List<Media> =
+        api.searchFolders(libraryId, query).map { it.toDomain() }
+
     fun pageUrl(baseUrl: String, mediaId: String, pageNum: Int): String =
         "${baseUrl.trimEnd('/')}/api/media/$mediaId/page/$pageNum"
 

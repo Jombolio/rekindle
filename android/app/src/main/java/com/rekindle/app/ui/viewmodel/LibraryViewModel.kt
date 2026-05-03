@@ -10,6 +10,8 @@ import com.rekindle.app.data.model.toDomain
 import com.rekindle.app.data.repository.AuthRepository
 import com.rekindle.app.domain.model.Library
 import dagger.hilt.android.lifecycle.HiltViewModel
+import com.rekindle.app.data.model.ScanProgressDto
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,6 +37,9 @@ class LibraryViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(LibraryState())
     val state = _state.asStateFlow()
+
+    private val _scanProgress = MutableStateFlow<ScanProgressDto?>(null)
+    val scanProgress = _scanProgress.asStateFlow()
 
     val isAdmin = prefs.permissionLevel.map { it >= 4 }.stateIn(
         viewModelScope,
@@ -73,7 +78,16 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             _state.update { it.copy(scanning = libraryId) }
             runCatching { api.scanLibrary(libraryId) }
+            // Poll until complete or 5-minute timeout
+            val deadline = System.currentTimeMillis() + 5 * 60_000L
+            while (System.currentTimeMillis() < deadline) {
+                delay(1_000)
+                val progress = runCatching { api.getScanProgress(libraryId) }.getOrNull()
+                _scanProgress.value = progress
+                if (progress?.phase == "complete") break
+            }
             _state.update { it.copy(scanning = null) }
+            _scanProgress.value = null
             load()
         }
     }

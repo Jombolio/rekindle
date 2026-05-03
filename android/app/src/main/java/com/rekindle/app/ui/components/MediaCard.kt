@@ -10,27 +10,28 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.LibraryBooks
+import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.filled.OfflineBolt
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.rekindle.app.core.download.DownloadState
 import com.rekindle.app.core.download.DownloadStatus
+import com.rekindle.app.core.download.FolderDownloadState
+import com.rekindle.app.core.download.FolderDownloadStatus
 import com.rekindle.app.domain.model.Media
+
+private enum class DownloadBadge { ALL, MIXED }
 
 @Composable
 fun MediaCard(
@@ -38,16 +39,29 @@ fun MediaCard(
     coverUrl: String,
     authHeader: String,
     downloadState: DownloadState,
-    canDownload: Boolean,
-    onDownload: () -> Unit,
-    onDeleteDownload: () -> Unit,
-    onCancelDownload: () -> Unit,
+    folderDownloadState: FolderDownloadState = FolderDownloadState(),
     modifier: Modifier = Modifier,
 ) {
-    val isOffline = downloadState.status == DownloadStatus.COMPLETE
+    // Determine which badge (if any) to show:
+    //  ALL  = green  → everything is available offline
+    //  MIXED = amber → partially downloaded (folder in-progress or some chapters done)
+    //  null  = nothing shown (on server, not downloaded)
+    val badge: DownloadBadge? = when {
+        media.isFolder -> when (folderDownloadState.status) {
+            FolderDownloadStatus.COMPLETE    -> DownloadBadge.ALL
+            FolderDownloadStatus.FETCHING,
+            FolderDownloadStatus.DOWNLOADING -> DownloadBadge.MIXED
+            else                             -> null
+        }
+        else -> when (downloadState.status) {
+            DownloadStatus.COMPLETE    -> DownloadBadge.ALL
+            DownloadStatus.DOWNLOADING,
+            DownloadStatus.EXTRACTING  -> DownloadBadge.MIXED
+            else                       -> null
+        }
+    }
 
     Column(modifier = modifier) {
-        // Cover image — fills the box via ContentScale.Crop so covers are always visible.
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -57,8 +71,6 @@ fun MediaCard(
                 model = ImageRequest.Builder(LocalContext.current)
                     .data(coverUrl)
                     .addHeader("Authorization", authHeader)
-                    // Use coverCachePath as disk-cache key so Coil fetches a
-                    // fresh image when the server regenerates the cover.
                     .diskCacheKey(media.coverCachePath ?: media.id)
                     .crossfade(true)
                     .build(),
@@ -67,21 +79,28 @@ fun MediaCard(
                 modifier = Modifier.matchParentSize(),
             )
 
-            // Offline badge — top-right
-            if (isOffline) {
+            // Download status badge — bottom-right, non-interactive
+            if (badge != null) {
+                val badgeColor = when (badge) {
+                    DownloadBadge.ALL   -> Color(0xFF4CAF50)
+                    DownloadBadge.MIXED -> Color(0xFFFF9800)
+                }
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
+                        .align(Alignment.BottomEnd)
                         .padding(4.dp)
                         .background(
-                            color = Color(0xFF4CAF50).copy(alpha = 0.85f),
+                            color = badgeColor.copy(alpha = 0.85f),
                             shape = RoundedCornerShape(4.dp),
                         )
                         .padding(3.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.OfflineBolt,
-                        contentDescription = "Available offline",
+                        contentDescription = when (badge) {
+                            DownloadBadge.ALL   -> "Available offline"
+                            DownloadBadge.MIXED -> "Partially downloaded"
+                        },
                         tint = Color.White,
                         modifier = Modifier.size(14.dp),
                     )
@@ -102,45 +121,15 @@ fun MediaCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        Icons.Default.LibraryBooks,
+                        Icons.AutoMirrored.Filled.LibraryBooks,
                         contentDescription = null,
                         tint = Color.White,
                         modifier = Modifier.size(12.dp),
                     )
                 }
             }
-
-            // Download button — bottom-right overlay.
-            // LocalMinimumInteractiveComponentSize suppresses the 48dp Material3
-            // minimum touch target so the button's clickable area is exactly its
-            // 32dp visual size and does not bleed into the image tap area.
-            if (canDownload) {
-                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides Dp.Unspecified) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(4.dp)
-                            .background(
-                                color = Color.Black.copy(alpha = 0.55f),
-                                shape = RoundedCornerShape(6.dp),
-                            )
-                            .size(32.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        DownloadButton(
-                            media = media,
-                            downloadState = downloadState,
-                            onDownload = onDownload,
-                            onDelete = onDeleteDownload,
-                            onCancel = onCancelDownload,
-                            modifier = Modifier.size(32.dp),
-                        )
-                    }
-                }
-            }
         }
 
-        // Title — single line, auto-scrolling marquee, centred.
         Text(
             text = media.displayTitle,
             style = MaterialTheme.typography.labelSmall,

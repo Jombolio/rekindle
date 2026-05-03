@@ -8,8 +8,9 @@ class ApiClient {
   ApiClient({required this.baseUrl, this.token}) {
     dio = Dio(BaseOptions(
       baseUrl: baseUrl.endsWith('/') ? baseUrl : '$baseUrl/',
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 30),
+      connectTimeout: const Duration(seconds: 30),
+      sendTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 60),
       headers: {
         'Content-Type': 'application/json',
         if (token != null) 'Authorization': 'Bearer $token',
