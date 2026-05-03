@@ -91,14 +91,19 @@ public class AdminController(
             }
             else
             {
-                var resolved = Path.GetFullPath(Path.Combine(library.RootPath, normRel));
-                var libraryRoot = Path.GetFullPath(library.RootPath);
+                var libraryRoot = Path.GetFullPath(library.RootPath.TrimEnd('/', '\\'));
+                var resolved    = Path.GetFullPath(Path.Combine(libraryRoot, normRel));
 
                 // Security: reject any path that escapes the library root.
                 if (!resolved.StartsWith(libraryRoot + Path.DirectorySeparatorChar,
                         StringComparison.OrdinalIgnoreCase)
                     && !resolved.Equals(libraryRoot, StringComparison.OrdinalIgnoreCase))
-                    return BadRequest(new { error = "Relative path escapes the library root." });
+                {
+                    logger.LogWarning(
+                        "Upload path escape attempt: normRel={NormRel} resolved={Resolved} libraryRoot={LibraryRoot}",
+                        normRel, resolved, libraryRoot);
+                    return BadRequest(new { error = $"Relative path '{normRel}' resolves outside the library root. (resolved: {resolved}, root: {libraryRoot})" });
+                }
 
                 Directory.CreateDirectory(resolved);
                 destDir = resolved;
