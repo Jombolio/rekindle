@@ -27,9 +27,22 @@ final _routerProvider = Provider<GoRouter>((ref) {
     initialLocation: '/',
     redirect: (context, state) {
       final sources = ref.read(sourcesProvider);
+      final activeId = ref.read(activeSourceIdProvider);
       final loc = state.matchedLocation;
 
       if (sources.isEmpty && loc != '/source/add') return '/source/add';
+
+      // If the active (or only) source has lost its token (e.g. server restarted
+      // and invalidated the JWT), bounce back to the library screen where the
+      // per-source sign-in prompt will be shown.
+      final activeSource = activeId != null
+          ? sources.where((s) => s.id == activeId).firstOrNull
+          : sources.firstOrNull;
+      final isLoggedOut = activeSource != null && activeSource.token == null;
+      const protectedPrefixes = ['/libraries/', '/series/', '/reader/', '/epub/', '/admin/'];
+      if (isLoggedOut && protectedPrefixes.any((p) => loc.startsWith(p))) {
+        return '/libraries';
+      }
 
       return null;
     },

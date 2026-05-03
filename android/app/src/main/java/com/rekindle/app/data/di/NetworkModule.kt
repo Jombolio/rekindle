@@ -3,6 +3,7 @@ package com.rekindle.app.data.di
 import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.data.api.AuthInterceptor
 import com.rekindle.app.data.api.BaseUrlInterceptor
+import com.rekindle.app.data.api.UnauthorizedInterceptor
 import com.rekindle.app.data.api.RekindleApi
 import dagger.Module
 import dagger.Provides
@@ -24,6 +25,7 @@ object NetworkModule {
     fun provideOkHttpClient(
         authInterceptor: AuthInterceptor,
         baseUrlInterceptor: BaseUrlInterceptor,
+        unauthorizedInterceptor: UnauthorizedInterceptor,
     ): OkHttpClient =
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -31,6 +33,7 @@ object NetworkModule {
             .writeTimeout(2, TimeUnit.MINUTES)
             .addInterceptor(baseUrlInterceptor)
             .addInterceptor(authInterceptor)
+            .addInterceptor(unauthorizedInterceptor)
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.BASIC
             })

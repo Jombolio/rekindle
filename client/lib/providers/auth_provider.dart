@@ -25,7 +25,15 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   source ??= sources.firstOrNull;
 
   if (source == null) return ApiClient(baseUrl: '', token: null);
-  return ApiClient(baseUrl: source.baseUrl, token: source.token);
+
+  final sourceId = source.id;
+  return ApiClient(
+    baseUrl: source.baseUrl,
+    token: source.token,
+    onUnauthorized: () {
+      ref.read(sourcesProvider.notifier).clearToken(sourceId);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------

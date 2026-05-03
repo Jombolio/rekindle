@@ -1,17 +1,29 @@
 package com.rekindle.app.ui
 
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.compose.animation.core.tween
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.rekindle.app.domain.model.Media
 import com.rekindle.app.ui.screens.AdminScreen
 import com.rekindle.app.ui.screens.ChapterIndexScreen
@@ -68,8 +80,40 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
     }
 
     val navController = rememberNavController()
+    val scope = rememberCoroutineScope()
+    var blockInput by remember { mutableStateOf(false) }
 
-    NavHost(navController = navController, startDestination = startDestination!!) {
+    // When a 401 clears the active source's token at runtime, pop everything
+    // back to Libraries so the sign-in prompt is shown for that source.
+    LaunchedEffect(Unit) {
+        vm.tokenLost.collect {
+            navController.navigate(Screen.Libraries.route) {
+                popUpTo(0) { inclusive = false }
+            }
+        }
+    }
+
+    // Block all touch input for the duration of each transition to prevent
+    // mis-taps landing on the incoming screen before it is fully visible.
+    LaunchedEffect(navController) {
+        navController.addOnDestinationChangedListener { _, _, _ ->
+            blockInput = true
+            scope.launch {
+                delay(150L)
+                blockInput = false
+            }
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+    NavHost(
+        navController = navController,
+        startDestination = startDestination!!,
+        enterTransition = { fadeIn(animationSpec = tween(150)) },
+        exitTransition = { fadeOut(animationSpec = tween(150)) },
+        popEnterTransition = { fadeIn(animationSpec = tween(150)) },
+        popExitTransition = { fadeOut(animationSpec = tween(150)) },
+    ) {
 
         composable(Screen.Login.route) {
             LoginScreen(onLoginSuccess = {
@@ -180,6 +224,23 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
             AdminScreen(onBack = { navController.popBackStack() })
         }
     }
+
+    // Transparent overlay that absorbs all touches during transitions.
+    if (blockInput) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            awaitPointerEvent(PointerEventPass.Initial)
+                                .changes.forEach { it.consume() }
+                        }
+                    }
+                },
+        )
+    }
+    } // end outer Box
 }
 
 private fun String.decode(): String =

@@ -15,6 +15,7 @@ import com.rekindle.app.domain.model.ServerSource
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.util.UUID
 import javax.inject.Inject
@@ -102,6 +103,22 @@ class PrefsStore @Inject constructor(
             it.remove(Keys.TOKEN)
             it.remove(Keys.PERMISSION_LEVEL)
         }
+
+    /** Clears the token from the active source (called on 401 to force re-login). */
+    suspend fun clearActiveSourceToken() {
+        val activeId = activeSourceId.first()
+        store.edit { prefs ->
+            val current = runCatching<List<ServerSource>> {
+                gson.fromJson(prefs[Keys.SOURCES_JSON] ?: "[]", sourceListType)
+            }.getOrDefault(emptyList()).toMutableList()
+            val idx = current.indexOfFirst { it.id == activeId }
+            if (idx >= 0) current[idx] = current[idx].copy(token = null, permissionLevel = 0)
+            prefs[Keys.SOURCES_JSON] = gson.toJson(current)
+            // Clear legacy single-token storage too
+            prefs.remove(Keys.TOKEN)
+            prefs.remove(Keys.PERMISSION_LEVEL)
+        }
+    }
 
     // ── App settings ──────────────────────────────────────────────────────────
 
