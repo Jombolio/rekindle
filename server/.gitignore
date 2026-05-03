@@ -14,6 +14,10 @@ appsettings.Development.json
 appsettings.Production.json
 appsettings.Local.json
 
+# Runtime data directory (database, JWT secret, page cache)
+# Created automatically when the server runs — never commit.
+data/
+
 # Auto-generated JWT secret (written to DataPath on first launch)
 *.key
 

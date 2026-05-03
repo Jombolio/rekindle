@@ -131,21 +131,18 @@ jobs:
 
       - name: Publish
         working-directory: server
-        run: |
-          dotnet publish Rekindle.Server/Rekindle.Server.csproj \
-            -c Release -r linux-x64 --self-contained \
-            -o ../RekindleServer-linux
+        run: dotnet publish Rekindle.Server/Rekindle.Server.csproj /p:PublishProfile=linux-x64
 
       - uses: actions/upload-artifact@v4
         with:
           name: RekindleServer-linux-x64
-          path: RekindleServer-linux/
+          path: server/Rekindle.Server/bin/publish/linux-x64/
 
       - name: Package for release
         if: github.event_name == 'release'
         run: |
-          cd RekindleServer-linux
-          zip -r ../RekindleServer-linux-x64.zip .
+          cd server/Rekindle.Server/bin/publish/linux-x64
+          zip -r ../../../../../RekindleServer-linux-x64.zip .
 
       - name: Upload to release
         if: github.event_name == 'release'
@@ -165,21 +162,18 @@ jobs:
 
       - name: Publish
         working-directory: server
-        run: |
-          dotnet publish Rekindle.Server/Rekindle.Server.csproj \
-            -c Release -r win-x64 --self-contained \
-            -o ../RekindleServer-windows
+        run: dotnet publish Rekindle.Server/Rekindle.Server.csproj /p:PublishProfile=win-x64
 
       - uses: actions/upload-artifact@v4
         with:
           name: RekindleServer-windows-x64
-          path: RekindleServer-windows/
+          path: server/Rekindle.Server/bin/publish/win-x64/
 
       - name: Package for release
         if: github.event_name == 'release'
         run: |
-          cd RekindleServer-windows
-          zip -r ../RekindleServer-windows-x64.zip .
+          cd server/Rekindle.Server/bin/publish/win-x64
+          zip -r ../../../../../RekindleServer-windows-x64.zip .
 
       - name: Upload to release
         if: github.event_name == 'release'

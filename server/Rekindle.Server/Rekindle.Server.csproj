@@ -14,9 +14,17 @@
     <ProjectReference Include="..\Rekindle.Core\Rekindle.Core.csproj" />
   </ItemGroup>
 
-  <!-- Remove dev-only web SDK artefacts from the publish output -->
-  <Target Name="CleanPublishOutput" AfterTargets="Publish">
+  <!-- Remove staticwebassets manifest (dev-only artefact) -->
+  <Target Name="RemoveStaticWebAssetsManifest" AfterTargets="Publish">
     <Delete Files="$(PublishDir)Rekindle.Server.staticwebassets.endpoints.json" />
+  </Target>
+
+  <!-- Remove web.config after it is generated — runs specifically after the
+       IIS hosting config target so it can't be regenerated afterwards. -->
+  <Target Name="RemoveWebConfig"
+          AfterTargets="_GenerateAspNetCoreIISHostingConfig"
+          Condition="'$(PublishIISAssets)' == 'false'">
+    <Delete Files="$(PublishDir)web.config" />
   </Target>
 
 </Project>
