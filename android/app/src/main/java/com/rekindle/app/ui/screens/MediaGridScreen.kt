@@ -86,12 +86,7 @@ fun MediaGridScreen(
                     ) {
                         Icon(Icons.Default.Search, contentDescription = "Search folders")
                     }
-                    IconButton(
-                        onClick = {
-                            vm.setSearchQuery("")
-                            // re-trigger load via ViewModel
-                        },
-                    ) {
+                    IconButton(onClick = vm::refresh) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
                 },

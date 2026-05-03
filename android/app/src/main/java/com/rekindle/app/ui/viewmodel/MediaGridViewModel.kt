@@ -128,6 +128,12 @@ class MediaGridViewModel @Inject constructor(
         }
     }
 
+    fun refresh() {
+        _searchQuery.value = ""
+        _searchResults.value = emptyList()
+        load()
+    }
+
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
         if (query.isBlank()) {
