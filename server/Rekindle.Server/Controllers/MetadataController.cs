@@ -50,15 +50,18 @@ public class MetadataController(
         var comicVineKey   = await metadataRepo.GetConfigAsync("comicvine_api_key");
 
         var result = await scraper.ScrapeAsync(media, libraryType, malClientId, comicVineKey);
-        if (result is null)
-            return NotFound(new { error = "No metadata found for this title on any configured source." });
 
-        return Ok(new
+        return result.Status switch
         {
-            status   = result.Status.ToString().ToLowerInvariant(),
-            data     = result.Data,
-            existing = result.Existing,          // null for created / no_change
-        });
+            ScrapeStatus.NoApiKey  => UnprocessableEntity(new { error = result.Message }),
+            ScrapeStatus.NotFound  => NotFound(new { error = result.Message }),
+            _ => Ok(new
+            {
+                status   = result.Status.ToString().ToLowerInvariant(),
+                data     = result.Data,
+                existing = result.Existing,
+            }),
+        };
     }
 
     // ── Admin commit ─────────────────────────────────────────────────────────

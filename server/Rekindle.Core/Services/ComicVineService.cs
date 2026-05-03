@@ -33,10 +33,12 @@ public sealed class ComicVineService(ILogger<ComicVineService> logger) : IDispos
 
             // /search/ is ComicVine's full-text search endpoint. The /volumes/ endpoint
             // does not support a query parameter — using it returns unrelated results.
+            // deck = short one-liner synopsis; description = full HTML overview.
+            // Prefer deck when available, fall back to description.
             var url = $"{BaseUrl}/search/?api_key={Uri.EscapeDataString(apiKey)}" +
                       $"&format=json&query={Uri.EscapeDataString(title)}" +
                       $"&resources=volume" +
-                      $"&field_list=id,name,description,publisher,start_year&limit=1";
+                      $"&field_list=id,name,deck,description,publisher,start_year&limit=1";
 
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.Add("User-Agent", "Rekindle/1.0");
@@ -74,7 +76,10 @@ public sealed class ComicVineService(ILogger<ComicVineService> logger) : IDispos
                 publisher = pubName.GetString();
 
             string? synopsis = null;
-            if (vol.TryGetProperty("description", out var desc) && desc.ValueKind != JsonValueKind.Null)
+            if (vol.TryGetProperty("deck", out var deck) && deck.ValueKind != JsonValueKind.Null)
+                synopsis = deck.GetString();
+            if (string.IsNullOrWhiteSpace(synopsis) &&
+                vol.TryGetProperty("description", out var desc) && desc.ValueKind != JsonValueKind.Null)
                 synopsis = desc.GetString();
 
             return new ComicVineResult

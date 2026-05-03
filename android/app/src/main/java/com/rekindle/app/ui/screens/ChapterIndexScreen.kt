@@ -104,6 +104,17 @@ fun ChapterIndexScreen(
         )
     }
 
+    state.metadataError?.let { error ->
+        AlertDialog(
+            onDismissRequest = { vm.dismissMetadataError() },
+            title = { Text("Metadata scrape failed") },
+            text  = { Text(error) },
+            confirmButton = {
+                TextButton(onClick = { vm.dismissMetadataError() }) { Text("OK") }
+            },
+        )
+    }
+
     state.metadataConflict?.let { conflict ->
         MetadataConflictDialog(
             conflict  = conflict,

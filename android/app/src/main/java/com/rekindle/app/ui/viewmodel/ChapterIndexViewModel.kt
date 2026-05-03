@@ -16,6 +16,8 @@ import com.rekindle.app.domain.model.MangaMetadata
 import com.rekindle.app.domain.model.Media
 import com.rekindle.app.domain.model.ScrapeResult
 import com.rekindle.app.domain.model.ScrapeStatus
+import org.json.JSONObject
+import retrofit2.HttpException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -129,7 +131,7 @@ class ChapterIndexViewModel @Inject constructor(
                             _state.update { it.copy(metadataScraping = false, metadataConflict = result) }
                     }
                 }
-                .onFailure { e -> _state.update { it.copy(metadataScraping = false, metadataError = e.message) } }
+                .onFailure { e -> _state.update { it.copy(metadataScraping = false, metadataError = e.friendlyMessage()) } }
         }
     }
 
@@ -143,6 +145,7 @@ class ChapterIndexViewModel @Inject constructor(
 
     fun dismissConflict() = _state.update { it.copy(metadataConflict = null) }
     fun dismissNoChange() = _state.update { it.copy(metadataNoChange = false) }
+    fun dismissMetadataError() = _state.update { it.copy(metadataError = null) }
 
     fun downloadStateFor(mediaId: String): DownloadState = downloadRepo.stateFor(mediaId)
     fun download(media: Media) = downloadRepo.download(media.id, media.format, media.displayTitle, media.relativePath)
@@ -174,6 +177,20 @@ class ChapterIndexViewModel @Inject constructor(
     }
 
     fun cancelFolderDownload() = downloadRepo.cancelFolderDownload(folderId)
+
+    private fun Throwable.friendlyMessage(): String {
+        if (this is HttpException) {
+            val body = runCatching { response()?.errorBody()?.string() }.getOrNull()
+            val serverMsg = body?.let { runCatching { JSONObject(it).optString("error") }.getOrNull() }
+            if (!serverMsg.isNullOrBlank()) return serverMsg
+            return when (code()) {
+                422  -> "No API key configured for this library type."
+                404  -> "No metadata found for this title."
+                else -> "Server error ${code()}."
+            }
+        }
+        return message ?: "Unknown error."
+    }
 
     /** Recursively collects all leaf archives in parallel using coroutine async. */
     private suspend fun collectArchives(

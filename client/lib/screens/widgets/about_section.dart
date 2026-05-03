@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -57,10 +58,21 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
           }
       }
     } catch (e) {
-      if (mounted) _showSnackBar('Scrape failed: $e', isError: true);
+      if (mounted) _showSnackBar(_errorMessage(e), isError: true);
     } finally {
       if (mounted) setState(() => _scraping = false);
     }
+  }
+
+  static String _errorMessage(Object e) {
+    if (e is DioException) {
+      final data = e.response?.data;
+      if (data is Map && data['error'] is String) return data['error'] as String;
+      final code = e.response?.statusCode;
+      if (code == 422) return 'No API key configured for this library type.';
+      if (code == 404) return 'No metadata found for this title.';
+    }
+    return 'Scrape failed: $e';
   }
 
   void _showSnackBar(String message, {bool isError = false}) {

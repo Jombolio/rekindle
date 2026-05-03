@@ -22,7 +22,7 @@ public class MetadataScraperService(
     ///   "manga"  → MAL then AniList  (ComicVine is never queried)
     ///   other    → same as "manga"
     /// </summary>
-    public async Task<ScrapeResult?> ScrapeAsync(
+    public async Task<ScrapeResult> ScrapeAsync(
         Media media,
         string libraryType,
         string? malClientId,
@@ -32,20 +32,22 @@ public class MetadataScraperService(
         var searchTitle = media.Series ?? media.Title;
         logger.LogInformation("Scraping metadata for '{Title}' (library type: {Type})", searchTitle, libraryType);
 
-        var proposed = await FetchAsync(media, libraryType, malClientId, comicVineApiKey, searchTitle, ct);
-        if (proposed is null) return null;
+        var (proposed, failResult) = await FetchAsync(media, libraryType, malClientId, comicVineApiKey, searchTitle, ct);
+        if (failResult is not null) return failResult;
 
+        // failResult is null only when proposed is non-null.
+        var fresh = proposed!;
         var existing = await repo.GetAsync(media.Id);
 
         // Nothing stored yet — write immediately.
         if (existing is null)
         {
-            await repo.UpsertAsync(proposed);
-            return new ScrapeResult { Status = ScrapeStatus.Created, Data = proposed };
+            await repo.UpsertAsync(fresh);
+            return new ScrapeResult { Status = ScrapeStatus.Created, Data = fresh };
         }
 
         // Data is identical — skip write.
-        if (ContentEquals(existing, proposed))
+        if (ContentEquals(existing, fresh))
         {
             logger.LogDebug("Metadata for '{Title}' unchanged — skipping write.", searchTitle);
             return new ScrapeResult { Status = ScrapeStatus.NoChange, Data = existing };
@@ -53,14 +55,14 @@ public class MetadataScraperService(
 
         // Data differs — surface conflict for admin review; do not write yet.
         logger.LogInformation("Metadata conflict detected for '{Title}' — awaiting confirmation.", searchTitle);
-        return new ScrapeResult { Status = ScrapeStatus.Conflict, Data = proposed, Existing = existing };
+        return new ScrapeResult { Status = ScrapeStatus.Conflict, Data = fresh, Existing = existing };
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
 
     // Source routing is a strict switch — each branch returns without falling
     // through to the other, so Comic and Manga sources remain completely isolated.
-    private async Task<MangaMetadata?> FetchAsync(
+    private async Task<(MangaMetadata? Data, ScrapeResult? Fail)> FetchAsync(
         Media media,
         string libraryType,
         string? malClientId,
@@ -77,21 +79,33 @@ public class MetadataScraperService(
 
     // ── Comic: ComicVine only ────────────────────────────────────────────────
 
-    private async Task<MangaMetadata?> FetchComicAsync(
+    private async Task<(MangaMetadata?, ScrapeResult?)> FetchComicAsync(
         Media media, string? comicVineApiKey, string searchTitle, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(comicVineApiKey))
         {
-            logger.LogWarning("No ComicVine API key configured — cannot scrape comic metadata.");
-            return null;
+            logger.LogWarning("No ComicVine API key configured for '{Title}'", searchTitle);
+            return (null, new ScrapeResult
+            {
+                Status  = ScrapeStatus.NoApiKey,
+                Message = "No ComicVine API key is configured. " +
+                          "Add one in Admin → APIs to enable comic metadata scraping.",
+            });
         }
+
         var cv = await comicVine.SearchVolumeAsync(searchTitle, comicVineApiKey, ct);
         if (cv is null)
         {
             logger.LogWarning("No ComicVine result for '{Title}'", searchTitle);
-            return null;
+            return (null, new ScrapeResult
+            {
+                Status  = ScrapeStatus.NotFound,
+                Message = $"No results found on ComicVine for \"{searchTitle}\". " +
+                          "Try renaming the folder to match the series title exactly as it appears on ComicVine.",
+            });
         }
-        return new MangaMetadata
+
+        return (new MangaMetadata
         {
             MediaId       = media.Id,
             Title         = cv.Title,
@@ -101,19 +115,19 @@ public class MetadataScraperService(
             ComicvineId   = cv.ComicvineId,
             Source        = "comicvine",
             LastScrapedAt = DateTime.UtcNow,
-        };
+        }, null);
     }
 
     // ── Manga: MAL then AniList ──────────────────────────────────────────────
 
-    private async Task<MangaMetadata?> FetchMangaAsync(
+    private async Task<(MangaMetadata?, ScrapeResult?)> FetchMangaAsync(
         Media media, string? malClientId, string searchTitle, CancellationToken ct)
     {
         if (!string.IsNullOrWhiteSpace(malClientId))
         {
             var malResult = await mal.SearchAsync(searchTitle, malClientId, ct);
             if (malResult is not null)
-                return new MangaMetadata
+                return (new MangaMetadata
                 {
                     MediaId       = media.Id,
                     Title         = malResult.Title,
@@ -125,12 +139,12 @@ public class MetadataScraperService(
                     MalId         = malResult.MalId,
                     Source        = "mal",
                     LastScrapedAt = DateTime.UtcNow,
-                };
+                }, null);
         }
 
         var aniResult = await aniList.SearchAsync(searchTitle, ct);
         if (aniResult is not null)
-            return new MangaMetadata
+            return (new MangaMetadata
             {
                 MediaId       = media.Id,
                 Title         = aniResult.Title,
@@ -142,10 +156,18 @@ public class MetadataScraperService(
                 AnilistId     = aniResult.AnilistId,
                 Source        = "anilist",
                 LastScrapedAt = DateTime.UtcNow,
-            };
+            }, null);
 
+        var hint = string.IsNullOrWhiteSpace(malClientId)
+            ? " Adding a MyAnimeList API key may improve results."
+            : "";
         logger.LogWarning("No manga metadata found for '{Title}' on MAL or AniList", searchTitle);
-        return null;
+        return (null, new ScrapeResult
+        {
+            Status  = ScrapeStatus.NotFound,
+            Message = $"No results found for \"{searchTitle}\" on MyAnimeList or AniList.{hint} " +
+                      "Try renaming the folder to match the series title exactly.",
+        });
     }
 
     /// <summary>
