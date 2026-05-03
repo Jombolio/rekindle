@@ -23,6 +23,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -63,9 +65,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.FilledTonalButton
 import com.rekindle.app.core.download.FolderDownloadStatus
 import com.rekindle.app.domain.model.MangaMetadata
 import com.rekindle.app.domain.model.Media
+import com.rekindle.app.domain.model.ScrapeResult
 import com.rekindle.app.ui.components.DownloadButton
 import com.rekindle.app.ui.viewmodel.ChapterIndexViewModel
 
@@ -84,6 +90,27 @@ fun ChapterIndexScreen(
     val canDownload by vm.canDownload.collectAsState()
     val isAdmin by vm.isAdmin.collectAsState()
     val isManga = vm.libraryType == "manga"
+
+    // ── Metadata dialogs ──────────────────────────────────────────────────────
+
+    if (state.metadataNoChange) {
+        AlertDialog(
+            onDismissRequest = { vm.dismissNoChange() },
+            title = { Text("No changes") },
+            text  = { Text("The scraped metadata matches what is already stored. No update was needed.") },
+            confirmButton = {
+                TextButton(onClick = { vm.dismissNoChange() }) { Text("OK") }
+            },
+        )
+    }
+
+    state.metadataConflict?.let { conflict ->
+        MetadataConflictDialog(
+            conflict  = conflict,
+            onDismiss = { vm.dismissConflict() },
+            onCommit  = { vm.commitMetadata(conflict.data) },
+        )
+    }
 
     var showConfirmDialog by remember { mutableStateOf(false) }
 
@@ -273,7 +300,6 @@ private fun MangaAboutSection(
 
     ElevatedCard(modifier = modifier.fillMaxWidth()) {
         Column(modifier = Modifier.animateContentSize()) {
-            // Header row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -281,98 +307,83 @@ private fun MangaAboutSection(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    Icons.Default.Info,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp),
-                )
+                Icon(Icons.Default.Info, null,
+                    tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.size(8.dp))
                 Text(
                     text = when {
                         isLoading -> "Loading metadata…"
-                        hasMeta -> metadata!!.title ?: "About"
-                        else -> "No metadata scraped"
+                        hasMeta   -> metadata!!.title ?: "About"
+                        else      -> "No metadata scraped"
                     },
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f),
                 )
                 if (isAdmin) {
-                    if (isScraping) {
+                    if (isScraping)
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
+                    else
                         IconButton(onClick = onScrape, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Scrape metadata", modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.Refresh, "Scrape metadata", modifier = Modifier.size(18.dp))
                         }
-                    }
+                    Spacer(Modifier.size(4.dp))
+                }
+                if (hasMeta) {
+                    Icon(
+                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 
-            // Expanded body
             if (hasMeta && expanded) {
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-
-                    // Info chips
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         metadata!!.year?.let {
-                            SuggestionChip(
-                                onClick = {},
+                            SuggestionChip(onClick = {},
                                 label = { Text("$it", style = MaterialTheme.typography.labelSmall) },
-                                icon = { Icon(Icons.Default.CalendarToday, null, modifier = Modifier.size(14.dp)) },
-                            )
+                                icon  = { Icon(Icons.Default.CalendarToday, null, modifier = Modifier.size(14.dp)) })
                         }
                         metadata.score?.let {
-                            SuggestionChip(
-                                onClick = {},
+                            SuggestionChip(onClick = {},
                                 label = { Text("%.1f".format(it), style = MaterialTheme.typography.labelSmall) },
-                                icon = { Icon(Icons.Default.Star, null, modifier = Modifier.size(14.dp)) },
-                            )
+                                icon  = { Icon(Icons.Default.Star, null, modifier = Modifier.size(14.dp)) })
                         }
                         metadata.status?.let {
-                            SuggestionChip(
-                                onClick = {},
-                                label = { Text(metadata.formatStatus(), style = MaterialTheme.typography.labelSmall) },
-                            )
+                            SuggestionChip(onClick = {},
+                                label = { Text(metadata.formatStatus(), style = MaterialTheme.typography.labelSmall) })
                         }
-                        metadata.source?.let {
-                            SuggestionChip(
-                                onClick = {},
-                                label = { Text(if (it == "mal") "MAL" else "AniList", style = MaterialTheme.typography.labelSmall) },
-                                icon = { Icon(Icons.Default.Public, null, modifier = Modifier.size(14.dp)) },
-                            )
+                        metadata.source?.let { src ->
+                            val label = when (src) { "mal" -> "MAL"; "anilist" -> "AniList"; "comicvine" -> "ComicVine"; else -> src }
+                            SuggestionChip(onClick = {},
+                                label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                                icon  = { Icon(Icons.Default.Public, null, modifier = Modifier.size(14.dp)) })
                         }
                     }
-
-                    // Genres
                     if (metadata!!.genreList.isNotEmpty()) {
                         Spacer(Modifier.height(4.dp))
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             metadata.genreList.forEach { genre ->
-                                AssistChip(
-                                    onClick = {},
-                                    label = { Text(genre, style = MaterialTheme.typography.labelSmall) },
-                                )
+                                AssistChip(onClick = {},
+                                    label = { Text(genre, style = MaterialTheme.typography.labelSmall) })
                             }
                         }
                     }
-
-                    // Synopsis
                     val synopsis = metadata.synopsis?.replace(Regex("<[^>]*>"), "")?.trim()
                     if (!synopsis.isNullOrEmpty()) {
                         Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = synopsis,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        Text(text = synopsis,
+                            style    = MaterialTheme.typography.bodySmall,
+                            color    = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = if (showFullSynopsis) Int.MAX_VALUE else 4,
-                            overflow = if (showFullSynopsis) TextOverflow.Visible else TextOverflow.Ellipsis,
-                        )
+                            overflow = if (showFullSynopsis) TextOverflow.Visible else TextOverflow.Ellipsis)
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = if (showFullSynopsis) "Show less" else "Show more",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
+                            text     = if (showFullSynopsis) "Show less" else "Show more",
+                            style    = MaterialTheme.typography.labelSmall,
+                            color    = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.clickable { showFullSynopsis = !showFullSynopsis },
                         )
                     }
@@ -380,6 +391,85 @@ private fun MangaAboutSection(
             }
         }
     }
+}
+
+// ── Metadata conflict dialog ──────────────────────────────────────────────────
+
+@Composable
+private fun MetadataConflictDialog(
+    conflict: ScrapeResult,
+    onDismiss: () -> Unit,
+    onCommit: () -> Unit,
+) {
+    val existing = conflict.existing ?: return
+    val proposed = conflict.data
+
+    data class Diff(val field: String, val old: String?, val new_: String?)
+
+    val diffs = buildList {
+        fun add(field: String, a: String?, b: String?) { if (a != b) add(Diff(field, a, b)) }
+        add("Title",  existing.title,  proposed.title)
+        add("Year",   existing.year?.toString(),  proposed.year?.toString())
+        add("Status", existing.status, proposed.status)
+        add("Score",  existing.score?.let { "%.1f".format(it) }, proposed.score?.let { "%.1f".format(it) })
+        add("Genres", existing.genres, proposed.genres)
+        add("Source", existing.source, proposed.source)
+        // Truncate synopsis
+        fun truncate(s: String?) = s?.replace(Regex("<[^>]*>"), "")?.trim()
+            ?.let { if (it.length > 120) "${it.take(120)}…" else it }
+        add("Synopsis", truncate(existing.synopsis), truncate(proposed.synopsis))
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Metadata conflict") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "The scraped data differs from what is stored. " +
+                        "Review the changes below before deciding which to keep.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Spacer(Modifier.weight(0.28f))
+                    Text("Stored",  style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0.36f))
+                    Text("New", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(0.36f))
+                }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                diffs.forEach { diff ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Text(diff.field,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(0.28f))
+                        Text(diff.old ?: "—",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                            modifier = Modifier.weight(0.36f))
+                        Text(diff.new_ ?: "—",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                            modifier = Modifier.weight(0.36f))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            FilledTonalButton(onClick = { onCommit(); }) { Text("Use new data") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Keep existing") }
+        },
+    )
 }
 
 // ── Download progress bar ─────────────────────────────────────────────────────

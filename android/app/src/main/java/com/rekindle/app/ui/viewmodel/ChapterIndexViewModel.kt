@@ -14,6 +14,8 @@ import com.rekindle.app.data.repository.MediaRepository
 import com.rekindle.app.data.repository.MetadataRepository
 import com.rekindle.app.domain.model.MangaMetadata
 import com.rekindle.app.domain.model.Media
+import com.rekindle.app.domain.model.ScrapeResult
+import com.rekindle.app.domain.model.ScrapeStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -37,6 +39,9 @@ data class ChapterIndexState(
     val metadataLoading: Boolean = false,
     val metadataScraping: Boolean = false,
     val metadataError: String? = null,
+    // Non-null while a conflict is awaiting admin resolution
+    val metadataConflict: ScrapeResult? = null,
+    val metadataNoChange: Boolean = false,
 )
 
 @HiltViewModel
@@ -112,12 +117,32 @@ class ChapterIndexViewModel @Inject constructor(
     fun scrapeMetadata() {
         if (_state.value.metadataScraping) return
         viewModelScope.launch {
-            _state.update { it.copy(metadataScraping = true, metadataError = null) }
+            _state.update { it.copy(metadataScraping = true, metadataError = null, metadataNoChange = false, metadataConflict = null) }
             runCatching { metadataRepo.scrapeMetadata(folderId) }
-                .onSuccess { meta -> _state.update { it.copy(metadata = meta, metadataScraping = false) } }
+                .onSuccess { result ->
+                    when (result.status) {
+                        ScrapeStatus.CREATED ->
+                            _state.update { it.copy(metadata = result.data, metadataScraping = false) }
+                        ScrapeStatus.NO_CHANGE ->
+                            _state.update { it.copy(metadataScraping = false, metadataNoChange = true) }
+                        ScrapeStatus.CONFLICT ->
+                            _state.update { it.copy(metadataScraping = false, metadataConflict = result) }
+                    }
+                }
                 .onFailure { e -> _state.update { it.copy(metadataScraping = false, metadataError = e.message) } }
         }
     }
+
+    fun commitMetadata(metadata: MangaMetadata) {
+        viewModelScope.launch {
+            runCatching { metadataRepo.commitMetadata(folderId, metadata) }
+                .onSuccess { saved -> _state.update { it.copy(metadata = saved, metadataConflict = null) } }
+                .onFailure { e -> _state.update { it.copy(metadataError = e.message, metadataConflict = null) } }
+        }
+    }
+
+    fun dismissConflict() = _state.update { it.copy(metadataConflict = null) }
+    fun dismissNoChange() = _state.update { it.copy(metadataNoChange = false) }
 
     fun downloadStateFor(mediaId: String): DownloadState = downloadRepo.stateFor(mediaId)
     fun download(media: Media) = downloadRepo.download(media.id, media.format, media.displayTitle, media.relativePath)

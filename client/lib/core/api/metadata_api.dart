@@ -1,4 +1,5 @@
 import '../models/manga_metadata.dart';
+import '../models/scrape_result.dart';
 import 'api_client.dart';
 
 class MetadataApi {
@@ -14,8 +15,28 @@ class MetadataApi {
     }
   }
 
-  Future<MangaMetadata> scrape(String mediaId) async {
+  Future<ScrapeResult> scrape(String mediaId) async {
     final resp = await _client.dio.post('api/metadata/$mediaId/scrape');
+    return ScrapeResult.fromJson(resp.data as Map<String, dynamic>);
+  }
+
+  Future<MangaMetadata> commit(String mediaId, MangaMetadata metadata) async {
+    final resp = await _client.dio.post(
+      'api/metadata/$mediaId/commit',
+      data: {
+        'mediaId':     metadata.mediaId,
+        'title':       metadata.title,
+        'synopsis':    metadata.synopsis,
+        'genres':      metadata.genres,
+        'score':       metadata.score,
+        'status':      metadata.status,
+        'year':        metadata.year,
+        'malId':       metadata.malId,
+        'anilistId':   metadata.anilistId,
+        'comicvineId': metadata.comicvineId,
+        'source':      metadata.source,
+      },
+    );
     return MangaMetadata.fromJson(resp.data as Map<String, dynamic>);
   }
 

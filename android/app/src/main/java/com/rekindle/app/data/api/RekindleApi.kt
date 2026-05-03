@@ -3,6 +3,7 @@ package com.rekindle.app.data.api
 import com.rekindle.app.data.model.AdminStatsDto
 import com.rekindle.app.data.model.MangaMetadataDto
 import com.rekindle.app.data.model.MetadataConfigDto
+import com.rekindle.app.data.model.ScrapeResultDto
 import com.rekindle.app.data.model.SetMetadataConfigRequest
 import com.rekindle.app.data.model.AdminUserDto
 import com.rekindle.app.data.model.ClearCacheResponseDto
@@ -154,7 +155,13 @@ interface RekindleApi {
     suspend fun getMetadata(@Path("mediaId") mediaId: String): MangaMetadataDto
 
     @POST("api/metadata/{mediaId}/scrape")
-    suspend fun scrapeMetadata(@Path("mediaId") mediaId: String): MangaMetadataDto
+    suspend fun scrapeMetadata(@Path("mediaId") mediaId: String): ScrapeResultDto
+
+    @POST("api/metadata/{mediaId}/commit")
+    suspend fun commitMetadata(
+        @Path("mediaId") mediaId: String,
+        @Body metadata: MangaMetadataDto,
+    ): MangaMetadataDto
 
     @GET("api/admin/metadata/config")
     suspend fun getMetadataConfig(): MetadataConfigDto

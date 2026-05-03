@@ -10,12 +10,6 @@ final mangaMetadataProvider =
   return MetadataApi(client).getMetadata(mediaId);
 });
 
-final scrapeMetadataProvider =
-    FutureProvider.autoDispose.family<MangaMetadata, String>((ref, mediaId) async {
-  final client = ref.watch(apiClientProvider);
-  return MetadataApi(client).scrape(mediaId);
-});
-
 final metadataConfigProvider = FutureProvider.autoDispose<({bool malKeySet, bool comicvineKeySet})>((ref) async {
   final client = ref.watch(apiClientProvider);
   return MetadataApi(client).getConfig();

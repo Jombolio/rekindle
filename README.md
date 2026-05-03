@@ -23,6 +23,12 @@ Point the Rekindle Server at a folder of archives (CBZ, CBR, EPUB, MOBI, PDF) an
   - [HTTPS](#https)
   - [First-time Setup](#first-time-setup)
 - [Connecting to the Server](#connecting-to-the-server)
+- [Metadata APIs](#metadata-apis)
+  - [Overview](#overview)
+  - [ComicVine](#comicvine)
+  - [MyAnimeList](#myanimelist)
+  - [AniList](#anilist)
+  - [Configuring API Keys](#configuring-api-keys)
 - [Building from Source](#building-from-source)
 
 ---
@@ -245,6 +251,102 @@ On first launch with no admin account, the server prints a one-time setup token 
 ```
 
 Use the Rekindle Client to complete setup — it will prompt for this token on first connection.
+
+---
+
+## Metadata APIs
+
+Rekindle can fetch "About" metadata for your manga and comic series — synopsis, genres, score, publication year, and status — directly from third-party databases. Metadata is stored locally in the server database after the first scrape.
+
+Only administrators can trigger a scrape or configure API keys. Readers can view the cached result.
+
+### Overview
+
+| Source | Used for | Key required? | Rate limit |
+|--------|----------|---------------|------------|
+| [ComicVine](#comicvine) | Comics **only** | Yes | 200 req / resource / hour |
+| [MyAnimeList](#myanimelist) | Manga **only** | Yes | Varies by endpoint |
+| [AniList](#anilist) | Manga **only** (fallback) | No | 30 req / min (Rekindle-enforced) |
+
+Source routing is **strict and exclusive** — each library type uses only its designated source(s):
+
+- **Comic libraries** → ComicVine only. MAL and AniList are never queried. No key = no metadata.
+- **Manga libraries** → MyAnimeList first (if a key is configured), then AniList as an automatic fallback.
+- **Other library types** → same as manga.
+
+ComicVine is never used for manga. MAL and AniList are never used for comics.
+
+### ComicVine
+
+[ComicVine](https://comicvine.gamespot.com) is a community-run comic database covering Western comics, graphic novels, and more.
+
+**Rate limits:** 200 requests per resource per hour. ComicVine also uses velocity detection — too many rapid requests will result in a temporary block. Rekindle enforces a minimum 1-second gap between requests to stay within the velocity limit.
+
+#### Getting a ComicVine API key
+
+1. Create a free account at [comicvine.gamespot.com](https://comicvine.gamespot.com).
+2. Go to **[comicvine.gamespot.com/api](https://comicvine.gamespot.com/api)**.
+3. Your API key is displayed at the top of the page under **"Your API Key"**. Copy it.
+4. Add it in the Rekindle Admin Panel under **Admin → APIs → ComicVine API Key**.
+
+> Keep your API key private. It is stored securely on the server and never sent to clients.
+
+### MyAnimeList
+
+[MyAnimeList (MAL)](https://myanimelist.net) is the most widely used anime and manga database. Rekindle uses its v2 REST API to fetch manga series information.
+
+**Rate limits:** MAL rate limits vary. In practice, occasional scraping of individual series is well within the allowed usage. Avoid bulk-scraping large libraries in rapid succession.
+
+#### Getting a MAL Client ID
+
+1. Log into your account at [myanimelist.net](https://myanimelist.net). Create one if you don't have one — it's free.
+2. Go to **[myanimelist.net/apiconfig](https://myanimelist.net/apiconfig)**.
+3. Click **Create ID**.
+4. Fill in the required fields:
+   - **App Name:** `Rekindle` (or any name you like)
+   - **App Type:** `other`
+   - **App Description:** A brief description (e.g. "Personal self-hosted reader")
+   - **App Redirect URL:** `http://localhost` (a placeholder is required even for non-OAuth use)
+5. Accept the API License Agreement and click **Submit**.
+6. Your **Client ID** is shown on the next page. Copy it.
+7. Add it in the Rekindle Admin Panel under **Admin → APIs → MyAnimeList → MAL Client ID**.
+
+> MAL Client IDs are for read-only public data access. Rekindle only ever makes `GET` requests; it does not post to or modify your MAL account in any way.
+
+### AniList
+
+[AniList](https://anilist.co) is a modern anime and manga tracking site with a public GraphQL API. Rekindle uses it as a fallback when no MAL key is configured, or when MAL returns no result.
+
+**No registration is required.** The public AniList API is freely accessible without an account or key.
+
+**Rate limits:** AniList uses a burst limiter. Rekindle enforces a sliding-window cap of **30 requests per minute** to stay safely within AniList's limits. Requests that exceed this are silently dropped rather than queued, so back-to-back scrape operations on many series should be spaced a few seconds apart.
+
+### Configuring API Keys
+
+API keys are set once per server instance and apply to all users. They are **write-only** from the admin UI — you can update a key but cannot read it back once saved.
+
+#### Via the Admin Panel (recommended)
+
+1. Log in as an admin and open the client.
+2. Navigate to **Admin Panel → APIs** tab.
+3. Enter the key(s) in the relevant field(s) and click **Save API Keys**.
+4. A "Key set" badge will appear next to each configured source.
+
+#### Scraping metadata for a series
+
+Once at least one API key is configured (or for manga, where AniList requires no key):
+
+1. Browse to any **manga or comic series** (a folder/series view, not an individual issue).
+2. If you are an admin, a **refresh icon** (↻) appears in the "About" card at the top of the chapter list.
+3. Tap it to trigger a scrape. Rekindle fetches fresh data and compares it with what is already stored:
+
+| Result | What happens |
+|--------|-------------|
+| **No prior metadata** | Data is written immediately and displayed. |
+| **Matches stored data** | No write is performed. A "Metadata is already up to date" message is shown. |
+| **Conflicts with stored data** | A **diff dialog** appears showing the changed fields side-by-side. Choose **"Keep existing"** to leave the stored data unchanged, or **"Use new data"** to overwrite with the fresh result. |
+
+This means re-scraping a series never silently overwrites data you may have manually adjusted, and avoids unnecessary database writes when nothing has changed.
 
 ---
 

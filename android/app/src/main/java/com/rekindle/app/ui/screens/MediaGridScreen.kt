@@ -168,6 +168,9 @@ fun MediaGridScreen(
                         val gridState = rememberLazyGridState()
 
                         // Trigger loadMore when the user is within 4 items of the end.
+                        // Keyed on both nearEnd AND items.size so the effect re-fires after
+                        // each page loads — without this, nearEnd stays true on small screens
+                        // and the effect never re-triggers once the first page is shown.
                         val nearEnd by remember {
                             derivedStateOf {
                                 val info = gridState.layoutInfo
@@ -175,8 +178,10 @@ fun MediaGridScreen(
                                 lastVisible >= info.totalItemsCount - 4
                             }
                         }
-                        LaunchedEffect(nearEnd) {
-                            if (nearEnd) vm.loadMore()
+                        LaunchedEffect(nearEnd, state.items.size) {
+                            if (nearEnd && state.hasMore && !state.loadingMore && !state.loading) {
+                                vm.loadMore()
+                            }
                         }
 
                         LazyVerticalGrid(

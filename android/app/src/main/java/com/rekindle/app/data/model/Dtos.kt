@@ -135,7 +135,30 @@ data class MetadataConfigDto(
 )
 data class SetMetadataConfigRequest(val malClientId: String?, val comicvineApiKey: String? = null)
 
+fun com.rekindle.app.domain.model.MangaMetadata.toDto() = MangaMetadataDto(
+    mediaId, title, synopsis, genres, score, status, year, malId, anilistId, comicvineId, source, lastScrapedAt,
+)
+
 fun MangaMetadataDto.toDomain() = com.rekindle.app.domain.model.MangaMetadata(
     mediaId, title, synopsis, genres, score, status, year, malId, anilistId, comicvineId, source, lastScrapedAt,
 )
 fun MetadataConfigDto.toDomain() = com.rekindle.app.domain.model.MetadataConfig(malClientIdSet, comicvineApiKeySet)
+
+data class ScrapeResultDto(
+    val status: String,
+    val data: MangaMetadataDto,
+    val existing: MangaMetadataDto? = null,
+)
+
+fun ScrapeResultDto.toDomain(): com.rekindle.app.domain.model.ScrapeResult {
+    val status = when (this.status) {
+        "no_change" -> com.rekindle.app.domain.model.ScrapeStatus.NO_CHANGE
+        "conflict"  -> com.rekindle.app.domain.model.ScrapeStatus.CONFLICT
+        else        -> com.rekindle.app.domain.model.ScrapeStatus.CREATED
+    }
+    return com.rekindle.app.domain.model.ScrapeResult(
+        status   = status,
+        data     = data.toDomain(),
+        existing = existing?.toDomain(),
+    )
+}

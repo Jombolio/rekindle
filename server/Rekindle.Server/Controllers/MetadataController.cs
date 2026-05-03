@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Rekindle.Core.Models;
 using Rekindle.Core.Repositories;
 using Rekindle.Core.Services;
 using Rekindle.Server.Authorization;
@@ -17,7 +18,6 @@ public class MetadataController(
 {
     // ── Public read ──────────────────────────────────────────────────────────
 
-    /// <summary>Returns stored metadata for a manga media item. 404 if none scraped yet.</summary>
     [HttpGet("{mediaId}")]
     public async Task<IActionResult> GetMetadata(string mediaId)
     {
@@ -26,9 +26,15 @@ public class MetadataController(
         return Ok(meta);
     }
 
-    // ── Admin-only scrape ────────────────────────────────────────────────────
+    // ── Admin scrape ─────────────────────────────────────────────────────────
 
-    /// <summary>Triggers a fresh metadata scrape for a manga or comic folder media item.</summary>
+    /// <summary>
+    /// Fetches fresh metadata and compares it with any stored entry.
+    /// Returns one of three shapes:
+    ///   { status: "created",   data: {...} }          — new data written immediately
+    ///   { status: "no_change", data: {...} }           — matches stored; no write performed
+    ///   { status: "conflict",  data: {...}, existing: {...} } — differs; call /commit to save
+    /// </summary>
     [HttpPost("{mediaId}/scrape")]
     [Authorize(Policy = PermissionPolicies.IsAdmin)]
     public async Task<IActionResult> Scrape(string mediaId)
@@ -38,17 +44,40 @@ public class MetadataController(
         if (media.MediaType != "folder")
             return BadRequest(new { error = "Metadata scraping is only supported for folder media." });
 
-        var library = await libraryRepo.GetByIdAsync(media.LibraryId);
-        var libraryType = library?.Type ?? "comic";
+        var library        = await libraryRepo.GetByIdAsync(media.LibraryId);
+        var libraryType    = library?.Type ?? "comic";
+        var malClientId    = await metadataRepo.GetConfigAsync("mal_client_id");
+        var comicVineKey   = await metadataRepo.GetConfigAsync("comicvine_api_key");
 
-        var malClientId     = await metadataRepo.GetConfigAsync("mal_client_id");
-        var comicVineApiKey = await metadataRepo.GetConfigAsync("comicvine_api_key");
-        var meta = await scraper.ScrapeAsync(media, libraryType, malClientId, comicVineApiKey);
-
-        if (meta is null)
+        var result = await scraper.ScrapeAsync(media, libraryType, malClientId, comicVineKey);
+        if (result is null)
             return NotFound(new { error = "No metadata found for this title on any configured source." });
 
-        return Ok(meta);
+        return Ok(new
+        {
+            status   = result.Status.ToString().ToLowerInvariant(),
+            data     = result.Data,
+            existing = result.Existing,          // null for created / no_change
+        });
+    }
+
+    // ── Admin commit ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Persists the supplied metadata record, overwriting any existing entry.
+    /// Called by the admin after reviewing a conflict returned by /scrape.
+    /// The client sends either the proposed data or the existing data unchanged.
+    /// </summary>
+    [HttpPost("{mediaId}/commit")]
+    [Authorize(Policy = PermissionPolicies.IsAdmin)]
+    public async Task<IActionResult> Commit(string mediaId, [FromBody] MangaMetadata metadata)
+    {
+        if (metadata.MediaId != mediaId)
+            return BadRequest(new { error = "mediaId in body does not match the route." });
+
+        metadata.LastScrapedAt = DateTime.UtcNow;
+        await metadataRepo.UpsertAsync(metadata);
+        return Ok(metadata);
     }
 }
 
@@ -65,10 +94,8 @@ public class MetadataAdminController(MetadataRepository metadataRepo) : Controll
         var config = await metadataRepo.GetAllConfigAsync();
         return Ok(new
         {
-            malClientIdSet       = config.ContainsKey("mal_client_id") &&
-                                   !string.IsNullOrWhiteSpace(config["mal_client_id"]),
-            comicvineApiKeySet   = config.ContainsKey("comicvine_api_key") &&
-                                   !string.IsNullOrWhiteSpace(config["comicvine_api_key"]),
+            malClientIdSet     = config.ContainsKey("mal_client_id")     && !string.IsNullOrWhiteSpace(config["mal_client_id"]),
+            comicvineApiKeySet = config.ContainsKey("comicvine_api_key") && !string.IsNullOrWhiteSpace(config["comicvine_api_key"]),
         });
     }
 

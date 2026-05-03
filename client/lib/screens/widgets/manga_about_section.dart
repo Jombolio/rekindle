@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/api/metadata_api.dart';
+import '../../core/models/manga_metadata.dart';
+import '../../core/models/scrape_result.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/metadata_provider.dart';
 
-/// Expandable "About" section shown at the top of a manga chapter list.
-/// Admins see a "Scrape" button to pull metadata from MAL/AniList.
+/// Expandable "About" section shown at the top of a manga/comic chapter list.
+/// Admins see a refresh button that scrapes metadata and handles three outcomes:
+///   created   → refreshes and shows a snackbar
+///   no_change → snackbar only, no write
+///   conflict  → diff dialog before committing
 class MangaAboutSection extends ConsumerStatefulWidget {
   final String mediaId;
 
@@ -22,33 +28,61 @@ class _MangaAboutSectionState extends ConsumerState<MangaAboutSection> {
   Future<void> _scrape() async {
     setState(() => _scraping = true);
     try {
-      await ref.read(scrapeMetadataProvider(widget.mediaId).future);
-      ref.invalidate(mangaMetadataProvider(widget.mediaId));
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Scrape failed: $e'), backgroundColor: Colors.red),
-        );
+      final client = ref.read(apiClientProvider);
+      final result = await MetadataApi(client).scrape(widget.mediaId);
+
+      if (!mounted) return;
+
+      switch (result.status) {
+        case ScrapeStatus.created:
+          ref.invalidate(mangaMetadataProvider(widget.mediaId));
+          _showSnackBar('Metadata updated.');
+
+        case ScrapeStatus.noChange:
+          _showSnackBar('Metadata is already up to date.');
+
+        case ScrapeStatus.conflict:
+          final useNew = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => _ConflictDialog(
+              proposed: result.data,
+              existing: result.existing!,
+            ),
+          );
+          if (useNew == true && mounted) {
+            await MetadataApi(client).commit(widget.mediaId, result.data);
+            ref.invalidate(mangaMetadataProvider(widget.mediaId));
+            _showSnackBar('Metadata updated.');
+          }
       }
+    } catch (e) {
+      if (mounted) _showSnackBar('Scrape failed: $e', isError: true);
     } finally {
       if (mounted) setState(() => _scraping = false);
     }
+  }
+
+  void _showSnackBar(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: isError ? Colors.red : null,
+    ));
   }
 
   @override
   Widget build(BuildContext context) {
     final metaAsync = ref.watch(mangaMetadataProvider(widget.mediaId));
     final authState = ref.watch(authProvider).valueOrNull;
-    final isAdmin = authState is AuthAuthenticated && authState.permissionLevel >= 4;
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final isAdmin   = authState is AuthAuthenticated && authState.permissionLevel >= 4;
+    final theme     = Theme.of(context);
+    final cs        = theme.colorScheme;
 
     return metaAsync.when(
       loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
+      error:   (_, __) => const SizedBox.shrink(),
       data: (meta) {
         final hasMeta = meta != null;
-
         if (!hasMeta && !isAdmin) return const SizedBox.shrink();
 
         return Card(
@@ -56,7 +90,7 @@ class _MangaAboutSectionState extends ConsumerState<MangaAboutSection> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Header row
+              // ── Header ──────────────────────────────────────────────────
               InkWell(
                 onTap: hasMeta ? () => setState(() => _expanded = !_expanded) : null,
                 borderRadius: BorderRadius.circular(12),
@@ -75,8 +109,7 @@ class _MangaAboutSectionState extends ConsumerState<MangaAboutSection> {
                       if (isAdmin) ...[
                         if (_scraping)
                           const SizedBox(
-                            width: 20,
-                            height: 20,
+                            width: 20, height: 20,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         else
@@ -100,7 +133,7 @@ class _MangaAboutSectionState extends ConsumerState<MangaAboutSection> {
                 ),
               ),
 
-              // Expanded body
+              // ── Body ─────────────────────────────────────────────────────
               if (hasMeta && _expanded)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -109,8 +142,6 @@ class _MangaAboutSectionState extends ConsumerState<MangaAboutSection> {
                     children: [
                       const Divider(height: 1),
                       const SizedBox(height: 12),
-
-                      // Metadata chips row
                       Wrap(
                         spacing: 8,
                         runSpacing: 4,
@@ -129,13 +160,11 @@ class _MangaAboutSectionState extends ConsumerState<MangaAboutSection> {
                             ),
                           if (meta.source != null)
                             _MetaChip(
-                              label: meta.source == 'mal' ? 'MAL' : 'AniList',
+                              label: _sourceLabel(meta.source!),
                               icon: Icons.public,
                             ),
                         ],
                       ),
-
-                      // Genres
                       if (meta.genreList.isNotEmpty) ...[
                         const SizedBox(height: 10),
                         Wrap(
@@ -151,8 +180,6 @@ class _MangaAboutSectionState extends ConsumerState<MangaAboutSection> {
                               .toList(),
                         ),
                       ],
-
-                      // Synopsis
                       if (meta.synopsis != null && meta.synopsis!.isNotEmpty) ...[
                         const SizedBox(height: 12),
                         _ExpandableSynopsis(synopsis: meta.synopsis!),
@@ -167,18 +194,170 @@ class _MangaAboutSectionState extends ConsumerState<MangaAboutSection> {
     );
   }
 
-  String _formatStatus(String raw) {
-    return raw
-        .split('_')
-        .map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}')
-        .join(' ');
+  static String _formatStatus(String raw) => raw
+      .split('_')
+      .map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}')
+      .join(' ');
+
+  static String _sourceLabel(String source) => switch (source) {
+    'mal'       => 'MAL',
+    'anilist'   => 'AniList',
+    'comicvine' => 'ComicVine',
+    _           => source,
+  };
+}
+
+// ── Conflict dialog ───────────────────────────────────────────────────────────
+
+class _ConflictDialog extends StatelessWidget {
+  final MangaMetadata proposed;
+  final MangaMetadata existing;
+
+  const _ConflictDialog({required this.proposed, required this.existing});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs    = theme.colorScheme;
+    final diffs = _buildDiffs();
+
+    return AlertDialog(
+      title: const Text('Metadata conflict'),
+      content: SizedBox(
+        width: 480,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'The scraped data differs from what is stored. '
+              'Review the changes below and choose which version to keep.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 16),
+            // Column headers
+            Row(children: [
+              const SizedBox(width: 88),
+              Expanded(
+                child: Text('Stored',
+                    style: theme.textTheme.labelSmall
+                        ?.copyWith(color: cs.onSurfaceVariant)),
+              ),
+              Expanded(
+                child: Text('New',
+                    style: theme.textTheme.labelSmall
+                        ?.copyWith(color: cs.primary)),
+              ),
+            ]),
+            const Divider(height: 12),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 320),
+              child: SingleChildScrollView(
+                child: Column(
+                  children: diffs.map((d) => _DiffRow(diff: d)).toList(),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Keep existing'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Use new data'),
+        ),
+      ],
+    );
+  }
+
+  List<_Diff> _buildDiffs() {
+    final diffs = <_Diff>[];
+    void add(String field, String? oldVal, String? newVal) {
+      if (oldVal != newVal) diffs.add(_Diff(field, oldVal, newVal));
+    }
+
+    add('Title',   existing.title,  proposed.title);
+    add('Year',    existing.year?.toString(),  proposed.year?.toString());
+    add('Status',  existing.status, proposed.status);
+    add('Score',   existing.score?.toStringAsFixed(1), proposed.score?.toStringAsFixed(1));
+    add('Genres',  existing.genres, proposed.genres);
+    add('Source',  existing.source, proposed.source);
+    // Truncate synopsis for readability
+    final oldSyn = _truncate(existing.synopsis);
+    final newSyn = _truncate(proposed.synopsis);
+    if (oldSyn != newSyn) diffs.add(_Diff('Synopsis', oldSyn, newSyn));
+
+    return diffs;
+  }
+
+  static String? _truncate(String? s, [int max = 120]) {
+    if (s == null) return null;
+    final cleaned = s.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+    return cleaned.length <= max ? cleaned : '${cleaned.substring(0, max)}…';
   }
 }
+
+class _Diff {
+  final String field;
+  final String? oldVal;
+  final String? newVal;
+  const _Diff(this.field, this.oldVal, this.newVal);
+}
+
+class _DiffRow extends StatelessWidget {
+  final _Diff diff;
+  const _DiffRow({required this.diff});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs    = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(diff.field,
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(color: cs.onSurfaceVariant)),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              diff.oldVal ?? '—',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onSurface.withValues(alpha: 0.55),
+                decoration: TextDecoration.lineThrough,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              diff.newVal ?? '—',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: cs.primary, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Shared sub-widgets ────────────────────────────────────────────────────────
 
 class _MetaChip extends StatelessWidget {
   final String label;
   final IconData icon;
-
   const _MetaChip({required this.label, required this.icon});
 
   @override
@@ -219,9 +398,9 @@ class _ExpandableSynopsisState extends State<_ExpandableSynopsis> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme   = Theme.of(context);
     final cleaned = widget.synopsis
-        .replaceAll(RegExp(r'<[^>]*>'), '')  // strip any HTML tags
+        .replaceAll(RegExp(r'<[^>]*>'), '')
         .trim();
 
     return Column(
@@ -229,8 +408,8 @@ class _ExpandableSynopsisState extends State<_ExpandableSynopsis> {
       children: [
         Text(
           cleaned,
-          style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           maxLines: _showFull ? null : 4,
           overflow: _showFull ? TextOverflow.visible : TextOverflow.fade,
         ),
@@ -239,8 +418,8 @@ class _ExpandableSynopsisState extends State<_ExpandableSynopsis> {
           onTap: () => setState(() => _showFull = !_showFull),
           child: Text(
             _showFull ? 'Show less' : 'Show more',
-            style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.primary),
+            style: theme.textTheme.labelSmall
+                ?.copyWith(color: theme.colorScheme.primary),
           ),
         ),
       ],

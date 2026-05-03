@@ -90,6 +90,14 @@ data class MangaMetadata(
 
 data class MetadataConfig(val malClientIdSet: Boolean, val comicvineApiKeySet: Boolean = false)
 
+enum class ScrapeStatus { CREATED, NO_CHANGE, CONFLICT }
+
+data class ScrapeResult(
+    val status: ScrapeStatus,
+    val data: MangaMetadata,
+    val existing: MangaMetadata? = null,
+)
+
 data class AdminStats(
     val userCount: Int,
     val libraryCount: Int,
