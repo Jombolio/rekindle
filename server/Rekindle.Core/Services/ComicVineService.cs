@@ -31,9 +31,12 @@ public sealed class ComicVineService(ILogger<ComicVineService> logger) : IDispos
                 await Task.Delay(TimeSpan.FromSeconds(1) - elapsed, ct);
             _lastRequest = DateTime.UtcNow;
 
-            var url = $"{BaseUrl}/volumes/?api_key={Uri.EscapeDataString(apiKey)}" +
+            // /search/ is ComicVine's full-text search endpoint. The /volumes/ endpoint
+            // does not support a query parameter — using it returns unrelated results.
+            var url = $"{BaseUrl}/search/?api_key={Uri.EscapeDataString(apiKey)}" +
                       $"&format=json&query={Uri.EscapeDataString(title)}" +
-                      $"&field_list=id,name,description,publisher,start_year,count_of_issues,image&limit=1";
+                      $"&resources=volume" +
+                      $"&field_list=id,name,description,publisher,start_year&limit=1";
 
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.Add("User-Agent", "Rekindle/1.0");
@@ -56,9 +59,6 @@ public sealed class ComicVineService(ILogger<ComicVineService> logger) : IDispos
             var vol = results[0];
 
             int? year = null;
-            if (vol.TryGetProperty("start_year", out var sy) && sy.ValueKind != JsonValueKind.Null)
-                int.TryParse(sy.GetString(), out var y);
-
             if (vol.TryGetProperty("start_year", out var startYear) &&
                 startYear.ValueKind != JsonValueKind.Null)
             {
