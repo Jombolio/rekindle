@@ -30,7 +30,10 @@ public class MetadataScraperService(
         string? comicVineApiKey,
         CancellationToken ct = default)
     {
-        var rawTitle    = media.Series ?? media.Title;
+        // Always use the folder title directly — media.Series is parsed from
+        // individual issue filenames (e.g. "Zom #100" → series "Zom") which
+        // produces the wrong search term for a folder-level metadata scrape.
+        var rawTitle    = media.Title;
         var searchTitle = StripParentheses(rawTitle);
         if (searchTitle != rawTitle)
             logger.LogInformation("Search title normalised: '{Raw}' → '{Clean}'", rawTitle, searchTitle);
