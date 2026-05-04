@@ -177,6 +177,7 @@ class _SourceMenu extends ConsumerWidget {
               dense: true,
             ),
           ),
+        const PopupMenuItem(value: 'refresh', child: Text('Refresh')),
         const PopupMenuItem(value: 'rename', child: Text('Rename')),
         if (source.token != null)
           const PopupMenuItem(value: 'signout', child: Text('Sign out'))
@@ -193,6 +194,8 @@ class _SourceMenu extends ConsumerWidget {
     switch (action) {
       case 'admin':
         if (context.mounted) context.push('/admin/${source.id}');
+      case 'refresh':
+        ref.read(sourceLibraryProvider(source.id).notifier).refresh();
       case 'rename':
         await _showRenameDialog(context, ref);
       case 'signout':
