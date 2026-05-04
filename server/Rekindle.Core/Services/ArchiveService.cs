@@ -47,11 +47,20 @@ public class ArchiveService(IOptions<RekindleOptions> options, ILogger<ArchiveSe
         return manifest?.Pages.Count ?? 0;
     }
 
+    // Custom cover filenames checked in priority order before falling back to
+    // the first page. The stem comparison is case-insensitive.
+    private static readonly string[] CustomCoverStems = ["rekindle-cover", "cover"];
+
     public async Task<Stream?> OpenCoverStreamAsync(string filePath)
     {
-        // For folder entries, use the first archive inside the directory
+        // For series folders: check for a loose custom cover image in the
+        // folder itself before descending into the first archive.
         if (Directory.Exists(filePath))
         {
+            var folderCover = FindCustomCoverFile(filePath);
+            if (folderCover is not null)
+                return File.OpenRead(folderCover);
+
             var first = Directory
                 .EnumerateFiles(filePath, "*.*", SearchOption.AllDirectories)
                 .Where(f => ArchiveExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
@@ -81,6 +90,28 @@ public class ArchiveService(IOptions<RekindleOptions> options, ILogger<ArchiveSe
         }
     }
 
+    /// Looks for a custom cover image (rekindle-cover.* or cover.*) as a loose
+    /// file directly in <paramref name="directory"/> (non-recursive).
+    private static string? FindCustomCoverFile(string directory)
+    {
+        foreach (var stem in CustomCoverStems)
+        {
+            var match = Directory
+                .EnumerateFiles(directory, "*.*", SearchOption.TopDirectoryOnly)
+                .FirstOrDefault(f =>
+                    string.Equals(
+                        Path.GetFileNameWithoutExtension(f),
+                        stem,
+                        StringComparison.OrdinalIgnoreCase)
+                    && ImageExtensions.Contains(
+                        Path.GetExtension(f).ToLowerInvariant()));
+
+            if (match is not null)
+                return match;
+        }
+        return null;
+    }
+
     private static async Task<Stream?> ExtractArchiveCoverAsync(string filePath)
     {
         using var archive = ArchiveFactory.Open(filePath);
@@ -88,6 +119,35 @@ public class ArchiveService(IOptions<RekindleOptions> options, ILogger<ArchiveSe
             .Where(e => !e.IsDirectory && IsImageEntry(e.Key))
             .OrderBy(e => e.Key, NaturalStringComparer.Instance)
             .ToList();
+
+        // Check for a custom cover entry inside the archive before falling
+        // back to the first image in sort order.
+        foreach (var stem in CustomCoverStems)
+        {
+            var custom = candidates.FirstOrDefault(e =>
+                string.Equals(
+                    Path.GetFileNameWithoutExtension(e.Key),
+                    stem,
+                    StringComparison.OrdinalIgnoreCase));
+
+            if (custom is not null)
+            {
+                var ms = new MemoryStream();
+                using (var s = custom.OpenEntryStream())
+                    await s.CopyToAsync(ms);
+                ms.Position = 0;
+                try
+                {
+                    await Image.IdentifyAsync(ms);
+                    ms.Position = 0;
+                    return ms;
+                }
+                catch (UnknownImageFormatException)
+                {
+                    await ms.DisposeAsync();
+                }
+            }
+        }
 
         foreach (var entry in candidates)
         {
