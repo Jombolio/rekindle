@@ -473,11 +473,14 @@ private fun PagedModeContent(
         } else {
             val left = if (state.isRtl) slide[1] else slide[0]
             val right = if (state.isRtl) slide[0] else slide[1]
+            // Single shared zoom state so pinching/panning either page moves both.
+            val spreadZoom = remember(slide) { SpreadZoomState() }
             Row(Modifier.fillMaxSize()) {
                 ZoomablePageImage(
                     model = imageModelFn(left),
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                     alignment = androidx.compose.ui.Alignment.CenterEnd,
+                    zoom = spreadZoom,
                     onZoomChanged = { isZoomed = it },
                 )
                 if (state.spineGap > 0f) {
@@ -487,12 +490,21 @@ private fun PagedModeContent(
                     model = imageModelFn(right),
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                     alignment = androidx.compose.ui.Alignment.CenterStart,
+                    zoom = spreadZoom,
                     onZoomChanged = { isZoomed = it },
                 )
             }
         }
     }
 
+}
+
+// ── Shared zoom state (used to synchronise double-page spreads) ───────────────
+
+private class SpreadZoomState {
+    val scale   = mutableFloatStateOf(1f)
+    val offsetX = mutableFloatStateOf(0f)
+    val offsetY = mutableFloatStateOf(0f)
 }
 
 // ── Zoomable image ────────────────────────────────────────────────────────────
@@ -502,11 +514,14 @@ private fun ZoomablePageImage(
     model: Any,
     modifier: Modifier = Modifier,
     alignment: androidx.compose.ui.Alignment = androidx.compose.ui.Alignment.Center,
+    zoom: SpreadZoomState = remember { SpreadZoomState() },
     onZoomChanged: (Boolean) -> Unit = {},
 ) {
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offsetX by remember { mutableFloatStateOf(0f) }
-    var offsetY by remember { mutableFloatStateOf(0f) }
+    // Delegate to the shared (or per-image) state so double-page spreads
+    // stay synchronised while single pages continue to work unchanged.
+    var scale   by zoom.scale
+    var offsetX by zoom.offsetX
+    var offsetY by zoom.offsetY
 
     LaunchedEffect(model) {
         scale = 1f; offsetX = 0f; offsetY = 0f
