@@ -1,14 +1,14 @@
-name: Build
+name: Release
 
 on:
-  push:
-    branches: [main]
+  release:
+    types: [published]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build-linux:
+  release-linux:
     name: Client — Linux
     runs-on: ubuntu-latest
     steps:
@@ -27,12 +27,20 @@ jobs:
         working-directory: desktop
         run: flutter build linux --release --obfuscate --split-debug-info=symbols/
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Rekindle-linux-x64
-          path: desktop/build/linux/x64/release/bundle/
+      - name: Copy desktop entry into bundle
+        run: cp desktop/linux/rekindle.desktop desktop/build/linux/x64/release/bundle/data/
 
-  build-windows:
+      - name: Package
+        run: |
+          cd desktop/build/linux/x64/release/bundle
+          zip -r ../../../../../../RekindleClient-linux-x64.zip .
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: RekindleClient-linux-x64.zip
+
+  release-windows:
     name: Client — Windows
     runs-on: windows-latest
     steps:
@@ -46,12 +54,20 @@ jobs:
         working-directory: desktop
         run: flutter build windows --release --obfuscate --split-debug-info=symbols/
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: RekindleSetup
-          path: desktop/build/windows/x64/runner/Release/
+      - name: Build installer
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" desktop\windows\installer.iss'
 
-  build-android:
+      - name: Package portable zip
+        run: Compress-Archive -Path desktop/build/windows/x64/runner/Release/* -DestinationPath RekindleClient-windows-x64.zip
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop/windows/output/RekindleSetup.exe
+            RekindleClient-windows-x64.zip
+
+  release-android:
     name: Client — Android
     runs-on: ubuntu-latest
     steps:
@@ -76,12 +92,15 @@ jobs:
         working-directory: android
         run: ./gradlew assembleRelease
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Rekindle-android
-          path: android/app/build/outputs/apk/release/app-release.apk
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk RekindleAndroid.apk
 
-  build-server-linux:
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: RekindleAndroid.apk
+
+  release-server-linux:
     name: Server — Linux
     runs-on: ubuntu-latest
     steps:
@@ -95,12 +114,17 @@ jobs:
         working-directory: server
         run: dotnet publish Rekindle.Server/Rekindle.Server.csproj /p:PublishProfile=linux-x64
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: RekindleServer-linux-x64
-          path: server/Rekindle.Server/bin/publish/linux-x64/
+      - name: Package
+        run: |
+          cd server/Rekindle.Server/bin/publish/linux-x64
+          zip -r ../../../../../RekindleServer-linux-x64.zip .
 
-  build-server-windows:
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: RekindleServer-linux-x64.zip
+
+  release-server-windows:
     name: Server — Windows
     runs-on: ubuntu-latest
     steps:
@@ -114,7 +138,12 @@ jobs:
         working-directory: server
         run: dotnet publish Rekindle.Server/Rekindle.Server.csproj /p:PublishProfile=win-x64
 
-      - uses: actions/upload-artifact@v4
+      - name: Package
+        run: |
+          cd server/Rekindle.Server/bin/publish/win-x64
+          zip -r ../../../../../RekindleServer-windows-x64.zip .
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
         with:
-          name: RekindleServer-windows-x64
-          path: server/Rekindle.Server/bin/publish/win-x64/
+          files: RekindleServer-windows-x64.zip
