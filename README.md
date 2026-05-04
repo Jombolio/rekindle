@@ -19,9 +19,9 @@ Run the server on any machine that holds your archive files. Connect from any de
 | Platform | Where to get it |
 |----------|----------------|
 | Server (Linux / Windows) | [GitHub Releases](https://github.com/Jombolio/rekindle/releases) |
-| Client — Linux | [GitHub Releases](https://github.com/Jombolio/rekindle/releases) |
-| Client — Windows | [GitHub Releases](https://github.com/Jombolio/rekindle/releases) |
+| Client — (Linux / Windows) | [GitHub Releases](https://github.com/Jombolio/rekindle/releases) |
 | Client — Android | F-Droid · custom repo: `https://fdroid.jombo.uk/repo` |
+| Client — Android (Fallback) | [GitHub Releases](https://github.com/Jombolio/rekindle/releases) |
 
 ---
 
