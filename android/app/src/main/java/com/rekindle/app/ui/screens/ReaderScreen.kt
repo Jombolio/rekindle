@@ -474,13 +474,23 @@ private fun PagedModeContent(
             val left = if (state.isRtl) slide[1] else slide[0]
             val right = if (state.isRtl) slide[0] else slide[1]
             // Single shared zoom state so pinching/panning either page moves both.
+            // graphicsLayer is on the Row (spread centre = W/2) so both pages zoom
+            // around the same origin instead of each zooming around their own centre.
             val spreadZoom = remember(slide) { SpreadZoomState() }
-            Row(Modifier.fillMaxSize()) {
+            Row(
+                Modifier.fillMaxSize().graphicsLayer {
+                    val s = spreadZoom.scale.floatValue
+                    scaleX = s; scaleY = s
+                    translationX = spreadZoom.offsetX.floatValue
+                    translationY = spreadZoom.offsetY.floatValue
+                }
+            ) {
                 ZoomablePageImage(
                     model = imageModelFn(left),
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                     alignment = androidx.compose.ui.Alignment.CenterEnd,
                     zoom = spreadZoom,
+                    applyTransform = false,
                     onZoomChanged = { isZoomed = it },
                 )
                 if (state.spineGap > 0f) {
@@ -491,6 +501,7 @@ private fun PagedModeContent(
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                     alignment = androidx.compose.ui.Alignment.CenterStart,
                     zoom = spreadZoom,
+                    applyTransform = false,
                     onZoomChanged = { isZoomed = it },
                 )
             }
@@ -515,6 +526,9 @@ private fun ZoomablePageImage(
     modifier: Modifier = Modifier,
     alignment: androidx.compose.ui.Alignment = androidx.compose.ui.Alignment.Center,
     zoom: SpreadZoomState = remember { SpreadZoomState() },
+    // Set false for double-page spreads: the parent Row owns the graphicsLayer
+    // so both pages zoom/pan around the spread centre, not each page's own centre.
+    applyTransform: Boolean = true,
     onZoomChanged: (Boolean) -> Unit = {},
 ) {
     // Delegate to the shared (or per-image) state so double-page spreads
@@ -584,7 +598,12 @@ private fun ZoomablePageImage(
                     }
                 }
             }
-            .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offsetX, translationY = offsetY),
+            .then(
+                if (applyTransform)
+                    Modifier.graphicsLayer(scaleX = scale, scaleY = scale, translationX = offsetX, translationY = offsetY)
+                else
+                    Modifier
+            ),
     ) {
         when (painter.state) {
             is AsyncImagePainter.State.Loading, is AsyncImagePainter.State.Empty ->
