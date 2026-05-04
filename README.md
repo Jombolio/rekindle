@@ -29,15 +29,7 @@ Run the server on any machine that holds your archive files. Connect from any de
 
 Full guides, configuration reference, and FAQ are on the **[GitHub Wiki](https://github.com/Jombolio/rekindle/wiki)**.
 
-| Page | |
-|------|-|
-| [Installing the Server](https://github.com/Jombolio/rekindle/wiki/Installing-the-Server) | Linux and Windows |
-| [Installing the Client](https://github.com/Jombolio/rekindle/wiki/Installing-the-Client) | Linux, Windows, Android (F-Droid) |
-| [First Connection & Setup](https://github.com/Jombolio/rekindle/wiki/First-Connection-and-Setup) | Add a server, create the admin account, set up a library |
-| [Configuration](https://github.com/Jombolio/rekindle/wiki/Configuration) | Ports, paths, JWT secrets |
-| [HTTPS](https://github.com/Jombolio/rekindle/wiki/HTTPS) | Caddy, Nginx, or Kestrel direct TLS |
-| [Metadata APIs](https://github.com/Jombolio/rekindle/wiki/Metadata-APIs) | ComicVine, MyAnimeList, AniList |
-| [FAQ](https://github.com/Jombolio/rekindle/wiki/FAQ) | Common questions and troubleshooting |
+Please at least read this before posting an issue or requesting support.
 
 ---
 
