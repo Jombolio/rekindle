@@ -115,9 +115,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
       onKeyEvent: (event) {
         if (event is KeyDownEvent) {
           if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
-              event.logicalKey == LogicalKeyboardKey.keyD) _nextChapter();
+              event.logicalKey == LogicalKeyboardKey.keyD) { _nextChapter(); }
           if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
-              event.logicalKey == LogicalKeyboardKey.keyA) _prevChapter();
+              event.logicalKey == LogicalKeyboardKey.keyA) { _prevChapter(); }
           if (event.logicalKey == LogicalKeyboardKey.escape) {
             Navigator.of(context).pop();
           }

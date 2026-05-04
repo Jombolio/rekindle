@@ -492,9 +492,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
             }
           } else {
             if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
-                event.logicalKey == LogicalKeyboardKey.keyA) _goLeft(context, siblings);
+                event.logicalKey == LogicalKeyboardKey.keyA) { _goLeft(context, siblings); }
             if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
-                event.logicalKey == LogicalKeyboardKey.keyD) _goRight(context, siblings);
+                event.logicalKey == LogicalKeyboardKey.keyD) { _goRight(context, siblings); }
           }
         },
         child: Scaffold(
@@ -588,9 +588,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
               filterQuality: FilterQuality.medium,
               loadingBuilder: (context, child, loadingProgress) {
                 if (loadingProgress == null) return child;
-                return AspectRatio(
+                return const AspectRatio(
                   aspectRatio: 2 / 3,
-                  child: const Center(
+                  child: Center(
                     child: CircularProgressIndicator(color: Colors.white54),
                   ),
                 );

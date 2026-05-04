@@ -46,7 +46,7 @@ class DownloadManager {
 
     // Store path immediately so cancel/delete can clean it up even mid-download.
     await _upsertDownload(mediaId, format, title, DownloadStatus.downloading, 0, localPath);
-    onProgress(DownloadState(status: DownloadStatus.downloading));
+    onProgress(const DownloadState(status: DownloadStatus.downloading));
 
     try {
       await _client.dio.download(

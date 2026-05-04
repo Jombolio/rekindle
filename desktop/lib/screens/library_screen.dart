@@ -585,7 +585,7 @@ class _LibraryDialogState extends State<_LibraryDialog> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _type,
+              value: _type, // ignore: deprecated_member_use
               decoration: const InputDecoration(
                   labelText: 'Type', border: OutlineInputBorder()),
               items: const [

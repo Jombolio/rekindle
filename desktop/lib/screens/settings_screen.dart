@@ -53,7 +53,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           // ── Appearance ──────────────────────────────────────────────────
-          _SectionHeader('Appearance'),
+          const _SectionHeader('Appearance'),
           Card(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -94,7 +94,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 24),
 
             // ── Downloads ─────────────────────────────────────────────────
-            _SectionHeader('Downloads'),
+            const _SectionHeader('Downloads'),
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),

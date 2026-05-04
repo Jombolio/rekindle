@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 
 import '../core/models/media.dart';
 import '../providers/auth_provider.dart';
-import '../providers/download_provider.dart';
 import '../providers/media_provider.dart';
 import '../providers/reader_provider.dart';
 import 'widgets/cover_image.dart';

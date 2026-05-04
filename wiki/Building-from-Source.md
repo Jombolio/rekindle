@@ -44,7 +44,7 @@ The build is framework-dependent (requires the .NET 10 runtime on the target mac
 ### Development run
 
 ```bash
-cd client
+cd desktop
 flutter run -d linux      # Linux desktop
 flutter run -d windows    # Windows desktop (must build on Windows)
 flutter run               # Android (device or emulator connected)

@@ -58,5 +58,5 @@ See [Building from Source](https://github.com/Jombolio/rekindle/wiki/Building-fr
 cd server && dotnet run --project Rekindle.Server
 
 # Client
-cd client && flutter run
+cd desktop && flutter run
 ```

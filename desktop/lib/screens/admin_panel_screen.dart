@@ -321,7 +321,7 @@ class _CreateUserDialogState extends State<_CreateUserDialog> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
-              value: _level,
+              value: _level, // ignore: deprecated_member_use
               decoration: const InputDecoration(
                   labelText: 'Permission level', border: OutlineInputBorder()),
               items: const [
@@ -388,7 +388,7 @@ class _EditPermissionDialogState extends State<_EditPermissionDialog> {
               const SizedBox(height: 12),
             ],
             DropdownButtonFormField<int>(
-              value: _level,
+              value: _level, // ignore: deprecated_member_use
               decoration: const InputDecoration(
                   labelText: 'Permission level', border: OutlineInputBorder()),
               items: const [
@@ -612,7 +612,7 @@ class _UploadTabState extends ConsumerState<_UploadTab> {
               loading: () => const LinearProgressIndicator(),
               error: (e, _) => _ErrorText(e.toString()),
               data: (libs) => DropdownButtonFormField<Library>(
-                value: _selectedLibrary,
+                value: _selectedLibrary, // ignore: deprecated_member_use
                 decoration: const InputDecoration(
                     labelText: 'Target library',
                     border: OutlineInputBorder()),
@@ -878,7 +878,7 @@ class _FolderLocationFieldState extends State<_FolderLocationField> {
                       ? Theme.of(context)
                           .colorScheme
                           .primaryContainer
-                          .withOpacity(0.4)
+                          .withValues(alpha: 0.4)
                       : null;
                   return switch (opt) {
                     _NewFolder(:final path) => _NewFolderTile(
@@ -926,7 +926,7 @@ class _NewFolderTile extends StatelessWidget {
             Icon(
               Icons.create_new_folder_outlined,
               size: 20,
-              color: active ? cs.primary : cs.onSurface.withOpacity(0.38),
+              color: active ? cs.primary : cs.onSurface.withValues(alpha: 0.38),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -948,7 +948,7 @@ class _NewFolderTile extends StatelessWidget {
                   : Text(
                       'Type a path to create a new folder',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: cs.onSurface.withOpacity(0.38)),
+                          color: cs.onSurface.withValues(alpha: 0.38)),
                     ),
             ),
           ],
@@ -1163,7 +1163,7 @@ class _ClearCacheButtonState extends ConsumerState<_ClearCacheButton> {
       if (mounted) {
         final mb = (freed / (1024 * 1024)).toStringAsFixed(1);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cache cleared — ${mb} MB freed.')),
+          SnackBar(content: Text('Cache cleared — $mb MB freed.')),
         );
       }
     } catch (e) {
@@ -1230,13 +1230,15 @@ class _ApisTabState extends ConsumerState<_ApisTab> {
     try {
       final client = ref.read(_sourceClientProvider(widget.sourceId));
       final config = await MetadataApi(client).getConfig();
-      if (mounted) setState(() {
-        _malKeySet = config.malKeySet;
-        _cvKeySet = config.comicvineKeySet;
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _malKeySet = config.malKeySet;
+          _cvKeySet = config.comicvineKeySet;
+          _loading = false;
+        });
+      }
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) { setState(() => _loading = false); }
     }
   }
 
@@ -1305,9 +1307,9 @@ class _ApisTabState extends ConsumerState<_ApisTab> {
                     style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(width: 8),
                 if (_cvKeySet)
-                  Chip(
-                    label: const Text('Key set'),
-                    avatar: const Icon(Icons.check_circle,
+                  const Chip(
+                    label: Text('Key set'),
+                    avatar: Icon(Icons.check_circle,
                         size: 14, color: Colors.green),
                     visualDensity: VisualDensity.compact,
                     padding: EdgeInsets.zero,
@@ -1353,9 +1355,9 @@ class _ApisTabState extends ConsumerState<_ApisTab> {
                     style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(width: 8),
                 if (_malKeySet)
-                  Chip(
-                    label: const Text('Key set'),
-                    avatar: const Icon(Icons.check_circle,
+                  const Chip(
+                    label: Text('Key set'),
+                    avatar: Icon(Icons.check_circle,
                         size: 14, color: Colors.green),
                     visualDensity: VisualDensity.compact,
                     padding: EdgeInsets.zero,

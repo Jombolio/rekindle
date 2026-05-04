@@ -33,7 +33,7 @@ class DownloadNotifier extends FamilyNotifier<DownloadState, String> {
     required String relativePath,
   }) async {
     if (state.status == DownloadStatus.downloading ||
-        state.status == DownloadStatus.extracting) return;
+        state.status == DownloadStatus.extracting) { return; }
 
     // Immediately enter downloading state so the UI responds and double-taps
     // are blocked, even while this task waits its turn in the queue.
@@ -141,7 +141,7 @@ class FolderDownloadNotifier
 
   Future<void> downloadFolder(String folderId) async {
     if (state.status == FolderDownloadStatus.fetching ||
-        state.status == FolderDownloadStatus.downloading) return;
+        state.status == FolderDownloadStatus.downloading) { return; }
 
     _cancelled = false;
     state = const FolderDownloadState(status: FolderDownloadStatus.fetching);

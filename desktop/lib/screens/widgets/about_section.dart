@@ -147,7 +147,7 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
                           iconSize: 18,
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
-                          onPressed: () => _openEdit(meta!),
+                          onPressed: () => _openEdit(meta),
                         ),
                         const SizedBox(width: 8),
                       ],
@@ -332,7 +332,6 @@ class _EditMetadataDialogState extends State<_EditMetadataDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return AlertDialog(
       title: const Text('Edit metadata'),
       content: SizedBox(
@@ -356,7 +355,7 @@ class _EditMetadataDialogState extends State<_EditMetadataDialog> {
               ]),
               const SizedBox(height: 12),
               DropdownButtonFormField<String?>(
-                value: _status,
+                value: _status, // ignore: deprecated_member_use
                 decoration: const InputDecoration(
                   labelText: 'Status',
                   border: OutlineInputBorder(),

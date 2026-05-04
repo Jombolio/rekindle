@@ -10,9 +10,9 @@ class DownloadState {
   const DownloadState({
     this.status = DownloadStatus.idle,
     this.progress = 0,
-    this.localPath = null,
-    this.extractedDir = null,
-    this.error = null,
+    this.localPath,
+    this.extractedDir,
+    this.error,
   });
 
   const DownloadState.idle() : this();
