@@ -113,8 +113,8 @@ class ChapterIndexViewModel @Inject constructor(
                 }
                 .onFailure { e -> _state.update { it.copy(loading = false, error = e.message) } }
 
-            // Load metadata for manga libraries
-            if (libraryType == "manga") {
+            // Load metadata for manga and comic libraries
+            if (libraryType == "manga" || libraryType == "comic") {
                 _state.update { it.copy(metadataLoading = true) }
                 val meta = metadataRepo.getMetadata(folderId)
                 _state.update { it.copy(metadata = meta, metadataLoading = false) }
