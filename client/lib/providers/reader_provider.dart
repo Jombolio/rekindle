@@ -83,7 +83,7 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
     final api = MediaApi(client);
 
     // Load local queue first for instant offline start
-    final localPage = await _localPage(db, mediaId);
+    final local = await _localProgress(db, mediaId);
 
     ReadingProgress? progress;
     try {
@@ -92,7 +92,9 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
       // Offline — use local queue value
     }
 
-    final savedPage = progress?.currentPage ?? localPage ?? 0;
+    // If the archive was finished, start from the beginning on the next open.
+    final isCompleted = progress?.isCompleted ?? local?.$2 ?? false;
+    final savedPage = isCompleted ? 0 : (progress?.currentPage ?? local?.$1 ?? 0);
 
     // Determine reading direction. If the user has never explicitly toggled
     // direction for this item, fall back to the library type: manga → RTL.
@@ -218,15 +220,19 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
 
   // ── Local DB helpers ─────────────────────────────────────────────────────
 
-  Future<int?> _localPage(Database db, String mediaId) async {
+  /// Returns `(currentPage, isCompleted)` from the local queue, or null if absent.
+  Future<(int, bool)?> _localProgress(Database db, String mediaId) async {
     final rows = await db.query(
       'progress_queue',
-      columns: ['current_page'],
+      columns: ['current_page', 'is_completed'],
       where: 'media_id = ?',
       whereArgs: [mediaId],
     );
     if (rows.isEmpty) return null;
-    return rows.first['current_page'] as int?;
+    return (
+      rows.first['current_page'] as int,
+      (rows.first['is_completed'] as int) == 1,
+    );
   }
 
   Future<void> _saveLocal(

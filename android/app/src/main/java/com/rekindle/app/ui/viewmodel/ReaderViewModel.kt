@@ -90,6 +90,7 @@ class ReaderViewModel @Inject constructor(
         val progress = repo.getProgress(mediaId)
         val savedPage = when {
             initialPageOverride >= 0 -> initialPageOverride
+            progress?.isCompleted == true -> 0
             else -> progress?.currentPage ?: 0
         }
         _state.update { it.copy(currentPage = savedPage, initialPage = savedPage) }

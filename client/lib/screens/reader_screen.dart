@@ -36,6 +36,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   bool _didJump = false;
   bool _didInitialPageJump = false;
   int _lastPrefetchedPage = -1;
+  // True while a page-turn animation is running. Rapid taps / held arrow keys
+  // are ignored during this window so they cannot stack multiple animations
+  // and accidentally overshoot into the chapter-navigation branch.
+  bool _pageAnimating = false;
 
   // ── Scroll mode ───────────────────────────────────────────────────────────
   final ScrollController _scrollCtrl = ScrollController();
@@ -223,13 +227,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
   void _nextSlide(BuildContext context, List<Media> siblings) {
     _resetZoom();
+    if (_pageAnimating) return;
     final state = ref.read(readerProvider((widget.mediaId, widget.libraryType)));
     final slideCount = state.doublePage
         ? buildSlides(state.totalPages, state.spreads).length
         : state.totalPages;
-    if (_pageCtrl.page != null && _pageCtrl.page! < slideCount - 1) {
-      _pageCtrl.nextPage(
-          duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+    if (_pageCtrl.page != null && _pageCtrl.page!.round() < slideCount - 1) {
+      _pageAnimating = true;
+      _pageCtrl
+          .nextPage(duration: const Duration(milliseconds: 200), curve: Curves.easeOut)
+          .whenComplete(() => _pageAnimating = false);
     } else {
       _tryNextChapter(context, siblings);
     }
@@ -237,9 +244,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
   void _prevSlide(BuildContext context, List<Media> siblings) {
     _resetZoom();
-    if (_pageCtrl.page != null && _pageCtrl.page! > 0) {
-      _pageCtrl.previousPage(
-          duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+    if (_pageAnimating) return;
+    if (_pageCtrl.page != null && _pageCtrl.page!.round() > 0) {
+      _pageAnimating = true;
+      _pageCtrl
+          .previousPage(duration: const Duration(milliseconds: 200), curve: Curves.easeOut)
+          .whenComplete(() => _pageAnimating = false);
     } else {
       _tryPrevChapter(context, siblings);
     }
@@ -623,6 +633,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         onPageChanged: (viewIndex) {
           // Reset zoom so the next page starts at fit-to-screen.
           if (_isZoomed) _resetZoom();
+          // A manual swipe settles the animation externally — unblock the gate.
+          _pageAnimating = false;
           final pageIndex = slides[viewIndex].first;
           ref
               .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
