@@ -10,6 +10,20 @@ Run the server on any machine that holds your archive files. Connect from any de
   <img width="200" src="rekindle.png" alt="Rekindle logo" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/Jombolio/rekindle/actions/workflows/build.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/Jombolio/rekindle/build.yml?branch=main&label=build&style=flat-square" alt="Build status" />
+  </a>
+  &nbsp;
+  <a href="https://github.com/Jombolio/rekindle/releases/latest">
+    <img src="https://img.shields.io/github/v/release/Jombolio/rekindle?label=release&style=flat-square" alt="Latest release" />
+  </a>
+  &nbsp;
+  <a href="https://discord.gg/qppBqPzkTp">
+    <img src="https://img.shields.io/badge/discord-join-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord" />
+  </a>
+</p>
+
 <img width="1277" height="371" alt="Rekindle screenshot" src="https://github.com/user-attachments/assets/0f389771-0a4d-4c71-897b-85dcdccb26d6" />
 
 ---
