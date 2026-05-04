@@ -39,10 +39,9 @@ jobs:
           zip -r ../../../../../../RekindleClient-linux-x64.zip .
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: RekindleClient-linux-x64.zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" RekindleClient-linux-x64.zip --clobber
 
   release-windows:
     name: Client — Windows
@@ -65,12 +64,11 @@ jobs:
         run: Compress-Archive -Path desktop/build/windows/x64/runner/Release/* -DestinationPath RekindleClient-windows-x64.zip
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: |
-            desktop/windows/output/RekindleSetup.exe
-            RekindleClient-windows-x64.zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" desktop/windows/output/RekindleSetup.exe --clobber
+          gh release upload "${{ github.ref_name }}" RekindleClient-windows-x64.zip --clobber
 
   release-android:
     name: Client — Android
@@ -101,10 +99,9 @@ jobs:
         run: cp android/app/build/outputs/apk/release/app-release.apk RekindleAndroid.apk
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: RekindleAndroid.apk
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" RekindleAndroid.apk --clobber
 
   release-server-linux:
     name: Server — Linux
@@ -126,10 +123,9 @@ jobs:
           zip -r ../../../../../RekindleServer-linux-x64.zip .
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: RekindleServer-linux-x64.zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" RekindleServer-linux-x64.zip --clobber
 
   release-server-windows:
     name: Server — Windows
@@ -151,7 +147,6 @@ jobs:
           zip -r ../../../../../RekindleServer-windows-x64.zip .
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: RekindleServer-windows-x64.zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" RekindleServer-windows-x64.zip --clobber
