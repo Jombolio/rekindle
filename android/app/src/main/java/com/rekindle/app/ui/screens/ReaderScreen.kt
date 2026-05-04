@@ -477,6 +477,7 @@ private fun PagedModeContent(
                 ZoomablePageImage(
                     model = imageModelFn(left),
                     modifier = Modifier.weight(1f).fillMaxHeight(),
+                    alignment = androidx.compose.ui.Alignment.CenterEnd,
                     onZoomChanged = { isZoomed = it },
                 )
                 if (state.spineGap > 0f) {
@@ -485,6 +486,7 @@ private fun PagedModeContent(
                 ZoomablePageImage(
                     model = imageModelFn(right),
                     modifier = Modifier.weight(1f).fillMaxHeight(),
+                    alignment = androidx.compose.ui.Alignment.CenterStart,
                     onZoomChanged = { isZoomed = it },
                 )
             }
@@ -499,6 +501,7 @@ private fun PagedModeContent(
 private fun ZoomablePageImage(
     model: Any,
     modifier: Modifier = Modifier,
+    alignment: androidx.compose.ui.Alignment = androidx.compose.ui.Alignment.Center,
     onZoomChanged: (Boolean) -> Unit = {},
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
@@ -514,6 +517,7 @@ private fun ZoomablePageImage(
         model = model,
         contentDescription = null,
         contentScale = ContentScale.Fit,
+        alignment = alignment,
         modifier = modifier
             .background(Color.Black)
             // Custom gesture handler: only consumes multi-touch (pinch zoom) and
