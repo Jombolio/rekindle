@@ -41,6 +41,7 @@ jobs:
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           files: RekindleClient-linux-x64.zip
 
   release-windows:
@@ -66,6 +67,7 @@ jobs:
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           files: |
             desktop/windows/output/RekindleSetup.exe
             RekindleClient-windows-x64.zip
@@ -101,6 +103,7 @@ jobs:
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           files: RekindleAndroid.apk
 
   release-server-linux:
@@ -125,6 +128,7 @@ jobs:
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           files: RekindleServer-linux-x64.zip
 
   release-server-windows:
@@ -149,4 +153,5 @@ jobs:
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           files: RekindleServer-windows-x64.zip
