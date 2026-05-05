@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -81,6 +82,7 @@ fun LibraryScreen(
     var addLibrarySourceId by remember { mutableStateOf<String?>(null) }
     var editLibrary by remember { mutableStateOf<Pair<String, Library>?>(null) }
     var deleteLibrary by remember { mutableStateOf<Pair<String, Library>?>(null) }
+    var uploadSourceId by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -143,6 +145,7 @@ fun LibraryScreen(
                                 vm.setActiveSource(sourceState.source.id)
                                 onAdminClick()
                             },
+                            onUpload = { uploadSourceId = sourceState.source.id },
                             onRename = { renameTarget = sourceState.source },
                             onSignOut = { vm.signOut(sourceState.source.id) },
                             onSignIn = {
@@ -189,6 +192,7 @@ fun LibraryScreen(
                                 library = lib,
                                 scanning = sourceState.scanning == lib.id,
                                 isAdmin = sourceState.source.permissionLevel >= 4,
+                                canManageMedia = sourceState.source.permissionLevel >= 3,
                                 onTap = {
                                     vm.setActiveSource(sourceState.source.id)
                                     onLibraryClick(lib.id, lib.name, lib.type)
@@ -263,6 +267,27 @@ fun LibraryScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+        }
+    }
+
+    // ── Upload sheet ──────────────────────────────────────────────────────────
+
+    uploadSourceId?.let { srcId ->
+        val uploadSource = states.find { it.source.id == srcId }
+        if (uploadSource != null) {
+            ModalBottomSheet(
+                onDismissRequest = { uploadSourceId = null },
+                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            ) {
+                val adminVm: com.rekindle.app.ui.viewmodel.AdminViewModel =
+                    androidx.hilt.navigation.compose.hiltViewModel()
+                val adminState by adminVm.state.collectAsState()
+                UploadTabContent(
+                    libraries = uploadSource.libraries,
+                    adminVm = adminVm,
+                    adminState = adminState,
+                )
             }
         }
     }
@@ -351,6 +376,7 @@ private fun SourceSectionHeader(
     state: SourceLibraryState,
     onAddLibrary: () -> Unit,
     onAdmin: () -> Unit,
+    onUpload: () -> Unit,
     onRename: () -> Unit,
     onSignOut: () -> Unit,
     onSignIn: () -> Unit,
@@ -359,6 +385,7 @@ private fun SourceSectionHeader(
 ) {
     val source = state.source
     val isAdmin = source.permissionLevel >= 4
+    val canManageMedia = source.permissionLevel >= 3
     val hasToken = source.token != null
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -383,6 +410,15 @@ private fun SourceSectionHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
+            // Upload button — level 3+ authenticated users
+            AnimatedVisibility(visible = canManageMedia && hasToken, enter = fadeIn(), exit = fadeOut()) {
+                IconButton(
+                    onClick = onUpload,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(Icons.Default.CloudUpload, contentDescription = "Upload Archive", modifier = Modifier.size(20.dp))
+                }
+            }
             // Add library button — only for authenticated admins
             AnimatedVisibility(visible = isAdmin && hasToken, enter = fadeIn(), exit = fadeOut()) {
                 IconButton(
@@ -450,6 +486,7 @@ private fun LibraryRow(
     library: Library,
     scanning: Boolean,
     isAdmin: Boolean,
+    canManageMedia: Boolean,
     onTap: () -> Unit,
     onScan: () -> Unit,
     onEdit: () -> Unit,
@@ -465,7 +502,7 @@ private fun LibraryRow(
     ListItem(
         headlineContent = { Text(library.name) },
         supportingContent = { Text(typeLabel) },
-        trailingContent = if (isAdmin) ({
+        trailingContent = if (canManageMedia) ({
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
                     if (scanning) {
@@ -475,21 +512,25 @@ private fun LibraryRow(
                     }
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Edit") },
-                        leadingIcon = { Icon(Icons.Default.Edit, null) },
-                        onClick = { menuExpanded = false; onEdit() },
-                    )
+                    if (isAdmin) {
+                        DropdownMenuItem(
+                            text = { Text("Edit") },
+                            leadingIcon = { Icon(Icons.Default.Edit, null) },
+                            onClick = { menuExpanded = false; onEdit() },
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("Scan") },
                         leadingIcon = { Icon(Icons.Default.Refresh, null) },
                         onClick = { menuExpanded = false; onScan() },
                     )
-                    DropdownMenuItem(
-                        text = { Text("Delete") },
-                        leadingIcon = { Icon(Icons.Default.Delete, null) },
-                        onClick = { menuExpanded = false; onDelete() },
-                    )
+                    if (isAdmin) {
+                        DropdownMenuItem(
+                            text = { Text("Delete") },
+                            leadingIcon = { Icon(Icons.Default.Delete, null) },
+                            onClick = { menuExpanded = false; onDelete() },
+                        )
+                    }
                 }
             }
         }) else null,

@@ -10,6 +10,7 @@ import '../core/models/server_source.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/sources_provider.dart';
+import 'admin_panel_screen.dart' show UploadPanel;
 import 'widgets/error_view.dart';
 import 'widgets/scan_progress_sheet.dart';
 
@@ -60,6 +61,7 @@ class _SourceSection extends ConsumerWidget {
 
     final auth = authAsync.valueOrNull;
     final isAdmin = auth is AuthAuthenticated && auth.isAdmin;
+    final canManageMedia = auth is AuthAuthenticated && auth.canManageMedia;
     final username = auth is AuthAuthenticated ? auth.username : null;
 
     Widget body;
@@ -93,6 +95,7 @@ class _SourceSection extends ConsumerWidget {
                 libraries: libs,
                 sourceId: source.id,
                 isAdmin: isAdmin,
+                canManageMedia: canManageMedia,
                 username: username,
                 ref: ref,
               ),
@@ -118,6 +121,13 @@ class _SourceSection extends ConsumerWidget {
                       ),
                 ),
               ),
+              if (canManageMedia)
+                IconButton(
+                  icon: const Icon(Icons.upload_file_outlined, size: 20),
+                  tooltip: 'Upload Archive',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _showUploadDialog(context, source.id),
+                ),
               if (isAdmin)
                 IconButton(
                   icon: const Icon(Icons.add, size: 20),
@@ -133,6 +143,44 @@ class _SourceSection extends ConsumerWidget {
         const Divider(height: 1, indent: 16, endIndent: 16),
         body,
       ],
+    );
+  }
+
+  void _showUploadDialog(BuildContext context, String sourceId) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => Dialog(
+        child: SizedBox(
+          width: 600,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 20, 8, 0),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text('Upload Archive',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w600)),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 500),
+                child: UploadPanel(sourceId: sourceId),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -300,6 +348,7 @@ class _LibraryList extends StatelessWidget {
   final List<Library> libraries;
   final String sourceId;
   final bool isAdmin;
+  final bool canManageMedia;
   final String? username;
   final WidgetRef ref;
 
@@ -307,6 +356,7 @@ class _LibraryList extends StatelessWidget {
     required this.libraries,
     required this.sourceId,
     required this.isAdmin,
+    required this.canManageMedia,
     required this.username,
     required this.ref,
   });
@@ -323,13 +373,15 @@ class _LibraryList extends StatelessWidget {
           subtitle: Text(
             username != null ? '${lib.typeLabel} · $username' : lib.typeLabel,
           ),
-          trailing: isAdmin
+          trailing: canManageMedia
               ? PopupMenuButton<String>(
                   onSelected: (action) => _onAction(context, action, lib),
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'edit', child: Text('Edit')),
-                    PopupMenuItem(value: 'scan', child: Text('Scan')),
-                    PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  itemBuilder: (_) => [
+                    if (isAdmin)
+                      const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                    const PopupMenuItem(value: 'scan', child: Text('Scan')),
+                    if (isAdmin)
+                      const PopupMenuItem(value: 'delete', child: Text('Delete')),
                   ],
                 )
               : null,

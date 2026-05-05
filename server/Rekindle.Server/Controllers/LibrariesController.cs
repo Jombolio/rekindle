@@ -93,7 +93,7 @@ public class LibrariesController(
     }
 
     [HttpPost("{id}/scan")]
-    [Authorize(Policy = PermissionPolicies.IsAdmin)]
+    [Authorize(Policy = PermissionPolicies.CanManageMedia)]
     public async Task<IActionResult> Scan(string id)
     {
         var library = await libraryRepository.GetByIdAsync(id);

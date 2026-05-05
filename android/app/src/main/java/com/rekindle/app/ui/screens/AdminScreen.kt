@@ -148,7 +148,7 @@ fun AdminScreen(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             TabRow(selectedTabIndex = selectedTab) {
-                listOf("Libraries", "Users", "Upload", "System", "APIs").forEachIndexed { idx, title ->
+                listOf("Libraries", "Users", "System", "APIs").forEachIndexed { idx, title ->
                     Tab(
                         selected = selectedTab == idx,
                         onClick = { selectedTab = idx },
@@ -172,16 +172,11 @@ fun AdminScreen(
                     onResetPasswordClick = { resetPasswordTarget = it },
                     onDeleteUserClick = { deleteUserTarget = it },
                 )
-                2 -> UploadTabContent(
-                    libraries = state.libraries,
+                2 -> SystemTabContent(
                     adminVm = adminVm,
                     adminState = adminState,
                 )
-                3 -> SystemTabContent(
-                    adminVm = adminVm,
-                    adminState = adminState,
-                )
-                4 -> ApisTabContent(
+                3 -> ApisTabContent(
                     adminVm = adminVm,
                     adminState = adminState,
                 )
@@ -446,7 +441,7 @@ private fun UserRow(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun UploadTabContent(
+internal fun UploadTabContent(
     libraries: List<Library>,
     adminVm: AdminViewModel,
     adminState: AdminScreenState,

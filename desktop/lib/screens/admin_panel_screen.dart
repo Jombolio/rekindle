@@ -90,14 +90,13 @@ class AdminPanelScreen extends ConsumerWidget {
     final sourceName = source?.name ?? 'Admin Panel';
 
     return DefaultTabController(
-      length: 4,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: Text('$sourceName — Admin'),
           bottom: const TabBar(
             tabs: [
               Tab(icon: Icon(Icons.people_outline), text: 'Users'),
-              Tab(icon: Icon(Icons.upload_file_outlined), text: 'Upload'),
               Tab(icon: Icon(Icons.monitor_heart_outlined), text: 'System'),
               Tab(icon: Icon(Icons.api_outlined), text: 'APIs'),
             ],
@@ -106,7 +105,6 @@ class AdminPanelScreen extends ConsumerWidget {
         body: TabBarView(
           children: [
             _UsersTab(sourceId: sourceId),
-            _UploadTab(sourceId: sourceId),
             _SystemTab(sourceId: sourceId),
             _ApisTab(sourceId: sourceId),
           ],
@@ -489,17 +487,17 @@ class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
   }
 }
 
-// ── Upload tab ────────────────────────────────────────────────────────────
+// ── Upload panel — shown as a dialog from the library screen ─────────────────
 
-class _UploadTab extends ConsumerStatefulWidget {
+class UploadPanel extends ConsumerStatefulWidget {
   final String sourceId;
-  const _UploadTab({required this.sourceId});
+  const UploadPanel({super.key, required this.sourceId});
 
   @override
-  ConsumerState<_UploadTab> createState() => _UploadTabState();
+  ConsumerState<UploadPanel> createState() => _UploadPanelState();
 }
 
-class _UploadTabState extends ConsumerState<_UploadTab> {
+class _UploadPanelState extends ConsumerState<UploadPanel> {
   Library? _selectedLibrary;
   // Relative path to upload into (null = library root). Updated whenever the
   // text field changes, so no explicit confirm step is needed.

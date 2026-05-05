@@ -14,13 +14,9 @@ public class AdminController(
     UserRepository userRepository,
     LibraryRepository libraryRepository,
     MediaRepository mediaRepository,
-    LibraryScannerService scanner,
     IOptions<RekindleOptions> options,
     ILogger<AdminController> logger) : ControllerBase
 {
-    private static readonly HashSet<string> AllowedUploadExtensions =
-        LibraryScannerService.SupportedExtensions;
-
     // ── Stats ────────────────────────────────────────────────────────────────
 
     [HttpGet("stats")]
@@ -46,14 +42,46 @@ public class AdminController(
         });
     }
 
-    // ── Upload ───────────────────────────────────────────────────────────────
+    // ── Cache ────────────────────────────────────────────────────────────────
+
+    [HttpDelete("cache")]
+    public IActionResult ClearCache()
+    {
+        var pagesCache = Path.Combine(options.Value.CachePath, "pages");
+        if (!Directory.Exists(pagesCache))
+            return Ok(new { message = "Cache is already empty." });
+
+        long freed = 0;
+        foreach (var dir in new DirectoryInfo(pagesCache).GetDirectories())
+        {
+            freed += dir.EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
+            dir.Delete(recursive: true);
+        }
+
+        logger.LogInformation("Admin cleared page cache ({FreedBytes} bytes freed)", freed);
+        return Ok(new { message = "Cache cleared.", freedBytes = freed });
+    }
+}
+
+// ── Upload — accessible to level 3+ (CanManageMedia) ─────────────────────────
+
+[ApiController]
+[Route("api/admin")]
+[Authorize(Policy = PermissionPolicies.CanManageMedia)]
+public class UploadController(
+    LibraryRepository libraryRepository,
+    LibraryScannerService scanner,
+    ILogger<UploadController> logger) : ControllerBase
+{
+    private static readonly HashSet<string> AllowedExtensions =
+        LibraryScannerService.SupportedExtensions;
 
     [HttpPost("upload")]
-    [RequestSizeLimit(4_294_967_296)]          // 4 GB
+    [RequestSizeLimit(4_294_967_296)]
     [RequestFormLimits(MultipartBodyLengthLimit = 4_294_967_296)]
     public async Task<IActionResult> Upload(
         [FromForm] string libraryId,
-        [FromForm] string? relativePath,       // e.g. "Absolute Superman" or "Manga/One Piece"
+        [FromForm] string? relativePath,
         IFormFile? file)
     {
         if (file is null || file.Length == 0)
@@ -67,26 +95,19 @@ public class AdminController(
             return BadRequest(new { error = "Library root path does not exist on the server." });
 
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (!AllowedUploadExtensions.Contains(ext))
-            return BadRequest(new { error = $"Unsupported file type '{ext}'. Allowed: {string.Join(", ", AllowedUploadExtensions)}" });
+        if (!AllowedExtensions.Contains(ext))
+            return BadRequest(new { error = $"Unsupported file type '{ext}'. Allowed: {string.Join(", ", AllowedExtensions)}" });
 
-        // Path.GetFileName strips any directory components — prevents path traversal.
         var safeName = Path.GetFileName(file.FileName);
         if (string.IsNullOrWhiteSpace(safeName))
             return BadRequest(new { error = "Invalid file name." });
 
-        // Resolve destination directory.
-        // If a relativePath is supplied, create the directory tree inside the
-        // library root (idempotent) and verify the resolved path stays within it.
         string destDir;
         if (!string.IsNullOrWhiteSpace(relativePath))
         {
-            // Normalise separators, strip leading/trailing slashes and whitespace.
             var normRel = relativePath.Replace('\\', '/').Trim('/').Trim();
-
             if (string.IsNullOrEmpty(normRel))
             {
-                // All slashes/whitespace — treat as library root.
                 destDir = library.RootPath;
             }
             else
@@ -94,7 +115,6 @@ public class AdminController(
                 var libraryRoot = Path.GetFullPath(library.RootPath.TrimEnd('/', '\\'));
                 var resolved    = Path.GetFullPath(Path.Combine(libraryRoot, normRel));
 
-                // Security: reject any path that escapes the library root.
                 if (!resolved.StartsWith(libraryRoot + Path.DirectorySeparatorChar,
                         StringComparison.OrdinalIgnoreCase)
                     && !resolved.Equals(libraryRoot, StringComparison.OrdinalIgnoreCase))
@@ -131,28 +151,8 @@ public class AdminController(
 
         _ = Task.Run(() => scanner.ScanAsync(library));
 
-        logger.LogInformation("Admin uploaded '{FileName}' to library {LibraryId} at '{RelPath}'",
+        logger.LogInformation("Uploaded '{FileName}' to library {LibraryId} at '{RelPath}'",
             safeName, libraryId, relativePath ?? "root");
         return Ok(new { message = "Upload complete. Library scan started.", fileName = safeName });
-    }
-
-    // ── Cache ────────────────────────────────────────────────────────────────
-
-    [HttpDelete("cache")]
-    public IActionResult ClearCache()
-    {
-        var pagesCache = Path.Combine(options.Value.CachePath, "pages");
-        if (!Directory.Exists(pagesCache))
-            return Ok(new { message = "Cache is already empty." });
-
-        long freed = 0;
-        foreach (var dir in new DirectoryInfo(pagesCache).GetDirectories())
-        {
-            freed += dir.EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
-            dir.Delete(recursive: true);
-        }
-
-        logger.LogInformation("Admin cleared page cache ({FreedBytes} bytes freed)", freed);
-        return Ok(new { message = "Cache cleared.", freedBytes = freed });
     }
 }
