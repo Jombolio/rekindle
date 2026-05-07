@@ -13,7 +13,7 @@ using SixLabors.ImageSharp.Processing;
 
 namespace Rekindle.Core.Services;
 
-public class ArchiveService(IOptions<RekindleOptions> options, ILogger<ArchiveService> logger)
+public class ArchiveService
 {
     private static readonly HashSet<string> ImageExtensions =
         [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"];
@@ -21,11 +21,51 @@ public class ArchiveService(IOptions<RekindleOptions> options, ILogger<ArchiveSe
     private static readonly HashSet<string> ArchiveExtensions =
         LibraryScannerService.SupportedExtensions;
 
-    private readonly string _pagesCache = Path.Combine(options.Value.CachePath, "pages");
-    private readonly long _maxCacheBytes = options.Value.CacheMaxSizeBytes;
+    private readonly string _pagesCache;
+    private readonly long _maxCacheBytes;
+    private readonly ILogger<ArchiveService> logger;
 
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _extractLocks = new();
     private readonly ConcurrentDictionary<string, DateTime> _accessTimes = new();
+
+    public ArchiveService(IOptions<RekindleOptions> options, ILogger<ArchiveService> logger)
+    {
+        this.logger = logger;
+        _pagesCache = Path.Combine(options.Value.CachePath, "pages");
+        _maxCacheBytes = options.Value.CacheMaxSizeBytes;
+
+        // Seed _accessTimes from existing manifests so the eviction code sees
+        // all previously-cached archives after a server restart. Without this,
+        // a freshly-extracted archive is the only entry in _accessTimes and
+        // gets evicted immediately when the cache is over the size limit.
+        if (Directory.Exists(_pagesCache))
+        {
+            foreach (var manifestPath in Directory.EnumerateFiles(_pagesCache, "manifest.json", SearchOption.AllDirectories))
+            {
+                var mediaId = Path.GetFileName(Path.GetDirectoryName(manifestPath));
+                if (mediaId is null) continue;
+                try
+                {
+                    var json = File.ReadAllText(manifestPath);
+                    using var doc = JsonDocument.Parse(json);
+                    if (doc.RootElement.TryGetProperty("ExtractedAt", out var extractedAt)
+                        && DateTime.TryParse(extractedAt.GetString(), out var dt))
+                    {
+                        _accessTimes[mediaId] = dt;
+                    }
+                    else
+                    {
+                        _accessTimes[mediaId] = DateTime.MinValue;
+                    }
+                }
+                catch
+                {
+                    _accessTimes[mediaId] = DateTime.MinValue;
+                }
+            }
+            logger.LogInformation("Seeded {Count} access-time entries from existing page cache.", _accessTimes.Count);
+        }
+    }
 
     public async Task<string?> GetPagePathAsync(string mediaId, string filePath, int pageNum)
     {
