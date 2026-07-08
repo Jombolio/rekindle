@@ -37,6 +37,7 @@ class MediaGridViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val libraryId: String = checkNotNull(savedStateHandle["libraryId"])
+    private val libraryType: String? = savedStateHandle["libraryType"]
 
     private var currentPage = 1
     private val pageSize = 24
@@ -152,6 +153,8 @@ class MediaGridViewModel @Inject constructor(
     fun downloadStateFor(mediaId: String): DownloadState = downloadStates.value[mediaId] ?: DownloadState()
 
     fun download(media: Media) {
+        // Persist RTL for manga so it reads correctly when opened offline.
+        if (libraryType == "manga") viewModelScope.launch { prefs.setRtl(media.id, true) }
         downloadRepo.download(
             mediaId = media.id,
             format = media.format,

@@ -164,6 +164,10 @@ class PrefsStore @Inject constructor(
     suspend fun setRtl(mediaId: String, rtl: Boolean) =
         store.edit { it[booleanPreferencesKey("rtl_$mediaId")] = rtl }
 
+    /** Sets the RTL flag for many media in a single DataStore write (avoids N file rewrites). */
+    suspend fun setRtlForAll(mediaIds: List<String>, rtl: Boolean) =
+        store.edit { prefs -> mediaIds.forEach { prefs[booleanPreferencesKey("rtl_$it")] = rtl } }
+
     suspend fun setDoublePage(mediaId: String, doublePage: Boolean) =
         store.edit { it[booleanPreferencesKey("double_page_$mediaId")] = doublePage }
 

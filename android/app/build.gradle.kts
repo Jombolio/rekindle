@@ -16,6 +16,10 @@ android {
     namespace = "com.rekindle.app"
     compileSdk = 35
 
+    // Pins the NDK used to build the native CBR/RAR decoder (libarchive). r27d.
+    // On a standalone NDK, also point ndk.dir at it in local.properties.
+    ndkVersion = "27.3.13750724"
+
     signingConfigs {
         create("release") {
             storeFile = (keystoreProps["storeFile"] as String?)?.let { rootProject.file(it) }
@@ -33,6 +37,11 @@ android {
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Native CBR/RAR decoder (libarchive). Limit ABIs to keep the APK lean.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -58,6 +67,23 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    // Native CBR/RAR decoder (libarchive via FetchContent). Requires the NDK +
+    // CMake components installed; the first build fetches libarchive over the network.
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
+    packaging {
+        jniLibs {
+            // libarchive is linked statically into librekindle_rar.so; drop the
+            // extra shared copy libarchive's own build emits so it isn't packaged.
+            excludes += "**/libarchive.so"
+        }
     }
 }
 

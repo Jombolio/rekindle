@@ -16,3 +16,11 @@ desktop.ini
 *.zip
 *.tar.gz
 GEMINI.md
+
+# Android / Gradle (machine-specific & generated)
+local.properties
+.gradle/
+**/build/
+.cxx/
+*.apk
+*.aab

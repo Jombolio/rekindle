@@ -56,11 +56,16 @@ class EpubReaderViewModel @Inject constructor(
 
     private suspend fun loadProgress() {
         val progress = mediaRepo.getProgress(mediaId)
-        _state.update { it.copy(chapterIndex = progress?.currentPage ?: 0) }
+        // Completed books restart at the beginning — matches the image reader and the
+        // documented cross-client invariant (now reachable offline via the local fallback).
+        val chapter = if (progress?.isCompleted == true) 0 else progress?.currentPage ?: 0
+        _state.update { it.copy(chapterIndex = chapter) }
     }
 
     private suspend fun loadEpub() {
-        val localPath = downloadRepo.stateFor(mediaId).localPath
+        // awaitState (not stateFor) restores from disk if the in-memory map is cold,
+        // so opening a downloaded EPUB offline doesn't falsely report "not downloaded".
+        val localPath = downloadRepo.awaitState(mediaId).localPath
             ?: run {
                 _state.update { it.copy(error = "EPUB not downloaded. Download it first.") }
                 return

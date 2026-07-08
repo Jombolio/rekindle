@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 import com.rekindle.app.domain.model.Media
 import com.rekindle.app.ui.screens.AdminScreen
 import com.rekindle.app.ui.screens.ChapterIndexScreen
+import com.rekindle.app.ui.screens.DownloadsScreen
 import com.rekindle.app.ui.screens.EpubReaderScreen
 import com.rekindle.app.ui.screens.LibraryScreen
 import com.rekindle.app.ui.screens.LoginScreen
@@ -40,6 +41,7 @@ sealed class Screen(val route: String) {
     data object Libraries : Screen("libraries")
     data object Settings : Screen("settings")
     data object Admin : Screen("admin")
+    data object Downloads : Screen("downloads")
     data object MediaGrid : Screen("library/{libraryId}?name={libraryName}&libraryType={libraryType}") {
         fun route(libraryId: String, name: String? = null, libraryType: String? = null) =
             "library/$libraryId?name=${encode(name)}&libraryType=${encode(libraryType)}"
@@ -131,6 +133,7 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
                 onSettingsClick = { navController.navigate(Screen.Settings.route) },
                 onAdminClick = { navController.navigate(Screen.Admin.route) },
                 onAddSource = { navController.navigate(Screen.Login.route) },
+                onDownloadsClick = { navController.navigate(Screen.Downloads.route) },
             )
         }
 
@@ -222,6 +225,19 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
 
         composable(Screen.Admin.route) {
             AdminScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(Screen.Downloads.route) {
+            DownloadsScreen(
+                onOpen = { mediaId, format ->
+                    val route = if (format.lowercase() in listOf("cbz", "cbr", "pdf"))
+                        Screen.Reader.route(mediaId)
+                    else
+                        Screen.Epub.route(mediaId)
+                    navController.navigate(route)
+                },
+                onBack = { navController.popBackStack() },
+            )
         }
     }
 

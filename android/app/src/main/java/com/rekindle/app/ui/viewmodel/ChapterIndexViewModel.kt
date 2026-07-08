@@ -162,7 +162,12 @@ class ChapterIndexViewModel @Inject constructor(
     fun dismissMetadataError() = _state.update { it.copy(metadataError = null) }
 
     fun downloadStateFor(mediaId: String): DownloadState = downloadRepo.stateFor(mediaId)
-    fun download(media: Media) = downloadRepo.download(media.id, media.format, media.displayTitle, media.relativePath)
+    fun download(media: Media) {
+        // Manga reads right-to-left; persist that now so it's correct when opened
+        // offline (the reader can't infer direction without the server).
+        if (libraryType == "manga") viewModelScope.launch { prefs.setRtl(media.id, true) }
+        downloadRepo.download(media.id, media.format, media.displayTitle, media.relativePath)
+    }
     fun deleteDownload(mediaId: String) = downloadRepo.delete(mediaId)
     fun cancelDownload(mediaId: String) = downloadRepo.cancel(mediaId)
     fun coverUrl(mediaId: String) = repo.coverUrl(baseUrl, mediaId)
@@ -186,6 +191,7 @@ class ChapterIndexViewModel @Inject constructor(
                     return@launch
                 }
 
+            if (libraryType == "manga") prefs.setRtlForAll(archives.map { it.id }, true)
             downloadRepo.downloadFolderArchives(folderId, archives, folderArchiveIds)
         }
     }

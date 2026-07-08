@@ -47,7 +47,11 @@ class MediaRepository @Inject constructor(
     suspend fun getProgress(mediaId: String): ReadingProgress? = try {
         api.getProgress(mediaId).toDomain()
     } catch (_: Exception) {
-        null
+        // Offline: fall back to the locally-queued progress so a downloaded item
+        // resumes at the saved page (and completed archives restart at 0) with no server.
+        progressDao.getByMediaId(mediaId)?.let {
+            ReadingProgress(it.mediaId, it.currentPage, it.isCompleted, it.lastReadAt)
+        }
     }
 
     suspend fun saveProgress(mediaId: String, currentPage: Int, isCompleted: Boolean) {

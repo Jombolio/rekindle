@@ -3,6 +3,7 @@ name: Build
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -61,6 +62,13 @@ jobs:
         with:
           java-version: '17'
           distribution: temurin
+
+      # Native CBR/RAR decoder (libarchive) needs the pinned NDK + CMake; AGP
+      # won't auto-install the NDK, so provision both explicitly.
+      - name: Install Android NDK & CMake
+        run: |
+          set +o pipefail
+          yes | sdkmanager "ndk;27.3.13750724" "cmake;3.22.1"
 
       - name: Decode keystore
         run: |

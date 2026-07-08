@@ -37,6 +37,10 @@ class DownloadRepository @Inject constructor(
     // Limits concurrent file transfers across both individual and folder downloads.
     private val semaphore = Semaphore(3)
 
+    // Bounds concurrent page extraction (PDF rasterisation / full-archive image buffering) so a
+    // large folder download doesn't run many memory-heavy extractions at once and OOM.
+    private val extractionSemaphore = Semaphore(2)
+
     private val _states = MutableStateFlow<Map<String, DownloadState>>(emptyMap())
     val states: StateFlow<Map<String, DownloadState>> = _states.asStateFlow()
 
@@ -56,6 +60,18 @@ class DownloadRepository @Inject constructor(
             val restored = downloadManager.restore(mediaId)
             _states.update { it + (mediaId to restored) }
         }
+    }
+
+    /**
+     * Like [stateFor] but restores from disk (DB) first when the state isn't in memory yet,
+     * so a caller (e.g. the EPUB reader opened offline from Downloads) doesn't race the
+     * fire-and-forget [restoreIfNeeded] and wrongly conclude the item isn't downloaded.
+     */
+    suspend fun awaitState(mediaId: String): DownloadState {
+        _states.value[mediaId]?.let { return it }
+        val restored = downloadManager.restore(mediaId)
+        _states.update { it + (mediaId to restored) }
+        return restored
     }
 
     fun download(mediaId: String, format: String, title: String, relativePath: String) {
@@ -86,8 +102,8 @@ class DownloadRepository @Inject constructor(
                 // State is already COMPLETE (set by download() via onProgress).
                 // Fire extraction in the background — no UI block.
                 launch {
-                    runCatching {
-                        downloadManager.extractPages(mediaId, localPath) {}
+                    extractionSemaphore.withPermit {
+                        runCatching { downloadManager.extractPages(mediaId, localPath, format) {} }
                     }
                 }
             }.onFailure { e ->
@@ -118,6 +134,12 @@ class DownloadRepository @Inject constructor(
 
     fun extractedPages(mediaId: String): List<String>? =
         downloadManager.loadExtractedPages(mediaId)
+
+    /** All completed downloads as a cold Flow — backs the offline Downloads screen. */
+    fun completedDownloads() = downloadManager.observeCompletedDownloads()
+
+    /** Local cover path for a downloaded item, or null if not cached. */
+    fun localCoverPath(mediaId: String): String? = downloadManager.localCoverPath(mediaId)
 
     // ── Folder downloads ──────────────────────────────────────────────────────
 
@@ -201,12 +223,13 @@ class DownloadRepository @Inject constructor(
                                 )
                             }.onSuccess { path ->
                                 successfulIds.add(archive.id)
-                                // Update individual chapter tile immediately.
-                                _states.update { it + (archive.id to downloadManager.restore(archive.id)) }
-                                // Extraction is CPU-bound — fire async so next download starts.
+                                // Update individual chapter tile immediately (restore once, outside the CAS lambda).
+                                val restored = downloadManager.restore(archive.id)
+                                _states.update { it + (archive.id to restored) }
+                                // Extraction is CPU/memory-bound — fire async (gated) so the next download starts.
                                 launch {
-                                    runCatching {
-                                        downloadManager.extractPages(archive.id, path) {}
+                                    extractionSemaphore.withPermit {
+                                        runCatching { downloadManager.extractPages(archive.id, path, archive.format) {} }
                                     }
                                 }
                             }

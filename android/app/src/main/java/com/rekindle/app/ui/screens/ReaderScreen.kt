@@ -169,15 +169,25 @@ fun ReaderScreen(
         ) {
             if (state.totalPages == 0) {
                 Column(
-                    modifier = Modifier.align(Alignment.Center),
+                    modifier = Modifier.align(Alignment.Center).padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    androidx.compose.material3.CircularProgressIndicator(color = Color.White)
-                    androidx.compose.material3.Text(
-                        "Preparing archive…",
-                        color = Color.White.copy(alpha = 0.7f),
-                    )
+                    if (state.pagesUnavailable) {
+                        androidx.compose.material3.Text(
+                            "This item isn't available offline yet. Connect to your server to download or stream it.",
+                            color = Color.White,
+                        )
+                        androidx.compose.material3.TextButton(onClick = onBack) {
+                            androidx.compose.material3.Text("Back")
+                        }
+                    } else {
+                        androidx.compose.material3.CircularProgressIndicator(color = Color.White)
+                        androidx.compose.material3.Text(
+                            "Preparing archive…",
+                            color = Color.White.copy(alpha = 0.7f),
+                        )
+                    }
                 }
             } else if (state.scrollMode) {
                 ScrollModeContent(

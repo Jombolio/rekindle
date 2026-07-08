@@ -7,6 +7,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "downloads")
 data class DownloadEntity(
@@ -28,6 +29,9 @@ interface DownloadDao {
 
     @Query("SELECT media_id FROM downloads WHERE status = 'COMPLETE'")
     suspend fun getAllCompleteMediaIds(): List<String>
+
+    @Query("SELECT * FROM downloads WHERE status = 'COMPLETE' ORDER BY title COLLATE NOCASE")
+    fun observeCompleted(): Flow<List<DownloadEntity>>
 
     @Query("DELETE FROM downloads WHERE media_id = :mediaId")
     suspend fun delete(mediaId: String)

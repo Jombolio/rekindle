@@ -30,6 +30,9 @@ data class ReaderState(
     val showControls: Boolean = true,
     val seekToPage: Int = -1,
     val extractedPages: List<String>? = null,
+    /** True when there are no local pages AND the server page count couldn't be fetched
+     *  (e.g. offline with an un-extracted CBR) — show an explicit message, not a spinner. */
+    val pagesUnavailable: Boolean = false,
     val siblings: List<Media> = emptyList(),
     /** Non-null while the reader should navigate to a different chapter. */
     val navigateToChapterId: String? = null,
@@ -126,6 +129,11 @@ class ReaderViewModel @Inject constructor(
                     _state.update { it.copy(totalPages = layout.count, spreads = layout.spreads) }
                 }
             }
+        // No local pages and no server page count (offline + un-extracted, e.g. a CBR opened in a
+        // build without the native decoder) → surface an explicit state instead of a forever spinner.
+        if (_state.value.totalPages == 0) {
+            _state.update { it.copy(pagesUnavailable = true) }
+        }
     }
 
     private suspend fun loadSiblings() {

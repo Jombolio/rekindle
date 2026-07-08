@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -72,6 +73,7 @@ fun LibraryScreen(
     onSettingsClick: () -> Unit,
     onAdminClick: () -> Unit,
     onAddSource: () -> Unit,
+    onDownloadsClick: () -> Unit,
     vm: MultiSourceLibraryViewModel = hiltViewModel(),
 ) {
     val states by vm.states.collectAsState()
@@ -89,6 +91,9 @@ fun LibraryScreen(
             TopAppBar(
                 title = { Text("Rekindle") },
                 actions = {
+                    IconButton(onClick = onDownloadsClick) {
+                        Icon(Icons.Default.DownloadForOffline, contentDescription = "Downloads")
+                    }
                     IconButton(onClick = onAddSource) {
                         Icon(Icons.Default.Add, contentDescription = "Add Server")
                     }
