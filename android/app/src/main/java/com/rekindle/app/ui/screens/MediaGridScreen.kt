@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.rekindle.app.core.download.FolderDownloadStatus
 import com.rekindle.app.domain.model.Media
 import com.rekindle.app.ui.components.MediaCard
 import com.rekindle.app.ui.theme.WindowWidthClass
@@ -73,6 +74,7 @@ fun MediaGridScreen(
     val searchLoading by vm.searchLoading.collectAsState()
     val canDownload by vm.canDownload.collectAsState()
     var seriesToDownload by remember { mutableStateOf<Media?>(null) }
+    var seriesToCancel by remember { mutableStateOf<Media?>(null) }
     val gridCellSize = when (currentWindowWidthClass()) {
         WindowWidthClass.Expanded -> 180.dp
         WindowWidthClass.Medium -> 160.dp
@@ -209,7 +211,16 @@ fun MediaGridScreen(
                                         .combinedClickable(
                                             onClick = { onItemClick(media) },
                                             onLongClick = {
-                                                if (media.isFolder && canDownload) seriesToDownload = media
+                                                if (media.isFolder && canDownload) {
+                                                    val st = folderDownloadStates[media.id]?.status
+                                                    if (st == FolderDownloadStatus.FETCHING ||
+                                                        st == FolderDownloadStatus.DOWNLOADING
+                                                    ) {
+                                                        seriesToCancel = media
+                                                    } else {
+                                                        seriesToDownload = media
+                                                    }
+                                                }
                                             },
                                         ),
                                 )
@@ -244,6 +255,18 @@ fun MediaGridScreen(
                 TextButton(onClick = { vm.downloadFolder(folder); seriesToDownload = null }) { Text("Download") }
             },
             dismissButton = { TextButton(onClick = { seriesToDownload = null }) { Text("Cancel") } },
+        )
+    }
+
+    seriesToCancel?.let { folder ->
+        AlertDialog(
+            onDismissRequest = { seriesToCancel = null },
+            title = { Text("Cancel download?") },
+            text = { Text("Stop downloading \"${folder.displayTitle}\"? Chapters already downloaded are kept.") },
+            confirmButton = {
+                TextButton(onClick = { vm.cancelFolderDownload(folder.id); seriesToCancel = null }) { Text("Stop") }
+            },
+            dismissButton = { TextButton(onClick = { seriesToCancel = null }) { Text("Keep downloading") } },
         )
     }
 }

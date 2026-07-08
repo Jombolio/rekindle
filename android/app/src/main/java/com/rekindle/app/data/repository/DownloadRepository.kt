@@ -132,6 +132,15 @@ class DownloadRepository @Inject constructor(
         }
     }
 
+    /** Purges every download from the device (files + DB) and clears in-memory state. */
+    fun purgeAll() {
+        scope.launch {
+            downloadManager.deleteAll()
+            _states.value = emptyMap()
+            _folderStates.value = emptyMap()
+        }
+    }
+
     fun extractedPages(mediaId: String): List<String>? =
         downloadManager.loadExtractedPages(mediaId)
 

@@ -33,8 +33,14 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads WHERE status = 'COMPLETE' ORDER BY title COLLATE NOCASE")
     fun observeCompleted(): Flow<List<DownloadEntity>>
 
+    @Query("SELECT * FROM downloads")
+    suspend fun getAllDownloads(): List<DownloadEntity>
+
     @Query("DELETE FROM downloads WHERE media_id = :mediaId")
     suspend fun delete(mediaId: String)
+
+    @Query("DELETE FROM downloads")
+    suspend fun deleteAll()
 }
 
 // ---------------------------------------------------------------------------
@@ -56,4 +62,7 @@ interface FolderDownloadDao {
 
     @Query("SELECT * FROM folder_downloads WHERE folder_id = :folderId LIMIT 1")
     suspend fun getByFolderId(folderId: String): FolderDownloadEntity?
+
+    @Query("DELETE FROM folder_downloads")
+    suspend fun deleteAll()
 }

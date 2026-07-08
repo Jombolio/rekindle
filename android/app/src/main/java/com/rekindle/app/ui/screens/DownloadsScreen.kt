@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.AlertDialog
@@ -73,6 +74,7 @@ fun DownloadsScreen(
     val authHeader by vm.authHeader.collectAsState()
     var selectedSeries by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteTarget by remember { mutableStateOf<DownloadItem?>(null) }
+    var showPurgeConfirm by remember { mutableStateOf(false) }
 
     val currentFolder = folders.firstOrNull { it.series == selectedSeries }
 
@@ -90,6 +92,14 @@ fun DownloadsScreen(
                 navigationIcon = {
                     IconButton(onClick = { if (currentFolder != null) selectedSeries = null else onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    // Purge-all is only offered from the top level, and only when there's something to purge.
+                    if (currentFolder == null && folders.isNotEmpty()) {
+                        IconButton(onClick = { showPurgeConfirm = true }) {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = "Purge downloads")
+                        }
                     }
                 },
             )
@@ -142,6 +152,27 @@ fun DownloadsScreen(
                 TextButton(onClick = { vm.delete(target.mediaId); deleteTarget = null }) { Text("Delete") }
             },
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel") } },
+        )
+    }
+
+    if (showPurgeConfirm) {
+        val total = folders.sumOf { it.count }
+        AlertDialog(
+            onDismissRequest = { showPurgeConfirm = false },
+            title = { Text("Purge all downloads?") },
+            text = {
+                Text(
+                    "This permanently deletes all $total downloaded " +
+                        (if (total == 1) "item" else "items") +
+                        " from this device. They stay available on the server.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.purgeAll(); showPurgeConfirm = false }) {
+                    Text("Purge", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { showPurgeConfirm = false }) { Text("Cancel") } },
         )
     }
 }

@@ -94,6 +94,9 @@ class DownloadsViewModel @Inject constructor(
 
     fun delete(mediaId: String) = downloadRepo.delete(mediaId)
 
+    /** Deletes every download from this device (files + DB). */
+    fun purgeAll() = downloadRepo.purgeAll()
+
     /**
      * Best-effort: downloads any missing covers from the server (active source) so they
      * persist locally for offline use. Runs once per screen open; a no-op for items whose

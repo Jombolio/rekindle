@@ -187,6 +187,9 @@ class MediaGridViewModel @Inject constructor(
         }
     }
 
+    /** Cancels an in-progress series (folder) download. */
+    fun cancelFolderDownload(folderId: String) = downloadRepo.cancelFolderDownload(folderId)
+
     fun deleteDownload(mediaId: String) = downloadRepo.delete(mediaId)
     fun cancelDownload(mediaId: String) = downloadRepo.cancel(mediaId)
 

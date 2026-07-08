@@ -288,6 +288,17 @@ class DownloadManager @Inject constructor(
         downloadDao.delete(mediaId)
     }
 
+    /** Purges ALL downloads: raw files, extracted pages, covers, and DB rows. */
+    suspend fun deleteAll() = withContext(Dispatchers.IO) {
+        for (entity in downloadDao.getAllDownloads()) {
+            entity.localPath?.let { deleteByPath(it) }
+            extractedDir(entity.mediaId).deleteRecursively()
+            File(coversDir(), "${entity.mediaId}.jpg").delete()
+        }
+        downloadDao.deleteAll()
+        folderDownloadDao.deleteAll()
+    }
+
     /** A cold [Flow] of all completed downloads, for the offline Downloads screen. */
     fun observeCompletedDownloads(): Flow<List<DownloadEntity>> = downloadDao.observeCompleted()
 
