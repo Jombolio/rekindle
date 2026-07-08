@@ -132,6 +132,15 @@ class DownloadRepository @Inject constructor(
         }
     }
 
+    /** Purges every download from the device (files + DB) and clears in-memory state. */
+    fun purgeAll() {
+        scope.launch {
+            downloadManager.deleteAll()
+            _states.value = emptyMap()
+            _folderStates.value = emptyMap()
+        }
+    }
+
     fun extractedPages(mediaId: String): List<String>? =
         downloadManager.loadExtractedPages(mediaId)
 
@@ -140,6 +149,10 @@ class DownloadRepository @Inject constructor(
 
     /** Local cover path for a downloaded item, or null if not cached. */
     fun localCoverPath(mediaId: String): String? = downloadManager.localCoverPath(mediaId)
+
+    /** Backfills a missing local cover from the server; true if one now exists. */
+    suspend fun ensureCover(mediaId: String, baseUrl: String, authHeader: String): Boolean =
+        downloadManager.ensureCoverDownloaded(mediaId, baseUrl, authHeader)
 
     // ── Folder downloads ──────────────────────────────────────────────────────
 

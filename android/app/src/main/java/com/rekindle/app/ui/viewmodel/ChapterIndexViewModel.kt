@@ -19,8 +19,6 @@ import com.rekindle.app.domain.model.ScrapeStatus
 import org.json.JSONObject
 import retrofit2.HttpException
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -182,7 +180,7 @@ class ChapterIndexViewModel @Inject constructor(
             downloadRepo.setFolderState(folderId, FolderDownloadState(FolderDownloadStatus.FETCHING))
 
             val folderArchiveIds = ConcurrentHashMap<String, Set<String>>()
-            val archives = runCatching { collectArchives(folderId, folderArchiveIds) }
+            val archives = runCatching { repo.collectLeafArchives(folderId, folderArchiveIds) }
                 .getOrElse { e ->
                     downloadRepo.setFolderState(
                         folderId,
@@ -212,22 +210,4 @@ class ChapterIndexViewModel @Inject constructor(
         return message ?: "Unknown error."
     }
 
-    /** Recursively collects all leaf archives in parallel using coroutine async. */
-    private suspend fun collectArchives(
-        folderId: String,
-        folderArchiveIds: ConcurrentHashMap<String, Set<String>>,
-    ): List<Media> = coroutineScope {
-        val items = repo.getChapters(folderId)
-        val subfolders = items.filter { it.isFolder }
-        val directArchives = items.filter { !it.isFolder }
-
-        val subResults = subfolders
-            .map { sf -> async { collectArchives(sf.id, folderArchiveIds) } }
-            .map { it.await() }
-            .flatten()
-
-        val all = directArchives + subResults
-        folderArchiveIds[folderId] = all.map { it.id }.toSet()
-        all
-    }
 }
