@@ -154,7 +154,7 @@ public class ArchiveService
 
     private static async Task<Stream?> ExtractArchiveCoverAsync(string filePath)
     {
-        using var archive = ArchiveFactory.Open(filePath);
+        using var archive = ArchiveFactory.OpenArchive(filePath);
         var candidates = archive.Entries
             .Where(e => !e.IsDirectory && IsImageEntry(e.Key))
             .OrderBy(e => e.Key ?? string.Empty, NaturalStringComparer.Instance)
@@ -380,7 +380,7 @@ public class ArchiveService
     private async Task<(List<string> Pages, List<bool> Spreads)> ExtractSingleArchiveToDir(
         string archivePath, string targetDir, string prefix)
     {
-        using var archive = ArchiveFactory.Open(archivePath);
+        using var archive = ArchiveFactory.OpenArchive(archivePath);
         var imageEntries = archive.Entries
             .Where(e => !e.IsDirectory && IsImageEntry(e.Key))
             .OrderBy(e => e.Key ?? string.Empty, NaturalStringComparer.Instance)
