@@ -4,11 +4,14 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rekindle.app.core.download.DownloadState
+import com.rekindle.app.core.download.FolderDownloadState
+import com.rekindle.app.core.download.FolderDownloadStatus
 import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.data.repository.DownloadRepository
 import com.rekindle.app.data.repository.MediaRepository
 import com.rekindle.app.domain.model.Media
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -161,6 +164,27 @@ class MediaGridViewModel @Inject constructor(
             title = media.displayTitle,
             relativePath = media.relativePath,
         )
+    }
+
+    /** Downloads every chapter under a series [folder] without entering it. */
+    fun downloadFolder(folder: Media) {
+        val folderId = folder.id
+        val status = downloadRepo.folderStateFor(folderId).status
+        if (status == FolderDownloadStatus.FETCHING || status == FolderDownloadStatus.DOWNLOADING) return
+        downloadRepo.setFolderState(folderId, FolderDownloadState(FolderDownloadStatus.FETCHING))
+        viewModelScope.launch {
+            val folderArchiveIds = ConcurrentHashMap<String, Set<String>>()
+            val archives = runCatching { repo.collectLeafArchives(folderId, folderArchiveIds) }
+                .getOrElse { e ->
+                    downloadRepo.setFolderState(
+                        folderId,
+                        FolderDownloadState(FolderDownloadStatus.FAILED, error = e.message),
+                    )
+                    return@launch
+                }
+            if (libraryType == "manga") prefs.setRtlForAll(archives.map { it.id }, true)
+            downloadRepo.downloadFolderArchives(folderId, archives, folderArchiveIds)
+        }
     }
 
     fun deleteDownload(mediaId: String) = downloadRepo.delete(mediaId)

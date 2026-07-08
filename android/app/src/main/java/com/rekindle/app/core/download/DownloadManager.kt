@@ -295,6 +295,18 @@ class DownloadManager @Inject constructor(
     fun localCoverPath(mediaId: String): String? =
         File(coversDir(), "$mediaId.jpg").takeIf { it.exists() }?.absolutePath
 
+    /**
+     * Backfills a missing cover from the server so it's available offline. No-op if the
+     * cover is already cached. Returns true when a cover is present afterwards. Best-effort
+     * — network failures are swallowed (the item just keeps its placeholder/URL fallback).
+     */
+    suspend fun ensureCoverDownloaded(mediaId: String, serverBaseUrl: String, authHeader: String): Boolean =
+        withContext(Dispatchers.IO) {
+            if (localCoverPath(mediaId) != null) return@withContext false
+            runCatching { downloadCover(mediaId, serverBaseUrl, authHeader) }
+            localCoverPath(mediaId) != null
+        }
+
     suspend fun cancelIncomplete(mediaId: String) = withContext(Dispatchers.IO) {
         val entity = downloadDao.getByMediaId(mediaId) ?: return@withContext
         if (entity.status != DownloadStatus.COMPLETE.name) {

@@ -1,6 +1,8 @@
 package com.rekindle.app.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
@@ -20,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -29,13 +32,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -50,7 +56,7 @@ import com.rekindle.app.ui.theme.WindowWidthClass
 import com.rekindle.app.ui.theme.currentWindowWidthClass
 import com.rekindle.app.ui.viewmodel.MediaGridViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun MediaGridScreen(
     libraryId: String,
@@ -65,6 +71,8 @@ fun MediaGridScreen(
     val searchQuery by vm.searchQuery.collectAsState()
     val searchResults by vm.searchResults.collectAsState()
     val searchLoading by vm.searchLoading.collectAsState()
+    val canDownload by vm.canDownload.collectAsState()
+    var seriesToDownload by remember { mutableStateOf<Media?>(null) }
     val gridCellSize = when (currentWindowWidthClass()) {
         WindowWidthClass.Expanded -> 180.dp
         WindowWidthClass.Medium -> 160.dp
@@ -198,7 +206,12 @@ fun MediaGridScreen(
                                         .fillMaxWidth()
                                         .aspectRatio(2f / 3f)
                                         .padding(4.dp)
-                                        .clickable { onItemClick(media) },
+                                        .combinedClickable(
+                                            onClick = { onItemClick(media) },
+                                            onLongClick = {
+                                                if (media.isFolder && canDownload) seriesToDownload = media
+                                            },
+                                        ),
                                 )
                             }
 
@@ -220,5 +233,17 @@ fun MediaGridScreen(
                 }
             }
         }
+    }
+
+    seriesToDownload?.let { folder ->
+        AlertDialog(
+            onDismissRequest = { seriesToDownload = null },
+            title = { Text("Download series?") },
+            text = { Text("Download all chapters in \"${folder.displayTitle}\" for offline reading?") },
+            confirmButton = {
+                TextButton(onClick = { vm.downloadFolder(folder); seriesToDownload = null }) { Text("Download") }
+            },
+            dismissButton = { TextButton(onClick = { seriesToDownload = null }) { Text("Cancel") } },
+        )
     }
 }

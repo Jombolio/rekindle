@@ -7,12 +7,15 @@ import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.data.repository.DownloadRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class DownloadItem(
@@ -56,9 +59,18 @@ class DownloadsViewModel @Inject constructor(
         .map { "Bearer ${it ?: ""}" }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
+    // Bumped after covers are backfilled so the folder list re-maps and picks up the
+    // now-local cover files (making them available offline, not just Coil-cached).
+    private val coverRefresh = MutableStateFlow(0)
+
+    init {
+        // Backfill covers for downloads made before covers were cached locally.
+        viewModelScope.launch { backfillCovers() }
+    }
+
     /** Downloads grouped into series folders (derived from each item's storage path). */
     val folders: StateFlow<List<DownloadFolder>> =
-        combine(downloadRepo.completedDownloads(), prefs.serverUrl) { list, baseUrl ->
+        combine(downloadRepo.completedDownloads(), prefs.serverUrl, coverRefresh) { list, baseUrl, _ ->
             val base = baseUrl.trimEnd('/')
             list.map { e ->
                 DownloadItem(
@@ -81,6 +93,27 @@ class DownloadsViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun delete(mediaId: String) = downloadRepo.delete(mediaId)
+
+    /**
+     * Best-effort: downloads any missing covers from the server (active source) so they
+     * persist locally for offline use. Runs once per screen open; a no-op for items whose
+     * cover is already cached. Requires a reachable server, so it silently does nothing offline.
+     */
+    private suspend fun backfillCovers() {
+        val base = prefs.serverUrl.first().trimEnd('/')
+        val token = prefs.token.first()
+        if (base.isBlank() || token.isNullOrBlank()) return
+        val auth = "Bearer $token"
+        var changed = false
+        for (entity in downloadRepo.completedDownloads().first()) {
+            if (downloadRepo.localCoverPath(entity.mediaId) == null &&
+                downloadRepo.ensureCover(entity.mediaId, base, auth)
+            ) {
+                changed = true
+            }
+        }
+        if (changed) coverRefresh.value++
+    }
 
     /**
      * Derives the series (parent folder) from a download's stored path. Downloads mirror
