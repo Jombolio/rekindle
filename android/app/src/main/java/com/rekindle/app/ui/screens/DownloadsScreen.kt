@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -47,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -68,6 +70,7 @@ fun DownloadsScreen(
     vm: DownloadsViewModel = hiltViewModel(),
 ) {
     val folders by vm.folders.collectAsState()
+    val authHeader by vm.authHeader.collectAsState()
     var selectedSeries by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteTarget by remember { mutableStateOf<DownloadItem?>(null) }
 
@@ -103,7 +106,11 @@ fun DownloadsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(folders, key = { it.series }) { folder ->
-                    FolderGridItem(folder = folder, onClick = { selectedSeries = folder.series })
+                    FolderGridItem(
+                        folder = folder,
+                        authHeader = authHeader,
+                        onClick = { selectedSeries = folder.series },
+                    )
                 }
             }
 
@@ -117,6 +124,7 @@ fun DownloadsScreen(
                 items(currentFolder.items, key = { it.mediaId }) { item ->
                     DownloadGridItem(
                         item = item,
+                        authHeader = authHeader,
                         onClick = { onOpen(item.mediaId, item.format) },
                         onLongClick = { deleteTarget = item },
                     )
@@ -162,8 +170,47 @@ private fun EmptyState(padding: PaddingValues) {
     }
 }
 
+/**
+ * Renders a cover: a placeholder icon with the real cover layered on top. The cover
+ * prefers a local downloaded file and otherwise loads from the server endpoint (with
+ * auth). While loading or on failure, the placeholder shows through.
+ */
 @Composable
-private fun FolderGridItem(folder: DownloadFolder, onClick: () -> Unit) {
+private fun BoxScope.Cover(
+    coverPath: String?,
+    coverUrl: String?,
+    authHeader: String,
+    placeholder: ImageVector,
+    placeholderSize: Int,
+    contentDescription: String,
+) {
+    Icon(
+        placeholder,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(placeholderSize.dp).align(Alignment.Center),
+    )
+    val data: Any? = coverPath?.let { File(it) } ?: coverUrl
+    if (data != null) {
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(data)
+                .addHeader("Authorization", authHeader) // ignored when data is a local File
+                .crossfade(true)
+                .build(),
+            contentDescription = contentDescription,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.matchParentSize(),
+        )
+    }
+}
+
+@Composable
+private fun FolderGridItem(
+    folder: DownloadFolder,
+    authHeader: String,
+    onClick: () -> Unit,
+) {
     Column(modifier = Modifier.clickable(onClick = onClick)) {
         Box(
             modifier = Modifier
@@ -171,26 +218,15 @@ private fun FolderGridItem(folder: DownloadFolder, onClick: () -> Unit) {
                 .aspectRatio(0.7f)
                 .clip(RoundedCornerShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
         ) {
-            if (folder.coverPath != null) {
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(File(folder.coverPath))
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = folder.series,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.matchParentSize(),
-                )
-            } else {
-                Icon(
-                    Icons.Default.Folder,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(40.dp),
-                )
-            }
+            Cover(
+                coverPath = folder.coverPath,
+                coverUrl = folder.coverUrl,
+                authHeader = authHeader,
+                placeholder = Icons.Default.Folder,
+                placeholderSize = 40,
+                contentDescription = folder.series,
+            )
             Text(
                 text = folder.count.toString(),
                 style = MaterialTheme.typography.labelSmall,
@@ -223,6 +259,7 @@ private fun FolderGridItem(folder: DownloadFolder, onClick: () -> Unit) {
 @Composable
 private fun DownloadGridItem(
     item: DownloadItem,
+    authHeader: String,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
@@ -235,26 +272,15 @@ private fun DownloadGridItem(
                 .aspectRatio(0.7f)
                 .clip(RoundedCornerShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
         ) {
-            if (item.coverPath != null) {
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(File(item.coverPath))
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = item.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.matchParentSize(),
-                )
-            } else {
-                Icon(
-                    if (item.isImageBased) Icons.Default.Book else Icons.AutoMirrored.Filled.MenuBook,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(36.dp),
-                )
-            }
+            Cover(
+                coverPath = item.coverPath,
+                coverUrl = item.coverUrl,
+                authHeader = authHeader,
+                placeholder = if (item.isImageBased) Icons.Default.Book else Icons.AutoMirrored.Filled.MenuBook,
+                placeholderSize = 36,
+                contentDescription = item.title,
+            )
             Text(
                 text = item.format.uppercase(),
                 style = MaterialTheme.typography.labelSmall,

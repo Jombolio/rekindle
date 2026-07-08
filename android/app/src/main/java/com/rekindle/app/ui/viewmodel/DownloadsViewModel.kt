@@ -3,11 +3,13 @@ package com.rekindle.app.ui.viewmodel
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.data.repository.DownloadRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -17,7 +19,10 @@ data class DownloadItem(
     val mediaId: String,
     val title: String,
     val format: String,
+    /** Locally-downloaded cover (shows offline); null for items downloaded before covers were cached. */
     val coverPath: String?,
+    /** Server cover endpoint, loaded via Coil when there is no local cover. */
+    val coverUrl: String?,
     val series: String,
 ) {
     val isImageBased: Boolean get() = format.lowercase() in listOf("cbz", "cbr", "pdf")
@@ -29,30 +34,40 @@ data class DownloadFolder(
     val items: List<DownloadItem>,
 ) {
     val count: Int get() = items.size
-    /** First available local cover among the chapters, used as the folder thumbnail. */
+    /** First available local cover among the chapters (offline thumbnail). */
     val coverPath: String? get() = items.firstNotNullOfOrNull { it.coverPath }
+    /** Server cover of a representative chapter, used when no local cover exists. */
+    val coverUrl: String? get() = items.firstOrNull { it.coverUrl != null }?.coverUrl
 }
 
 /**
  * Backs the offline Downloads screen. Reads the local `downloads` table directly
- * (no server call) and groups chapters into series folders so downloads are
- * browsable and openable with no network.
+ * (no server call) and groups chapters into series folders. Covers prefer the
+ * locally-downloaded file and otherwise load from the server cover endpoint via Coil.
  */
 @HiltViewModel
 class DownloadsViewModel @Inject constructor(
     private val downloadRepo: DownloadRepository,
+    private val prefs: PrefsStore,
 ) : ViewModel() {
 
+    /** Bearer header for loading server covers of downloaded items (active source). */
+    val authHeader: StateFlow<String> = prefs.token
+        .map { "Bearer ${it ?: ""}" }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
     /** Downloads grouped into series folders (derived from each item's storage path). */
-    val folders: StateFlow<List<DownloadFolder>> = downloadRepo.completedDownloads()
-        .map { list ->
-            list.map {
+    val folders: StateFlow<List<DownloadFolder>> =
+        combine(downloadRepo.completedDownloads(), prefs.serverUrl) { list, baseUrl ->
+            val base = baseUrl.trimEnd('/')
+            list.map { e ->
                 DownloadItem(
-                    mediaId = it.mediaId,
-                    title = it.title,
-                    format = it.format,
-                    coverPath = downloadRepo.localCoverPath(it.mediaId),
-                    series = seriesOf(it.localPath),
+                    mediaId = e.mediaId,
+                    title = e.title,
+                    format = e.format,
+                    coverPath = downloadRepo.localCoverPath(e.mediaId),
+                    coverUrl = if (base.isBlank()) null else "$base/api/media/${e.mediaId}/cover",
+                    series = seriesOf(e.localPath),
                 )
             }
                 .groupBy { it.series }
@@ -61,9 +76,9 @@ class DownloadsViewModel @Inject constructor(
                 }
                 .sortedWith(compareBy(NaturalComparator) { it.series })
         }
-        // localCoverPath / path parsing do blocking work — keep the mapping off the main thread.
-        .flowOn(Dispatchers.IO)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+            // localCoverPath / path parsing do blocking work — keep the mapping off the main thread.
+            .flowOn(Dispatchers.IO)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun delete(mediaId: String) = downloadRepo.delete(mediaId)
 
