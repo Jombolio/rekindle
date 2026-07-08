@@ -4,6 +4,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- TODO: remove once SQLitePCLRaw ships a patched e_sqlite3. NU1903 (CVE-2025-6965)
+         is a vuln in the SQLite bundled by Microsoft.Data.Sqlite's transitive
+         SQLitePCLRaw.lib.e_sqlite3, which has NO patched release yet
+         (https://github.com/advisories/GHSA-2m69-gcr7-jv3q). Keep it visible as a
+         warning but don't fail the build until an upgrade path exists. -->
+    <WarningsNotAsErrors>NU1903</WarningsNotAsErrors>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
 

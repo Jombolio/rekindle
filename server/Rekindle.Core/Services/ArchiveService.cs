@@ -157,7 +157,7 @@ public class ArchiveService
         using var archive = ArchiveFactory.Open(filePath);
         var candidates = archive.Entries
             .Where(e => !e.IsDirectory && IsImageEntry(e.Key))
-            .OrderBy(e => e.Key, NaturalStringComparer.Instance)
+            .OrderBy(e => e.Key ?? string.Empty, NaturalStringComparer.Instance)
             .ToList();
 
         // Check for a custom cover entry inside the archive before falling
@@ -383,7 +383,7 @@ public class ArchiveService
         using var archive = ArchiveFactory.Open(archivePath);
         var imageEntries = archive.Entries
             .Where(e => !e.IsDirectory && IsImageEntry(e.Key))
-            .OrderBy(e => e.Key, NaturalStringComparer.Instance)
+            .OrderBy(e => e.Key ?? string.Empty, NaturalStringComparer.Instance)
             .ToList();
 
         var pages = new List<string>(imageEntries.Count);
