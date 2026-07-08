@@ -288,12 +288,35 @@ class DownloadManager @Inject constructor(
         downloadDao.delete(mediaId)
     }
 
+    /** Purges ALL downloads: raw files, extracted pages, covers, and DB rows. */
+    suspend fun deleteAll() = withContext(Dispatchers.IO) {
+        for (entity in downloadDao.getAllDownloads()) {
+            entity.localPath?.let { deleteByPath(it) }
+            extractedDir(entity.mediaId).deleteRecursively()
+            File(coversDir(), "${entity.mediaId}.jpg").delete()
+        }
+        downloadDao.deleteAll()
+        folderDownloadDao.deleteAll()
+    }
+
     /** A cold [Flow] of all completed downloads, for the offline Downloads screen. */
     fun observeCompletedDownloads(): Flow<List<DownloadEntity>> = downloadDao.observeCompleted()
 
     /** Absolute path of the locally-cached cover for [mediaId], or null if absent. */
     fun localCoverPath(mediaId: String): String? =
         File(coversDir(), "$mediaId.jpg").takeIf { it.exists() }?.absolutePath
+
+    /**
+     * Backfills a missing cover from the server so it's available offline. No-op if the
+     * cover is already cached. Returns true when a cover is present afterwards. Best-effort
+     * — network failures are swallowed (the item just keeps its placeholder/URL fallback).
+     */
+    suspend fun ensureCoverDownloaded(mediaId: String, serverBaseUrl: String, authHeader: String): Boolean =
+        withContext(Dispatchers.IO) {
+            if (localCoverPath(mediaId) != null) return@withContext false
+            runCatching { downloadCover(mediaId, serverBaseUrl, authHeader) }
+            localCoverPath(mediaId) != null
+        }
 
     suspend fun cancelIncomplete(mediaId: String) = withContext(Dispatchers.IO) {
         val entity = downloadDao.getByMediaId(mediaId) ?: return@withContext

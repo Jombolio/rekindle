@@ -9,6 +9,8 @@ import com.rekindle.app.domain.model.Library
 import com.rekindle.app.domain.model.Media
 import com.rekindle.app.domain.model.PagedResponse
 import com.rekindle.app.domain.model.ReadingProgress
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,6 +32,26 @@ class MediaRepository @Inject constructor(
 
     suspend fun getChapters(folderId: String): List<Media> =
         api.getChapters(folderId).map { it.toDomain() }
+
+    /**
+     * Recursively collects all leaf (non-folder) archives under [folderId], descending
+     * into subfolders in parallel. Populates [folderArchiveIds] with each visited folder's
+     * archive ids so callers can persist per-folder download completion.
+     */
+    suspend fun collectLeafArchives(
+        folderId: String,
+        folderArchiveIds: MutableMap<String, Set<String>>,
+    ): List<Media> = coroutineScope {
+        val items = getChapters(folderId)
+        val directArchives = items.filter { !it.isFolder }
+        val subResults = items.filter { it.isFolder }
+            .map { async { collectLeafArchives(it.id, folderArchiveIds) } }
+            .map { it.await() }
+            .flatten()
+        val all = directArchives + subResults
+        folderArchiveIds[folderId] = all.map { it.id }.toSet()
+        all
+    }
 
     suspend fun getSiblings(mediaId: String): List<Media> {
         val media = runCatching { api.getMediaById(mediaId) }.getOrNull() ?: return emptyList()
