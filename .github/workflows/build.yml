@@ -35,7 +35,11 @@ jobs:
 
   build-windows:
     name: Client — Windows
-    runs-on: windows-latest
+    # Pinned to VS 2022 (v17). `windows-latest` moved to a Visual Studio 18
+    # (v180) image that the locked native_toolchain_c (0.17.6, pulled in via
+    # sqlite3's native-assets build hook) can't compile against, breaking
+    # `flutter build windows`. Revisit when that dep chain supports newer VS.
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
 
@@ -47,10 +51,13 @@ jobs:
         working-directory: desktop
         run: flutter build windows --release --obfuscate --split-debug-info=symbols/
 
+      - name: Build installer
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" desktop\windows\installer.iss'
+
       - uses: actions/upload-artifact@v4
         with:
-          name: RekindleSetup
-          path: desktop/build/windows/x64/runner/Release/
+          name: Rekindle-windows-x64Setup
+          path: desktop/windows/output/Rekindle-windows-x64Setup.exe
 
   build-android:
     name: Client — Android
