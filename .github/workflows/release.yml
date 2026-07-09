@@ -45,7 +45,11 @@ jobs:
 
   release-windows:
     name: Client — Windows
-    runs-on: windows-latest
+    # Pinned to VS 2022 (v17). `windows-latest` moved to a Visual Studio 18
+    # (v180) image that the locked native_toolchain_c (0.17.6, pulled in via
+    # sqlite3's native-assets build hook) can't compile against, breaking
+    # `flutter build windows`. Revisit when that dep chain supports newer VS.
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
 
