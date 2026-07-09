@@ -45,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -406,7 +407,11 @@ private fun PagedModeContent(
 ) {
     val pagerState = rememberPagerState(pageCount = { slideCount })
     val scope = rememberCoroutineScope()
-    var isZoomed by remember { mutableStateOf(false) }
+    // Single hoisted zoom state for the *current* slide. Sharing one instance lets
+    // the pager-level double-tap reset it, and keeps the pinch/pan transform reads
+    // in the draw phase (see ZoomablePageImage) instead of triggering recomposition.
+    val zoom = remember { ZoomState() }
+    val isZoomed by remember { derivedStateOf { zoom.scale.floatValue > 1f } }
 
     // Advance one slide forward, or navigate to next chapter at the last slide.
     fun goForward() = scope.launch {
@@ -433,8 +438,10 @@ private fun PagedModeContent(
         }
     }
 
-    // Sync pager → ViewModel current page
+    // Sync pager → ViewModel current page. Also drop any zoom from the page we left
+    // so every slide starts at the fit-to-screen view.
     LaunchedEffect(pagerState.currentPage) {
+        zoom.reset()
         if (state.totalPages > 0) {
             val pageIndex = slides.getOrNull(pagerState.currentPage)?.first() ?: pagerState.currentPage
             onPageChange(pageIndex)
@@ -458,50 +465,66 @@ private fun PagedModeContent(
         modifier = Modifier
             .fillMaxSize()
             .pointerInput(state.isRtl) {
-                detectTapGestures { offset ->
-                    val width = size.width.toFloat()
-                    when {
-                        // Left third: prev in LTR, next in RTL
-                        offset.x < width / 3f -> if (state.isRtl) goForward() else goBack()
-                        // Right third: next in LTR, prev in RTL
-                        offset.x > width * 2f / 3f -> if (state.isRtl) goBack() else goForward()
-                        // Centre: toggle HUD
-                        else -> onTap()
-                    }
-                }
+                detectTapGestures(
+                    // Double-tap toggles between the fit view and a fixed zoom, and is
+                    // the reliable way back to the original view once zoomed in.
+                    onDoubleTap = {
+                        if (zoom.scale.floatValue > 1f) {
+                            zoom.reset()
+                        } else {
+                            zoom.scale.floatValue = 2.5f
+                        }
+                    },
+                    onTap = { offset ->
+                        val width = size.width.toFloat()
+                        when {
+                            // While zoomed, a tap only toggles the HUD — never flips
+                            // pages, so panning isn't interrupted by a stray page turn.
+                            zoom.scale.floatValue > 1f -> onTap()
+                            // Left third: prev in LTR, next in RTL
+                            offset.x < width / 3f -> if (state.isRtl) goForward() else goBack()
+                            // Right third: next in LTR, prev in RTL
+                            offset.x > width * 2f / 3f -> if (state.isRtl) goBack() else goForward()
+                            // Centre: toggle HUD
+                            else -> onTap()
+                        }
+                    },
+                )
             },
         beyondViewportPageCount = 4,
     ) { viewIndex ->
         val slide = slides.getOrNull(viewIndex) ?: return@HorizontalPager
+        // Only the settled slide owns the shared zoom; neighbours (kept alive by
+        // beyondViewportPageCount) render at the fit view so a leftover zoom never
+        // bleeds onto the next page mid-swipe.
+        val isCurrent = viewIndex == pagerState.currentPage
 
         if (slide.size == 1) {
             ZoomablePageImage(
                 model = imageModelFn(slide[0]),
                 modifier = Modifier.fillMaxSize(),
-                onZoomChanged = { isZoomed = it },
+                zoom = zoom,
+                applyTransform = isCurrent,
             )
         } else {
             val left = if (state.isRtl) slide[1] else slide[0]
             val right = if (state.isRtl) slide[0] else slide[1]
-            // Single shared zoom state so pinching/panning either page moves both.
             // graphicsLayer is on the Row (spread centre = W/2) so both pages zoom
             // around the same origin instead of each zooming around their own centre.
-            val spreadZoom = remember(slide) { SpreadZoomState() }
             Row(
                 Modifier.fillMaxSize().graphicsLayer {
-                    val s = spreadZoom.scale.floatValue
+                    val s = if (isCurrent) zoom.scale.floatValue else 1f
                     scaleX = s; scaleY = s
-                    translationX = spreadZoom.offsetX.floatValue
-                    translationY = spreadZoom.offsetY.floatValue
+                    translationX = if (isCurrent) zoom.offsetX.floatValue else 0f
+                    translationY = if (isCurrent) zoom.offsetY.floatValue else 0f
                 }
             ) {
                 ZoomablePageImage(
                     model = imageModelFn(left),
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                     alignment = androidx.compose.ui.Alignment.CenterEnd,
-                    zoom = spreadZoom,
+                    zoom = zoom,
                     applyTransform = false,
-                    onZoomChanged = { isZoomed = it },
                 )
                 if (state.spineGap > 0f) {
                     Box(Modifier.fillMaxHeight().padding(horizontal = (state.spineGap / 2).dp))
@@ -510,9 +533,8 @@ private fun PagedModeContent(
                     model = imageModelFn(right),
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                     alignment = androidx.compose.ui.Alignment.CenterStart,
-                    zoom = spreadZoom,
+                    zoom = zoom,
                     applyTransform = false,
-                    onZoomChanged = { isZoomed = it },
                 )
             }
         }
@@ -520,12 +542,20 @@ private fun PagedModeContent(
 
 }
 
-// ── Shared zoom state (used to synchronise double-page spreads) ───────────────
+// ── Shared zoom state ─────────────────────────────────────────────────────────
+// One instance is hoisted per pager and reused for whichever slide is current;
+// double-page spreads read it from the Row so both halves stay synchronised.
 
-private class SpreadZoomState {
+private class ZoomState {
     val scale   = mutableFloatStateOf(1f)
     val offsetX = mutableFloatStateOf(0f)
     val offsetY = mutableFloatStateOf(0f)
+
+    fun reset() {
+        scale.floatValue = 1f
+        offsetX.floatValue = 0f
+        offsetY.floatValue = 0f
+    }
 }
 
 // ── Zoomable image ────────────────────────────────────────────────────────────
@@ -535,22 +565,17 @@ private fun ZoomablePageImage(
     model: Any,
     modifier: Modifier = Modifier,
     alignment: androidx.compose.ui.Alignment = androidx.compose.ui.Alignment.Center,
-    zoom: SpreadZoomState = remember { SpreadZoomState() },
+    zoom: ZoomState = remember { ZoomState() },
     // Set false for double-page spreads: the parent Row owns the graphicsLayer
     // so both pages zoom/pan around the spread centre, not each page's own centre.
+    // Also gates offset clamping, which only makes sense against a full-viewport page.
     applyTransform: Boolean = true,
-    onZoomChanged: (Boolean) -> Unit = {},
 ) {
-    // Delegate to the shared (or per-image) state so double-page spreads
-    // stay synchronised while single pages continue to work unchanged.
+    // Delegate to the shared state so double-page spreads stay synchronised while
+    // single pages continue to work unchanged.
     var scale   by zoom.scale
     var offsetX by zoom.offsetX
     var offsetY by zoom.offsetY
-
-    LaunchedEffect(model) {
-        scale = 1f; offsetX = 0f; offsetY = 0f
-        onZoomChanged(false)
-    }
 
     SubcomposeAsyncImage(
         model = model,
@@ -586,18 +611,36 @@ private fun ZoomablePageImage(
                                     val newScale = (scaleAtPinchStart * span / initialSpan)
                                         .coerceIn(1f, 5f)
                                     scale = newScale
-                                    onZoomChanged(newScale > 1f)
-                                    if (newScale <= 1f) { offsetX = 0f; offsetY = 0f }
+                                    if (newScale <= 1f) {
+                                        offsetX = 0f; offsetY = 0f
+                                    } else if (applyTransform) {
+                                        // Keep the panned image within its own bounds as it shrinks.
+                                        val mx = size.width * (newScale - 1f) / 2f
+                                        val my = size.height * (newScale - 1f) / 2f
+                                        offsetX = offsetX.coerceIn(-mx, mx)
+                                        offsetY = offsetY.coerceIn(-my, my)
+                                    }
                                 }
                                 pressed.forEach { it.consume() }
                                 pointerCount = pressed.size
                             }
                             pressed.size == 1 && scale > 1f -> {
-                                // Single-touch pan while zoomed
+                                // Single-touch pan while zoomed. Clamp to the image
+                                // bounds so it can't drift off into empty space.
                                 val delta = pressed[0].positionChange()
-                                offsetX += delta.x
-                                offsetY += delta.y
-                                pressed[0].consume()
+                                if (applyTransform) {
+                                    val mx = size.width * (scale - 1f) / 2f
+                                    val my = size.height * (scale - 1f) / 2f
+                                    offsetX = (offsetX + delta.x).coerceIn(-mx, mx)
+                                    offsetY = (offsetY + delta.y).coerceIn(-my, my)
+                                } else {
+                                    offsetX += delta.x
+                                    offsetY += delta.y
+                                }
+                                // Only consume once the finger actually moves. A stationary
+                                // tap stays unconsumed so the pager's tap/double-tap detector
+                                // still fires — that's how double-tap resets the zoom.
+                                if (delta.x != 0f || delta.y != 0f) pressed[0].consume()
                                 pointerCount = 1
                             }
                             else -> {
@@ -608,12 +651,16 @@ private fun ZoomablePageImage(
                     }
                 }
             }
-            .then(
-                if (applyTransform)
-                    Modifier.graphicsLayer(scaleX = scale, scaleY = scale, translationX = offsetX, translationY = offsetY)
-                else
-                    Modifier
-            ),
+            // Lambda form: scale/offset are read in the draw phase, so pinch and pan
+            // update the layer without recomposing this (expensive) SubcomposeAsyncImage
+            // every frame. The eager graphicsLayer(scaleX = …) form recomposed on every
+            // gesture event, which made panning lag worse the longer it continued.
+            .graphicsLayer {
+                if (applyTransform) {
+                    scaleX = scale; scaleY = scale
+                    translationX = offsetX; translationY = offsetY
+                }
+            },
     ) {
         when (painter.state) {
             is AsyncImagePainter.State.Loading, is AsyncImagePainter.State.Empty ->
