@@ -6,9 +6,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 
+import '../core/db/local_db_provider.dart';
+import '../core/download/download_manager.dart';
 import '../core/epub/epub_parser.dart';
-import '../providers/download_provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/reader_provider.dart';
+import '../providers/settings_provider.dart';
 
 enum _Theme { light, dark, sepia }
 
@@ -32,6 +35,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   double _fontSize = 16;
   _Theme _theme = _Theme.light;
   bool _showControls = true;
+  bool _notDownloaded = false;
   final FocusNode _focusNode = FocusNode();
 
   @override
@@ -50,9 +54,17 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   }
 
   Future<void> _loadEpub() async {
-    final downloadState = ref.read(downloadProvider(widget.mediaId));
-    final localPath = downloadState.localPath;
-    if (localPath == null) return;
+    // Resolve the downloaded file from the local DB (not the in-memory
+    // download provider, which may still be restoring on a cold offline start).
+    final client = ref.read(apiClientProvider);
+    final db = ref.read(localDbProvider);
+    final dir = await resolveDownloadDir();
+    final localPath = await DownloadManager(client, db, downloadBaseDir: dir)
+        .localPath(widget.mediaId);
+    if (localPath == null) {
+      if (mounted) setState(() => _notDownloaded = true);
+      return;
+    }
 
     final bytes = await File(localPath).readAsBytes();
     if (!mounted) return;
@@ -126,7 +138,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
       child: Scaffold(
         backgroundColor: _bgColor,
         body: book == null
-            ? const Center(child: CircularProgressIndicator())
+            ? (_notDownloaded
+                ? _OfflineUnavailable(fgColor: _fgColor)
+                : const Center(child: CircularProgressIndicator()))
             : Stack(
                 children: [
                   GestureDetector(
@@ -247,6 +261,46 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                   ],
                 ],
               ),
+      ),
+    );
+  }
+}
+
+/// Shown when an EPUB is opened but hasn't been downloaded and the server is
+/// unreachable — mirrors the comic reader's offline message.
+class _OfflineUnavailable extends StatelessWidget {
+  final Color fgColor;
+  const _OfflineUnavailable({required this.fgColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off, size: 64, color: fgColor.withValues(alpha: 0.5)),
+            const SizedBox(height: 16),
+            Text(
+              "This book isn't available offline yet.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: fgColor.withValues(alpha: 0.8)),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Connect to your server to download it for offline reading.',
+              textAlign: TextAlign.center,
+              style:
+                  TextStyle(color: fgColor.withValues(alpha: 0.5), fontSize: 12),
+            ),
+            const SizedBox(height: 20),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Back'),
+            ),
+          ],
+        ),
       ),
     );
   }

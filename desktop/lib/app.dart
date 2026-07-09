@@ -10,6 +10,7 @@ import 'providers/sources_provider.dart';
 import 'screens/add_source_screen.dart';
 import 'screens/admin_panel_screen.dart';
 import 'screens/chapter_index_screen.dart';
+import 'screens/downloads_screen.dart';
 import 'screens/epub_reader_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/media_grid_screen.dart';
@@ -86,6 +87,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/settings',
         builder: (_, __) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: '/downloads',
+        builder: (_, __) => const DownloadsScreen(),
       ),
       GoRoute(
         path: '/series/:id',

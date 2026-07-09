@@ -13,6 +13,21 @@ import 'download_state.dart';
 
 typedef ProgressCallback = void Function(DownloadState state);
 
+/// A completed download row, used to enumerate the local library offline.
+class DownloadRecord {
+  final String mediaId;
+  final String title;
+  final String format;
+  final String? localPath;
+
+  const DownloadRecord({
+    required this.mediaId,
+    required this.title,
+    required this.format,
+    this.localPath,
+  });
+}
+
 class DownloadManager {
   final ApiClient _client;
   final Database _db;
@@ -80,6 +95,10 @@ class DownloadManager {
       progress: 1.0,
       localPath: localPath,
     ));
+
+    // Best-effort persistent cover fetch so the Downloads screen shows a
+    // thumbnail while offline. Never blocks or fails the download.
+    await downloadCover(mediaId);
 
     return localPath;
   }
@@ -151,6 +170,56 @@ class DownloadManager {
         .toList();
   }
 
+  /// Ensures a downloaded ZIP-container comic (CBZ) is extracted to local page
+  /// files, extracting on demand if needed, and returns the page paths.
+  ///
+  /// Returns null when the item is not a completed download, or is a format we
+  /// cannot decode on-device offline (CBR/PDF need a decoder we don't bundle;
+  /// EPUB is rendered by its own reader). This is the offline-first source of
+  /// truth for the reader's page count.
+  Future<List<String>?> ensureExtractedPages(String mediaId) async {
+    final rows = await _db.query(
+      'downloads',
+      columns: ['local_path', 'status', 'format'],
+      where: 'media_id = ?',
+      whereArgs: [mediaId],
+    );
+    if (rows.isEmpty || rows.first['status'] != 'complete') return null;
+
+    final fmt = (rows.first['format'] as String? ?? '').toLowerCase();
+    if (fmt != 'cbz' && fmt != 'zip') return null;
+
+    final existing = await loadExtractedPages(mediaId);
+    if (existing != null) return existing;
+
+    final path = rows.first['local_path'] as String?;
+    if (path == null) return null;
+    try {
+      await extractPages(mediaId: mediaId, localPath: path, onProgress: (_) {});
+    } catch (_) {
+      return null;
+    }
+    return loadExtractedPages(mediaId);
+  }
+
+  /// Lists every completed download for offline browsing (local DB only).
+  Future<List<DownloadRecord>> listCompleted() async {
+    final rows = await _db.query(
+      'downloads',
+      where: 'status = ?',
+      whereArgs: [DownloadStatus.complete.name],
+      orderBy: 'title COLLATE NOCASE',
+    );
+    return rows
+        .map((r) => DownloadRecord(
+              mediaId: r['media_id'] as String,
+              title: r['title'] as String,
+              format: r['format'] as String,
+              localPath: r['local_path'] as String?,
+            ))
+        .toList();
+  }
+
   /// Returns the local file path if this media has been downloaded.
   Future<String?> localPath(String mediaId) async {
     final rows = await _db.query(
@@ -211,7 +280,20 @@ class DownloadManager {
     final extractDir = await _extractedDir(mediaId);
     if (extractDir.existsSync()) extractDir.deleteSync(recursive: true);
 
+    final cover = File(await _coverFilePath(mediaId));
+    if (cover.existsSync()) cover.deleteSync();
+
     await _db.delete('downloads', where: 'media_id = ?', whereArgs: [mediaId]);
+  }
+
+  /// Removes every download from this device: files, extracted pages, covers,
+  /// and all DB rows (including folder-download aggregates). Used by purge-all.
+  Future<void> deleteAll() async {
+    final rows = await _db.query('downloads', columns: ['media_id']);
+    for (final r in rows) {
+      await delete(r['media_id'] as String);
+    }
+    await _db.delete('folder_downloads');
   }
 
   // ── Folder-level persistence ───────────────────────────────────────────
@@ -299,10 +381,44 @@ class DownloadManager {
   }
 
   Future<Directory> _extractedDir(String mediaId) async {
-    final base = await getApplicationCacheDirectory();
+    // Persistent (support dir, NOT cache) so decoded pages survive OS cache
+    // eviction and stay readable offline. Removed only by delete()/deleteAll().
+    final base = await getApplicationSupportDirectory();
     final dir = Directory('${base.path}/rekindle/extracted/$mediaId');
     await dir.create(recursive: true);
     return dir;
+  }
+
+  // ── Covers ─────────────────────────────────────────────────────────────
+
+  Future<Directory> _coversDir() async {
+    final base = await getApplicationSupportDirectory();
+    final dir = Directory('${base.path}/rekindle/covers');
+    await dir.create(recursive: true);
+    return dir;
+  }
+
+  Future<String> _coverFilePath(String mediaId) async =>
+      '${(await _coversDir()).path}/$mediaId.jpg';
+
+  /// Returns the persistent local cover path if one has been downloaded.
+  Future<String?> localCoverPath(String mediaId) async {
+    final path = await _coverFilePath(mediaId);
+    return File(path).existsSync() ? path : null;
+  }
+
+  /// Best-effort persistent cover download. Skips if already present; swallows
+  /// all errors (offline / no cover) so callers can await it unconditionally.
+  Future<void> downloadCover(String mediaId) async {
+    try {
+      final dest = await _coverFilePath(mediaId);
+      if (File(dest).existsSync()) return;
+      final tmp = '$dest.tmp';
+      await _client.dio.download('api/media/$mediaId/cover', tmp);
+      await File(tmp).rename(dest);
+    } catch (_) {
+      // Offline or the server has no cover — leave it to the network fallback.
+    }
   }
 
   static String _ext(String filename) {

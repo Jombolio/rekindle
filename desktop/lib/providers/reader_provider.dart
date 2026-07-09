@@ -6,10 +6,13 @@ import 'package:sqflite/sqflite.dart';
 import '../core/api/libraries_api.dart';
 import '../core/api/media_api.dart';
 import '../core/db/local_db_provider.dart';
+import '../core/download/download_manager.dart';
 import '../core/models/reading_progress.dart';
 import '../core/storage/prefs.dart';
 import 'auth_provider.dart';
 import 'connectivity_provider.dart';
+import 'download_provider.dart';
+import 'settings_provider.dart';
 
 enum ReadingDirection { ltr, rtl }
 
@@ -23,6 +26,11 @@ class ReaderState {
   final ReadingProgress? savedProgress;
   final List<bool> spreads;
 
+  /// True when no pages could be resolved locally AND the server was
+  /// unreachable — the reader shows an explicit offline message instead of an
+  /// endless loading spinner.
+  final bool pagesUnavailable;
+
   const ReaderState({
     this.currentPage = 0,
     this.totalPages = 0,
@@ -32,6 +40,7 @@ class ReaderState {
     this.scrollMode = false,
     this.savedProgress,
     this.spreads = const [],
+    this.pagesUnavailable = false,
   });
 
   ReaderState copyWith({
@@ -43,6 +52,7 @@ class ReaderState {
     bool? scrollMode,
     ReadingProgress? savedProgress,
     List<bool>? spreads,
+    bool? pagesUnavailable,
   }) =>
       ReaderState(
         currentPage: currentPage ?? this.currentPage,
@@ -53,6 +63,7 @@ class ReaderState {
         scrollMode: scrollMode ?? this.scrollMode,
         savedProgress: savedProgress ?? this.savedProgress,
         spreads: spreads ?? this.spreads,
+        pagesUnavailable: pagesUnavailable ?? this.pagesUnavailable,
       );
 }
 
@@ -136,7 +147,25 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
       savedProgress: progress,
     );
 
-    // Fetch page count + spread map — triggers server-side extraction if needed.
+    // Offline-first: seed the page count from the local extracted manifest so a
+    // downloaded comic renders with no server connection. Extraction happens on
+    // demand (idempotent) for CBZ; other formats return null and fall through.
+    try {
+      final downloadDir = await resolveDownloadDir();
+      final manager = DownloadManager(client, db, downloadBaseDir: downloadDir);
+      final localPages = await manager.ensureExtractedPages(mediaId);
+      if (localPages != null && localPages.isNotEmpty) {
+        state = state.copyWith(totalPages: localPages.length);
+        // The reader screen reads page files from this provider — refresh it in
+        // case extraction only just happened.
+        ref.invalidate(extractedPagesProvider(mediaId));
+      }
+    } catch (_) {
+      // No local pages — rely on the server below.
+    }
+
+    // Fetch page count + spread map from the server (augments spreads, triggers
+    // server-side extraction if needed). Overrides the local count when online.
     try {
       final layout = await api.getPageCount(mediaId);
       if (layout.count > 0) {
@@ -146,7 +175,13 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
         );
       }
     } catch (_) {
-      // Offline or error — gallery stays at 0 pages until online
+      // Offline or error — keep whatever the local manifest provided.
+    }
+
+    // Neither local pages nor a reachable server: surface an explicit offline
+    // message instead of an endless loading spinner.
+    if (state.totalPages == 0) {
+      state = state.copyWith(pagesUnavailable: true);
     }
   }
 
