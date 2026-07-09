@@ -71,7 +71,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ github.ref_name }}" desktop/windows/output/RekindleSetup.exe --clobber
+          gh release upload "${{ github.ref_name }}" desktop/windows/output/Rekindle-windows-x64Setup.exe --clobber
           gh release upload "${{ github.ref_name }}" RekindleClient-windows-x64.zip --clobber
 
   release-android:

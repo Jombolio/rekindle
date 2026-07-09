@@ -51,10 +51,13 @@ jobs:
         working-directory: desktop
         run: flutter build windows --release --obfuscate --split-debug-info=symbols/
 
+      - name: Build installer
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" desktop\windows\installer.iss'
+
       - uses: actions/upload-artifact@v4
         with:
-          name: RekindleSetup
-          path: desktop/build/windows/x64/runner/Release/
+          name: Rekindle-windows-x64Setup
+          path: desktop/windows/output/Rekindle-windows-x64Setup.exe
 
   build-android:
     name: Client — Android
