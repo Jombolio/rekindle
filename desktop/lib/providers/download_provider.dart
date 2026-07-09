@@ -100,7 +100,7 @@ final extractedPagesProvider =
   final db = ref.read(localDbProvider);
   final downloadDir = await resolveDownloadDir();
   return DownloadManager(client, db, downloadBaseDir: downloadDir)
-      .loadExtractedPages(mediaId);
+      .ensureExtractedPages(mediaId);
 });
 
 // ---------------------------------------------------------------------------

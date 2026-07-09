@@ -519,18 +519,47 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                             extractedPages, client, isRtl, slides, pageGap),
               ),
 
-              // ── Loading indicator (unzoomed) ───────────────────────────
+              // ── Loading / offline indicator (unzoomed) ─────────────────
               if (totalPages == 0)
-                const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(color: Colors.white54),
-                      SizedBox(height: 16),
-                      Text('Loading pages…',
-                          style: TextStyle(color: Colors.white54)),
-                    ],
-                  ),
+                Center(
+                  child: readerState.pagesUnavailable
+                      ? Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.cloud_off,
+                                  color: Colors.white54, size: 64),
+                              const SizedBox(height: 16),
+                              const Text(
+                                "This item isn't available offline yet.",
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.white70),
+                              ),
+                              const SizedBox(height: 6),
+                              const Text(
+                                'Connect to your server to download or stream it.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    color: Colors.white38, fontSize: 12),
+                              ),
+                              const SizedBox(height: 20),
+                              TextButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                child: const Text('Back'),
+                              ),
+                            ],
+                          ),
+                        )
+                      : const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(color: Colors.white54),
+                            SizedBox(height: 16),
+                            Text('Loading pages…',
+                                style: TextStyle(color: Colors.white54)),
+                          ],
+                        ),
                 ),
 
               // ── Controls overlay (unzoomed) ────────────────────────────

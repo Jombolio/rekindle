@@ -26,6 +26,11 @@ class LibraryScreen extends ConsumerWidget {
         title: const Text('Rekindle'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.download_done_outlined),
+            tooltip: 'Downloads (offline)',
+            onPressed: () => context.push('/downloads'),
+          ),
+          IconButton(
             icon: const Icon(Icons.add_circle_outline),
             tooltip: 'Add Server',
             onPressed: () => context.push('/source/add'),
