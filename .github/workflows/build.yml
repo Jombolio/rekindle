@@ -98,6 +98,22 @@ jobs:
           name: Rekindle-android
           path: android/app/build/outputs/apk/release/app-release.apk
 
+  test-server:
+    name: Server — Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      # Runs unit + integration tests. The publish jobs don't build the test
+      # project, so without this step the suite is never compiled or executed.
+      - name: Test
+        working-directory: server
+        run: dotnet test
+
   build-server-linux:
     name: Server — Linux
     runs-on: ubuntu-latest
