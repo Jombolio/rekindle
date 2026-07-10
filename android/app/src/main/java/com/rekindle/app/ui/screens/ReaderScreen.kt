@@ -198,6 +198,7 @@ fun ReaderScreen(
                     onPrevChapter = ::tryPrevChapter,
                     onNextChapter = ::tryNextChapter,
                     onPageChange = { vm.onPageChange(it) },
+                    onSeekClear = { vm.clearSeek() },
                 )
             } else {
                 PagedModeContent(
@@ -335,6 +336,7 @@ private fun ScrollModeContent(
     onPrevChapter: () -> Unit,
     onNextChapter: () -> Unit,
     onPageChange: (Int) -> Unit,
+    onSeekClear: () -> Unit,
 ) {
     val listState = rememberLazyListState()
 
@@ -342,6 +344,15 @@ private fun ScrollModeContent(
     LaunchedEffect(state.totalPages, state.initialPage) {
         if (state.totalPages > 0 && state.initialPage > 0) {
             listState.scrollToItem(state.initialPage)
+        }
+    }
+
+    // Consume slider seeks — without this the slider did nothing in scroll mode
+    // and the un-cleared seek fired later when switching to paged mode.
+    LaunchedEffect(state.seekToPage) {
+        if (state.seekToPage >= 0) {
+            listState.scrollToItem(state.seekToPage)
+            onSeekClear()
         }
     }
 
@@ -443,7 +454,9 @@ private fun PagedModeContent(
     LaunchedEffect(pagerState.currentPage) {
         zoom.reset()
         if (state.totalPages > 0) {
-            val pageIndex = slides.getOrNull(pagerState.currentPage)?.first() ?: pagerState.currentPage
+            // Report the LAST page of the slide so finishing a book on a double-
+            // page spread reaches totalPages-1 and marks completion.
+            val pageIndex = slides.getOrNull(pagerState.currentPage)?.last() ?: pagerState.currentPage
             onPageChange(pageIndex)
         }
     }

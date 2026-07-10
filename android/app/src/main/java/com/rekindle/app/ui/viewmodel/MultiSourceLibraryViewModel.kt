@@ -111,19 +111,28 @@ class MultiSourceLibraryViewModel @Inject constructor(
         val source = stateFor(sourceId)?.source ?: return
         viewModelScope.launch {
             updateState(sourceId) { it.copy(scanning = libraryId, scanProgress = null) }
-            runCatching { apiCall(source, "POST", "api/libraries/$libraryId/scan") }
+            // If the scan never started (offline / not permitted), don't sit on a
+            // 5-minute polling spinner — surface the error and stop.
+            val kicked = runCatching { apiCall(source, "POST", "api/libraries/$libraryId/scan") }
+            if (kicked.isFailure) {
+                updateState(sourceId) {
+                    it.copy(scanning = null, scanProgress = null, error = kicked.exceptionOrNull()?.describe())
+                }
+                return@launch
+            }
             val deadline = System.currentTimeMillis() + 5 * 60_000L
             while (System.currentTimeMillis() < deadline) {
                 delay(1_000)
                 val progress = runCatching {
                     withContext(Dispatchers.IO) {
-                        val resp = http.newCall(
+                        http.newCall(
                             Request.Builder()
                                 .url("${source.baseUrl.trimEnd('/')}/api/libraries/$libraryId/scan/progress")
                                 .header("Authorization", "Bearer ${source.token ?: ""}")
                                 .build()
-                        ).execute()
-                        if (resp.isSuccessful) parseScanProgress(resp.body?.string() ?: "{}") else null
+                        ).execute().use { resp ->
+                            if (resp.isSuccessful) parseScanProgress(resp.body?.string() ?: "{}") else null
+                        }
                     }
                 }.getOrNull()
                 updateState(sourceId) { it.copy(scanProgress = progress) }
@@ -173,14 +182,15 @@ class MultiSourceLibraryViewModel @Inject constructor(
             updateState(source.id) { it.copy(loading = true, error = null) }
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val resp = http.newCall(
+                    http.newCall(
                         Request.Builder()
                             .url("${source.baseUrl.trimEnd('/')}/api/libraries")
                             .header("Authorization", "Bearer $token")
                             .build()
-                    ).execute()
-                    if (!resp.isSuccessful) error("HTTP ${resp.code}")
-                    parseLibraries(resp.body?.string() ?: "[]")
+                    ).execute().use { resp ->
+                        if (!resp.isSuccessful) error("HTTP ${resp.code}")
+                        parseLibraries(resp.body?.string() ?: "[]")
+                    }
                 }
             }
                 .onSuccess { libs -> updateState(source.id) { it.copy(libraries = libs, loading = false) } }
@@ -201,8 +211,11 @@ class MultiSourceLibraryViewModel @Inject constructor(
             .method(method, body ?: if (method == "GET" || method == "DELETE") null
                     else "".toRequestBody())
             .build()
-        val resp = http.newCall(req).execute()
-        if (!resp.isSuccessful) error("HTTP ${resp.code}")
+        // .use closes the body — otherwise the connection leaks (this path never
+        // reads the body, so it is never implicitly closed).
+        http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) error("HTTP ${resp.code}")
+        }
     }
 
     private fun stateFor(sourceId: String): SourceLibraryState? =
