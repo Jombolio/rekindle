@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Channels;
@@ -210,6 +211,43 @@ internal sealed class JwtBearerPostConfigure(IOptions<RekindleOptions> rekindleO
             ValidIssuer              = jwt.Issuer,
             ValidAudience            = jwt.Audience,
             IssuerSigningKey         = key
+        };
+
+        // Per-request revocation: re-check the user against the DB on every
+        // authenticated request so a deleted account loses access immediately
+        // and a permission downgrade takes effect now, rather than lingering
+        // until the (up to 30-day) token expires. Costs one indexed PK lookup.
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var principal = context.Principal;
+                var userId = principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                             ?? principal?.FindFirst("sub")?.Value;
+                if (userId is null)
+                {
+                    context.Fail("Token has no subject claim.");
+                    return;
+                }
+
+                var users = context.HttpContext.RequestServices.GetRequiredService<UserRepository>();
+                var user = await users.GetByIdAsync(userId);
+                if (user is null)
+                {
+                    // Account was deleted after the token was issued.
+                    context.Fail("User no longer exists.");
+                    return;
+                }
+
+                // Overwrite the token's permission_level with the current DB value
+                // so MinPermissionLevelHandler authorizes against live data.
+                if (principal!.Identity is ClaimsIdentity identity)
+                {
+                    var stale = identity.FindFirst("permission_level");
+                    if (stale is not null) identity.RemoveClaim(stale);
+                    identity.AddClaim(new Claim("permission_level", user.PermissionLevel.ToString()));
+                }
+            }
         };
     }
 }
