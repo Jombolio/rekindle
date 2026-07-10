@@ -71,8 +71,7 @@ class ReaderState {
 /// round-trip when the caller already knows whether this is a manga library.
 typedef ReaderArgs = (String mediaId, String? libraryType);
 
-class ReaderNotifier
-    extends AutoDisposeFamilyNotifier<ReaderState, ReaderArgs> {
+class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
   Timer? _syncTimer;
 
   @override
@@ -310,12 +309,12 @@ class ReaderNotifier
       );
 }
 
-/// autoDispose so state is rebuilt every time a reader is opened: without it a
-/// non-disposed family entry reuses stale state, so re-opening a finished
-/// chapter lands on the last page instead of restarting at 0, and progress
-/// changed on another device is never re-fetched.
+/// Kept non-autoDispose because the EPUB screen only reads it (autoDispose would
+/// churn it and re-run _init on every access). To still get fresh state per
+/// open — so a finished chapter restarts at 0 and cross-device progress is
+/// re-fetched — the reader screens invalidate this on dispose (see #20).
 final readerProvider =
-    NotifierProvider.autoDispose.family<ReaderNotifier, ReaderState, ReaderArgs>(
+    NotifierProviderFamily<ReaderNotifier, ReaderState, ReaderArgs>(
   ReaderNotifier.new,
 );
 

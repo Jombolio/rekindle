@@ -55,6 +55,8 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   @override
   void dispose() {
     _focusNode.dispose();
+    // Reset reader state so re-opening restarts a finished book at chapter 0.
+    ref.invalidate(readerProvider((widget.mediaId, null)));
     super.dispose();
   }
 

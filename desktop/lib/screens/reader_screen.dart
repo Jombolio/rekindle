@@ -80,6 +80,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     _scrollCtrl.dispose();
     _focusNode.dispose();
     _transformCtrl.dispose();
+    // Reset the reader state so re-opening this media rebuilds fresh: a finished
+    // chapter must restart at 0 and cross-device progress must be re-fetched.
+    ref.invalidate(readerProvider((widget.mediaId, widget.libraryType)));
     super.dispose();
   }
 
