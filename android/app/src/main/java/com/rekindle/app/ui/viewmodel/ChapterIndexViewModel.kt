@@ -102,12 +102,21 @@ class ChapterIndexViewModel @Inject constructor(
             baseUrl = prefs.serverUrl.first()
             runCatching { repo.getChapters(folderId) }
                 .onSuccess { chapters ->
-                    val ids = chapters.filter { !it.isFolder }.map { it.id }
-                    val progress = progressDao.getByMediaIds(ids)
-                        .associateBy { it.mediaId }
-                    _state.update { it.copy(chapters = chapters, readProgress = progress, loading = false) }
+                    _state.update { it.copy(chapters = chapters, loading = false) }
                     chapters.forEach { downloadRepo.restoreIfNeeded(it.id) }
                     downloadRepo.restoreFolderIfNeeded(folderId)
+                    // Observe (not one-shot read) so the badges refresh the moment
+                    // the reader writes progress — a one-shot load in init showed
+                    // stale "In progress · N / M" labels after backing out of a
+                    // chapter, because this ViewModel survives the navigation.
+                    val ids = chapters.filter { !it.isFolder }.map { it.id }
+                    launch {
+                        progressDao.observeByMediaIds(ids).collect { rows ->
+                            _state.update { st ->
+                                st.copy(readProgress = rows.associateBy { it.mediaId })
+                            }
+                        }
+                    }
                 }
                 .onFailure { e -> _state.update { it.copy(loading = false, error = e.message) } }
 

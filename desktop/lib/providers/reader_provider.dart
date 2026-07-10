@@ -31,6 +31,11 @@ class ReaderState {
   /// endless loading spinner.
   final bool pagesUnavailable;
 
+  /// Bumped whenever the provider moves [currentPage] on its own after the
+  /// first render (e.g. server progress arriving newer than the local seed).
+  /// The screen re-runs its restore jump when it sees a new epoch.
+  final int restoreEpoch;
+
   const ReaderState({
     this.currentPage = 0,
     this.totalPages = 0,
@@ -41,6 +46,7 @@ class ReaderState {
     this.savedProgress,
     this.spreads = const [],
     this.pagesUnavailable = false,
+    this.restoreEpoch = 0,
   });
 
   ReaderState copyWith({
@@ -53,6 +59,7 @@ class ReaderState {
     ReadingProgress? savedProgress,
     List<bool>? spreads,
     bool? pagesUnavailable,
+    int? restoreEpoch,
   }) =>
       ReaderState(
         currentPage: currentPage ?? this.currentPage,
@@ -64,6 +71,7 @@ class ReaderState {
         savedProgress: savedProgress ?? this.savedProgress,
         spreads: spreads ?? this.spreads,
         pagesUnavailable: pagesUnavailable ?? this.pagesUnavailable,
+        restoreEpoch: restoreEpoch ?? this.restoreEpoch,
       );
 }
 
@@ -80,6 +88,16 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
   // mere open+close.
   bool _completedOnLoad = false;
   bool _userNavigated = false;
+
+  // True once _init has resolved the saved position. Until then the state still
+  // holds the default page 0, and a sync (dispose-time flush, or a stray
+  // scroll-end during load) would overwrite the stored progress with it.
+  bool _restored = false;
+
+  // Explicit start page from the route (chapter auto-advance). Takes precedence
+  // over saved progress when _init resolves, so the provider's currentPage
+  // matches what the screen actually shows.
+  int? _externalPage;
 
   @override
   ReaderState build(ReaderArgs arg) {
@@ -109,6 +127,18 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
     // versions without boolean-variable promotion.)
     final unsynced = (local != null && !local.$3) ? local : null;
 
+    // Resolve reading modes up front (synchronous prefs reads) so the first
+    // rendered frame is already in the right mode.
+    final sessionMode = ref.read(readerModeProvider);
+    final doublePage =
+        prefs.isDoublePageExplicit(mediaId) ?? sessionMode.doublePage;
+    final scrollMode =
+        prefs.isScrollModeExplicit(mediaId) ?? sessionMode.scrollMode;
+
+    // Keep session mode in sync so the next chapter inherits these settings.
+    ref.read(readerModeProvider.notifier).state =
+        (doublePage: doublePage, scrollMode: scrollMode);
+
     // Offline-first: seed the page count from the local extracted manifest BEFORE
     // any network call, so a downloaded comic renders immediately instead of
     // stalling behind sequential server timeouts. Extraction happens on demand
@@ -118,7 +148,23 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
       final manager = DownloadManager(client, db, downloadBaseDir: downloadDir);
       final localPages = await manager.ensureExtractedPages(mediaId);
       if (localPages != null && localPages.isNotEmpty) {
-        state = state.copyWith(totalPages: localPages.length);
+        // Publish the locally-known resume position in the SAME update that
+        // publishes totalPages: publishing the count alone rendered the cover
+        // at page 0 for the whole getProgress round-trip below, then visibly
+        // snapped to the saved page. Completed items restart at 0.
+        final localResume = (local == null || local.$2) ? 0 : local.$1;
+        state = state.copyWith(
+          totalPages: localPages.length,
+          currentPage: localResume,
+          doublePage: doublePage,
+          scrollMode: scrollMode,
+        );
+        if (local != null) {
+          // The local row is a valid resume decision — the dispose-time flush
+          // can no longer lose anything from here on.
+          _completedOnLoad = local.$2;
+          _restored = true;
+        }
         // The reader screen reads page files from this provider — refresh it in
         // case extraction only just happened.
         ref.invalidate(extractedPagesProvider(mediaId));
@@ -140,9 +186,12 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
     final isCompleted =
         unsynced?.$2 ?? progress?.isCompleted ?? local?.$2 ?? false;
     _completedOnLoad = isCompleted;
-    final savedPage = isCompleted
+    var savedPage = isCompleted
         ? 0
         : (unsynced?.$1 ?? progress?.currentPage ?? local?.$1 ?? 0);
+    // An explicit start page from the route (chapter auto-advance) wins over
+    // saved progress.
+    savedPage = _externalPage ?? savedPage;
 
     // Determine reading direction. If the user has never explicitly toggled
     // direction for this item, fall back to the library type: manga → RTL.
@@ -166,23 +215,27 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
       direction = isManga ? ReadingDirection.rtl : ReadingDirection.ltr;
     }
 
-    final sessionMode = ref.read(readerModeProvider);
-    final doublePage =
-        prefs.isDoublePageExplicit(mediaId) ?? sessionMode.doublePage;
-    final scrollMode =
-        prefs.isScrollModeExplicit(mediaId) ?? sessionMode.scrollMode;
-
-    // Keep session mode in sync so the next chapter inherits these settings.
-    ref.read(readerModeProvider.notifier).state =
-        (doublePage: doublePage, scrollMode: scrollMode);
-
-    state = state.copyWith(
-      currentPage: savedPage,
-      direction: direction,
-      doublePage: doublePage,
-      scrollMode: scrollMode,
-      savedProgress: progress,
-    );
+    if (!_userNavigated && savedPage != state.currentPage) {
+      // The resolved position differs from what is already on screen (first
+      // open on this device, or newer cross-device progress): move, and bump
+      // the epoch so the screen re-runs its restore jump.
+      state = state.copyWith(
+        currentPage: savedPage,
+        direction: direction,
+        doublePage: doublePage,
+        scrollMode: scrollMode,
+        savedProgress: progress,
+        restoreEpoch: state.restoreEpoch + 1,
+      );
+    } else {
+      state = state.copyWith(
+        direction: direction,
+        doublePage: doublePage,
+        scrollMode: scrollMode,
+        savedProgress: progress,
+      );
+    }
+    _restored = true;
 
     // Fetch page count + spread map from the server (augments spreads, triggers
     // server-side extraction if needed). Overrides the local count when online.
@@ -214,6 +267,20 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
     if (clamped != state.currentPage) _userNavigated = true;
     state = state.copyWith(currentPage: clamped);
     _scheduleSync(mediaId);
+  }
+
+  /// Aligns state with a page the screen navigated to programmatically (the
+  /// initialPage route extra used by chapter auto-advance). NOT user
+  /// navigation: no sync is scheduled, and _init's progress restore defers to
+  /// this page instead of yanking the HUD back to the old saved position.
+  void applyExternalPage(int page) {
+    _externalPage = page;
+    final clamped = state.totalPages > 0
+        ? page.clamp(0, (state.totalPages - 1).clamp(0, 999999))
+        : page;
+    if (clamped != state.currentPage) {
+      state = state.copyWith(currentPage: clamped);
+    }
   }
 
   void toggleControls() {
@@ -251,15 +318,23 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
   }
 
   Future<void> _syncNow(String mediaId) async {
+    // _init hasn't resolved the saved position yet — state still holds the
+    // default page 0, and flushing it (e.g. closing the reader while "Loading
+    // pages…" is showing) would overwrite the stored progress. User navigation
+    // is exempt: once the user moved (EPUB chapter flips are usable well before
+    // _init's network calls settle, especially offline), currentPage reflects
+    // what they actually saw and must not be dropped.
+    if (!_restored && !_userNavigated) return;
     // A finished item restarts at 0 — don't overwrite its completion flag
     // unless the user actually navigated this session.
     if (_completedOnLoad && !_userNavigated) return;
     final page = state.currentPage;
     final isCompleted =
         state.totalPages > 0 && page >= state.totalPages - 1;
+    final lastReadAt = DateTime.now().millisecondsSinceEpoch;
 
     final db = ref.read(localDbProvider);
-    await _saveLocal(db, mediaId, page, isCompleted);
+    await _saveLocal(db, mediaId, page, isCompleted, lastReadAt);
 
     final isOnline = ref.read(isOnlineProvider);
     if (!isOnline) return;
@@ -270,8 +345,9 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
         mediaId,
         currentPage: page,
         isCompleted: isCompleted,
+        lastReadAtMillis: lastReadAt,
       );
-      await _markSynced(db, mediaId);
+      await _markSynced(db, mediaId, page, isCompleted, lastReadAt);
     } catch (_) {
       // Will be picked up by the background sync on next online event
     }
@@ -301,6 +377,7 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
     String mediaId,
     int page,
     bool isCompleted,
+    int lastReadAt,
   ) =>
       db.insert(
         'progress_queue',
@@ -308,18 +385,28 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
           'media_id': mediaId,
           'current_page': page,
           'is_completed': isCompleted ? 1 : 0,
-          'last_read_at': DateTime.now().millisecondsSinceEpoch,
+          'last_read_at': lastReadAt,
           'synced': 0,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
 
-  Future<void> _markSynced(Database db, String mediaId) =>
+  /// Marks the row synced only if it still matches the write that was pushed —
+  /// a concurrent debounce may have replaced it with a newer unsynced row while
+  /// the POST was in flight, and stamping that one would silently drop it.
+  Future<void> _markSynced(
+    Database db,
+    String mediaId,
+    int page,
+    bool isCompleted,
+    int lastReadAt,
+  ) =>
       db.update(
         'progress_queue',
         {'synced': 1},
-        where: 'media_id = ?',
-        whereArgs: [mediaId],
+        where:
+            'media_id = ? AND current_page = ? AND is_completed = ? AND last_read_at = ?',
+        whereArgs: [mediaId, page, isCompleted ? 1 : 0, lastReadAt],
       );
 }
 
@@ -392,12 +479,18 @@ Future<void> syncPendingProgress(WidgetRef ref) async {
       final page = row['current_page'] as int;
       final completed = (row['is_completed'] as int) == 1;
       await api.saveProgress(mediaId,
-          currentPage: page, isCompleted: completed);
+          currentPage: page,
+          isCompleted: completed,
+          lastReadAtMillis: row['last_read_at'] as int?);
+      // Conditional on the row being unchanged: if the open reader's debounce
+      // wrote a newer unsynced row while the POST was in flight, stamping it
+      // synced here would silently drop that progress.
       await db.update(
         'progress_queue',
         {'synced': 1},
-        where: 'media_id = ?',
-        whereArgs: [mediaId],
+        where:
+            'media_id = ? AND current_page = ? AND is_completed = ? AND synced = 0',
+        whereArgs: [mediaId, page, completed ? 1 : 0],
       );
     } catch (_) {
       // Keep row as unsynced; will retry next time

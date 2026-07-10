@@ -7,6 +7,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "progress_queue")
 data class ProgressQueueEntity(
@@ -27,6 +28,11 @@ interface ProgressQueueDao {
 
     @Query("SELECT * FROM progress_queue WHERE media_id IN (:mediaIds)")
     suspend fun getByMediaIds(mediaIds: List<String>): List<ProgressQueueEntity>
+
+    /** Live variant: Room re-emits whenever progress_queue changes, so list
+     *  screens see fresh badges the moment the reader writes progress. */
+    @Query("SELECT * FROM progress_queue WHERE media_id IN (:mediaIds)")
+    fun observeByMediaIds(mediaIds: List<String>): Flow<List<ProgressQueueEntity>>
 
     @Query("SELECT * FROM progress_queue WHERE synced = 0")
     suspend fun getUnsynced(): List<ProgressQueueEntity>

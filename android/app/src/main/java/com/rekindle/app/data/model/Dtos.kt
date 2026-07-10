@@ -51,7 +51,14 @@ data class LoginRequest(val username: String, val password: String)
 data class LoginResponse(val token: String, val permissionLevel: Int = 2)
 data class SetupRequest(val username: String, val password: String, val setupToken: String)
 
-data class SaveProgressRequest(val currentPage: Int, val isCompleted: Boolean)
+/** [lastReadAt] is the client-side write time (ISO-8601 UTC). The server uses it
+ *  to order offline-queued writes correctly; without it a stale flush is stamped
+ *  with its arrival time and wins over newer progress from another device. */
+data class SaveProgressRequest(
+    val currentPage: Int,
+    val isCompleted: Boolean,
+    val lastReadAt: String? = null,
+)
 
 data class CreateLibraryRequest(val name: String, val rootPath: String, val type: String)
 data class UpdateLibraryRequest(val name: String, val rootPath: String, val type: String)

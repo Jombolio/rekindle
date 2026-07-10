@@ -72,13 +72,22 @@ class MediaApi {
         .toList();
   }
 
+  /// [lastReadAtMillis] is the client-side time of the write (epoch ms). The
+  /// server uses it to order offline-queued writes correctly; without it a
+  /// stale flush would be stamped with its arrival time and win over newer
+  /// progress from another device.
   Future<void> saveProgress(
     String mediaId, {
     required int currentPage,
     required bool isCompleted,
+    int? lastReadAtMillis,
   }) =>
       _client.dio.post('api/media/$mediaId/progress', data: {
         'currentPage': currentPage,
         'isCompleted': isCompleted,
+        if (lastReadAtMillis != null)
+          'lastReadAt':
+              DateTime.fromMillisecondsSinceEpoch(lastReadAtMillis, isUtc: true)
+                  .toIso8601String(),
       });
 }
