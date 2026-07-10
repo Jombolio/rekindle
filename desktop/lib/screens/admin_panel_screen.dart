@@ -562,9 +562,11 @@ class _UploadPanelState extends ConsumerState<UploadPanel> {
         filePath: _filePath!,
         fileName: _fileName!,
         onProgress: (sent, total) {
-          if (total > 0) setState(() => _progress = sent / total);
+          // Fires while streaming — the panel may have been closed mid-upload.
+          if (mounted && total > 0) setState(() => _progress = sent / total);
         },
       );
+      if (!mounted) return;
       setState(() {
         _success = msg;
         _filePath = null;
@@ -573,6 +575,7 @@ class _UploadPanelState extends ConsumerState<UploadPanel> {
         _uploading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = _apiError(e);
         _progress = null;
