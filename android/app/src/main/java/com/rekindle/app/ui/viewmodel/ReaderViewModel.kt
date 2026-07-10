@@ -66,6 +66,12 @@ class ReaderViewModel @Inject constructor(
 
     private var syncJob: Job? = null
 
+    // Guard against wiping a finished chapter's completion flag: completed items
+    // restart at page 0, so saving progress after a mere open+close would push
+    // (page 0, isCompleted=false) over the server's isCompleted=true.
+    private var wasCompletedOnLoad = false
+    private var userNavigated = false
+
     init {
         viewModelScope.launch {
             authHeader = "Bearer ${prefs.token.first() ?: ""}"
@@ -94,6 +100,7 @@ class ReaderViewModel @Inject constructor(
 
     private suspend fun loadProgress() {
         val progress = repo.getProgress(mediaId)
+        wasCompletedOnLoad = progress?.isCompleted == true
         val savedPage = when {
             initialPageOverride >= 0 -> initialPageOverride
             progress?.isCompleted == true -> 0
@@ -148,6 +155,7 @@ class ReaderViewModel @Inject constructor(
 
     fun onPageChange(page: Int) {
         val clamped = page.coerceIn(0, (_state.value.totalPages - 1).coerceAtLeast(0))
+        if (clamped != _state.value.currentPage) userNavigated = true
         _state.update { it.copy(currentPage = clamped) }
         scheduleSync()
     }
@@ -196,6 +204,9 @@ class ReaderViewModel @Inject constructor(
     fun clearNavigation() = _state.update { it.copy(navigateToChapterId = null) }
 
     private fun scheduleSync() {
+        // A finished chapter restarts at 0 — don't overwrite its completion flag
+        // unless the user actually turned a page this session.
+        if (wasCompletedOnLoad && !userNavigated) return
         syncJob?.cancel()
         syncJob = viewModelScope.launch {
             delay(3_000)
@@ -211,6 +222,8 @@ class ReaderViewModel @Inject constructor(
         // Nothing loaded (e.g. "not available offline") — saving here would mark
         // the chapter completed because currentPage 0 >= totalPages-1 == -1.
         if (s.totalPages <= 0) return
+        // Glancing at an already-finished chapter must not clear its "Read" state.
+        if (wasCompletedOnLoad && !userNavigated) return
         // viewModelScope is cancelled BEFORE onCleared is invoked, so a coroutine
         // launched on it never runs — the exit-time save needs its own scope.
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {

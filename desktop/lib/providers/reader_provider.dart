@@ -74,6 +74,13 @@ typedef ReaderArgs = (String mediaId, String? libraryType);
 class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
   Timer? _syncTimer;
 
+  // Guard against wiping a finished item's completion flag: completed items
+  // restart at page/chapter 0, so the dispose-time flush would otherwise push
+  // (page 0, isCompleted=false) over the server's isCompleted=true after a
+  // mere open+close.
+  bool _completedOnLoad = false;
+  bool _userNavigated = false;
+
   @override
   ReaderState build(ReaderArgs arg) {
     final (mediaId, _) = arg;
@@ -98,7 +105,9 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
     // Unsynced local progress is newer than anything the server has (it was
     // never pushed), so prefer it — otherwise an online open resumes at the
     // stale server page and the debounce overwrites the real progress.
-    final preferLocal = local != null && !local.$3;
+    // (Kept as a nullable snapshot, not a bool, so this compiles on Dart
+    // versions without boolean-variable promotion.)
+    final unsynced = (local != null && !local.$3) ? local : null;
 
     // Offline-first: seed the page count from the local extracted manifest BEFORE
     // any network call, so a downloaded comic renders immediately instead of
@@ -119,7 +128,7 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
     }
 
     ReadingProgress? progress;
-    if (!preferLocal) {
+    if (unsynced == null) {
       try {
         progress = await api.getProgress(mediaId);
       } catch (_) {
@@ -129,10 +138,11 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
 
     // If the archive was finished, start from the beginning on the next open.
     final isCompleted =
-        preferLocal ? local.$2 : (progress?.isCompleted ?? local?.$2 ?? false);
+        unsynced?.$2 ?? progress?.isCompleted ?? local?.$2 ?? false;
+    _completedOnLoad = isCompleted;
     final savedPage = isCompleted
         ? 0
-        : (preferLocal ? local.$1 : (progress?.currentPage ?? local?.$1 ?? 0));
+        : (unsynced?.$1 ?? progress?.currentPage ?? local?.$1 ?? 0);
 
     // Determine reading direction. If the user has never explicitly toggled
     // direction for this item, fall back to the library type: manga → RTL.
@@ -201,6 +211,7 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
 
   void goToPage(int page, String mediaId) {
     final clamped = page.clamp(0, (state.totalPages - 1).clamp(0, 999999));
+    if (clamped != state.currentPage) _userNavigated = true;
     state = state.copyWith(currentPage: clamped);
     _scheduleSync(mediaId);
   }
@@ -240,6 +251,9 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
   }
 
   Future<void> _syncNow(String mediaId) async {
+    // A finished item restarts at 0 — don't overwrite its completion flag
+    // unless the user actually navigated this session.
+    if (_completedOnLoad && !_userNavigated) return;
     final page = state.currentPage;
     final isCompleted =
         state.totalPages > 0 && page >= state.totalPages - 1;

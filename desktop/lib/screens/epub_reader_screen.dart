@@ -110,29 +110,38 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
         .setTotalPages(book.chapters.length);
   }
 
-  /// The saved chapter index, preferring server progress when reachable and
-  /// falling back to the local queue. Completed books restart at chapter 0.
+  /// The saved chapter index. Unsynced local progress wins (it's newer than
+  /// anything the server has — same rule as the comic reader); otherwise the
+  /// server value, then the synced local row. Completed books restart at 0.
   Future<int> _savedChapter(ApiClient client, Database db) async {
+    final rows = await db.query(
+      'progress_queue',
+      columns: ['current_page', 'is_completed', 'synced'],
+      where: 'media_id = ?',
+      whereArgs: [widget.mediaId],
+    );
+    (int, bool)? localRow;
+    var localSynced = true;
+    if (rows.isNotEmpty) {
+      localRow = (
+        rows.first['current_page'] as int,
+        (rows.first['is_completed'] as int) == 1,
+      );
+      localSynced = (rows.first['synced'] as int? ?? 0) == 1;
+    }
+    if (localRow != null && !localSynced) {
+      return localRow.$2 ? 0 : localRow.$1;
+    }
+
     ReadingProgress? progress;
     try {
       progress = await MediaApi(client).getProgress(widget.mediaId);
     } catch (_) {
       // Offline — fall back to the local queue below.
     }
-    if (progress == null) {
-      final rows = await db.query(
-        'progress_queue',
-        columns: ['current_page', 'is_completed'],
-        where: 'media_id = ?',
-        whereArgs: [widget.mediaId],
-      );
-      if (rows.isNotEmpty) {
-        final completed = (rows.first['is_completed'] as int) == 1;
-        return completed ? 0 : rows.first['current_page'] as int;
-      }
-      return 0;
-    }
-    return progress.isCompleted ? 0 : progress.currentPage;
+    if (progress != null) return progress.isCompleted ? 0 : progress.currentPage;
+    if (localRow != null) return localRow.$2 ? 0 : localRow.$1;
+    return 0;
   }
 
   void _prevChapter() {
