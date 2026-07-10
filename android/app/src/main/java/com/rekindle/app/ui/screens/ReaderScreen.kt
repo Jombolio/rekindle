@@ -466,23 +466,15 @@ private fun PagedModeContent(
     // Restore/remap. Fires at mount (jump to the slide containing the live
     // currentPage — not the never-updated initialPage, so a scroll/paged mode
     // toggle keeps the user's place) and again whenever the slide grouping
-    // changes (the server spread map arriving after a local-manifest open, or a
-    // corrected page count). Re-mapping through the OLD grouping keeps the same
-    // logical page on screen instead of letting the pager's retained numeric
-    // index silently point at different pages.
-    var prevSlides by remember { mutableStateOf<List<List<Int>>?>(null) }
-    // Slide index of an in-flight programmatic jump; -1 when idle. The sync
-    // effect below must not report programmatic jumps as reading progress.
-    var programmaticTarget by remember { mutableIntStateOf(-1) }
+    // changes (the server spread map arriving after a local-manifest open, a
+    // corrected page count, or a double-page toggle). Targeting the ViewModel's
+    // logical page keeps the same content on screen across regroupings; no
+    // in-flight bookkeeping is needed, so a user swipe cancelling this jump
+    // mid-flight cannot strand any state.
     LaunchedEffect(slides) {
-        val anchor = prevSlides?.getOrNull(pagerState.currentPage)?.lastOrNull()
-            ?: state.currentPage
-        prevSlides = slides
-        val target = slides.indexWhere { it.contains(anchor) }.coerceAtLeast(0)
-        if (target != pagerState.currentPage) {
-            programmaticTarget = target
-            pagerState.scrollToPage(target)
-        }
+        val target = slides.indexWhere { it.contains(state.currentPage) }
+            .coerceAtLeast(0)
+        if (target != pagerState.currentPage) pagerState.scrollToPage(target)
     }
 
     // Sync pager → ViewModel current page. Also drop any zoom from the page we left
@@ -490,18 +482,16 @@ private fun PagedModeContent(
     LaunchedEffect(pagerState.currentPage) {
         zoom.reset()
         if (state.totalPages > 0) {
-            // Skip while a restore/remap jump is in flight: the ViewModel already
-            // holds the logical page, and reporting the new slide's last page here
-            // is what crept progress forward whenever slide grouping differed
-            // between sessions (e.g. offline opens have no spreads array).
-            if (programmaticTarget != -1) {
-                if (pagerState.currentPage == programmaticTarget) programmaticTarget = -1
-                return@LaunchedEffect
-            }
+            val slide = slides.getOrNull(pagerState.currentPage) ?: return@LaunchedEffect
+            // Settling on the slide that already contains the logical page is a
+            // programmatic restore/remap (or a no-op), not reading progress —
+            // reporting it is what crept the saved page forward whenever slide
+            // grouping differed between sessions (e.g. offline opens have no
+            // spreads array). Only genuine slide changes are reported.
+            if (state.currentPage in slide) return@LaunchedEffect
             // Report the LAST page of the slide so finishing a book on a double-
             // page spread reaches totalPages-1 and marks completion.
-            val pageIndex = slides.getOrNull(pagerState.currentPage)?.last() ?: pagerState.currentPage
-            onPageChange(pageIndex)
+            onPageChange(slide.last())
         }
     }
 

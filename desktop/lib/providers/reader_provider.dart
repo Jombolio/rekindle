@@ -320,8 +320,11 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
   Future<void> _syncNow(String mediaId) async {
     // _init hasn't resolved the saved position yet — state still holds the
     // default page 0, and flushing it (e.g. closing the reader while "Loading
-    // pages…" is showing) would overwrite the stored progress.
-    if (!_restored) return;
+    // pages…" is showing) would overwrite the stored progress. User navigation
+    // is exempt: once the user moved (EPUB chapter flips are usable well before
+    // _init's network calls settle, especially offline), currentPage reflects
+    // what they actually saw and must not be dropped.
+    if (!_restored && !_userNavigated) return;
     // A finished item restarts at 0 — don't overwrite its completion flag
     // unless the user actually navigated this session.
     if (_completedOnLoad && !_userNavigated) return;
