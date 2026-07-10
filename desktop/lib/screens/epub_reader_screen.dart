@@ -5,10 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
+import 'package:sqflite/sqflite.dart';
 
+import '../core/api/api_client.dart';
+import '../core/api/media_api.dart';
 import '../core/db/local_db_provider.dart';
 import '../core/download/download_manager.dart';
 import '../core/epub/epub_parser.dart';
+import '../core/models/reading_progress.dart';
 import '../providers/auth_provider.dart';
 import '../providers/reader_provider.dart';
 import '../providers/settings_provider.dart';
@@ -70,7 +74,12 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     if (!mounted) return;
 
     final book = await Isolate.run(() => EpubParser.parse(bytes));
-    final savedChapter = ref.read(readerProvider((widget.mediaId, null))).currentPage;
+
+    // Resolve the saved chapter directly. Reading it from the reader provider
+    // synchronously would return 0, because that first access only KICKS OFF
+    // the provider's async init — the restored value isn't there yet.
+    final savedChapter = await _savedChapter(client, db);
+    if (!mounted) return;
 
     setState(() {
       _book = book;
@@ -81,6 +90,31 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     ref
         .read(readerProvider((widget.mediaId, null)).notifier)
         .setTotalPages(book.chapters.length);
+  }
+
+  /// The saved chapter index, preferring server progress when reachable and
+  /// falling back to the local queue. Completed books restart at chapter 0.
+  Future<int> _savedChapter(ApiClient client, Database db) async {
+    ReadingProgress? progress;
+    try {
+      progress = await MediaApi(client).getProgress(widget.mediaId);
+    } catch (_) {
+      // Offline — fall back to the local queue below.
+    }
+    if (progress == null) {
+      final rows = await db.query(
+        'progress_queue',
+        columns: ['current_page', 'is_completed'],
+        where: 'media_id = ?',
+        whereArgs: [widget.mediaId],
+      );
+      if (rows.isNotEmpty) {
+        final completed = (rows.first['is_completed'] as int) == 1;
+        return completed ? 0 : rows.first['current_page'] as int;
+      }
+      return 0;
+    }
+    return progress.isCompleted ? 0 : progress.currentPage;
   }
 
   void _prevChapter() {

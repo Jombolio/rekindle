@@ -228,6 +228,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   void _nextSlide(BuildContext context, List<Media> siblings) {
     _resetZoom();
     if (_pageAnimating) return;
+    // No PageView is built until pages load (totalPages == 0); touching
+    // _pageCtrl.page without clients throws, so a key press before the page
+    // count arrives — or on the offline-unavailable screen — would crash.
+    if (!_pageCtrl.hasClients) return;
     final state = ref.read(readerProvider((widget.mediaId, widget.libraryType)));
     final slideCount = state.doublePage
         ? buildSlides(state.totalPages, state.spreads).length
@@ -245,6 +249,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   void _prevSlide(BuildContext context, List<Media> siblings) {
     _resetZoom();
     if (_pageAnimating) return;
+    if (!_pageCtrl.hasClients) return;
     if (_pageCtrl.page != null && _pageCtrl.page!.round() > 0) {
       _pageAnimating = true;
       _pageCtrl
@@ -444,22 +449,23 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       });
     }
 
-    // Post-frame jumps — only relevant until first jump fires.
+    // Post-frame jumps. The initialPage branch is gated on !_didInitialPageJump
+    // so it only governs the FIRST jump; afterwards the saved-progress branch
+    // is reachable again, which is what restores position after a mode toggle
+    // resets _didJump/_didScrollJump. (Previously initialPage != null blocked
+    // that branch forever, so mode toggles regressed to page 0.)
     if (totalPages > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (widget.initialPage != null) {
+        if (widget.initialPage != null && !_didInitialPageJump) {
           // Caller specified an explicit start page (e.g. chapter auto-advance).
-          // Jump once, then block the saved-progress jump from firing.
-          if (!_didInitialPageJump) {
-            _didInitialPageJump = true;
-            _didJump = true;
-            _didScrollJump = true;
-            final target = widget.initialPage!;
-            if (scrollMode) {
-              if (target > 0) _jumpToSavedPageInScrollMode(target);
-            } else {
-              _pageCtrl.jumpToPage(_pageToViewIndex(target, slides, isRtl));
-            }
+          _didInitialPageJump = true;
+          _didJump = true;
+          _didScrollJump = true;
+          final target = widget.initialPage!;
+          if (scrollMode) {
+            if (target > 0) _jumpToSavedPageInScrollMode(target);
+          } else {
+            _pageCtrl.jumpToPage(_pageToViewIndex(target, slides, isRtl));
           }
         } else if (readerState.currentPage > 0) {
           if (scrollMode) {
@@ -664,7 +670,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
           if (_isZoomed) _resetZoom();
           // A manual swipe settles the animation externally — unblock the gate.
           _pageAnimating = false;
-          final pageIndex = slides[viewIndex].first;
+          // Report the LAST page of the slide so finishing a book on a double-
+          // page spread reaches totalPages-1 and marks completion. Restore maps
+          // any contained page back to this slide, so this is safe.
+          final pageIndex = slides[viewIndex].last;
           ref
               .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
               .goToPage(pageIndex, widget.mediaId);

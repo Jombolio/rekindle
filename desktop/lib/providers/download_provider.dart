@@ -72,12 +72,16 @@ class DownloadNotifier extends FamilyNotifier<DownloadState, String> {
     final manager = await _manager();
     await manager.delete(mediaId);
     state = const DownloadState.idle();
+    // The reader prefers cached local page paths over the network — without
+    // this it keeps rendering from files that no longer exist.
+    ref.invalidate(extractedPagesProvider(mediaId));
   }
 
   void cancel() {
     _cancelToken?.cancel('user');
     state = const DownloadState.idle();
     _manager().then((m) => m.delete(arg));
+    ref.invalidate(extractedPagesProvider(arg));
   }
 
   Future<DownloadManager> _manager() async {
@@ -265,15 +269,25 @@ class FolderDownloadNotifier
 
     if (!_cancelled) {
       final grandTotal = archives.length;
-      state = FolderDownloadState(
-        status: FolderDownloadStatus.complete,
-        total: grandTotal,
-        completed: grandTotal,
-      );
+      final allDone = alreadyDone.union(successfulIds);
+      // Report what actually happened — claiming "complete" after partial
+      // failures hides missing chapters until the user is offline.
+      state = allDone.length >= grandTotal
+          ? FolderDownloadState(
+              status: FolderDownloadStatus.complete,
+              total: grandTotal,
+              completed: grandTotal,
+            )
+          : FolderDownloadState(
+              status: FolderDownloadStatus.failed,
+              total: grandTotal,
+              completed: allDone.length,
+              error:
+                  '${grandTotal - allDone.length} of $grandTotal chapters failed to download',
+            );
 
       // Persist completion state for every folder in the tree whose archives
       // were all either already downloaded or just downloaded successfully.
-      final allDone = alreadyDone.union(successfulIds);
       for (final entry in folderArchiveIds.entries) {
         if (entry.value.every((id) => allDone.contains(id))) {
           await manager.saveFolderComplete(

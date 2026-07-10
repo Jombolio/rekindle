@@ -71,7 +71,8 @@ class ReaderState {
 /// round-trip when the caller already knows whether this is a manga library.
 typedef ReaderArgs = (String mediaId, String? libraryType);
 
-class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
+class ReaderNotifier
+    extends AutoDisposeFamilyNotifier<ReaderState, ReaderArgs> {
   Timer? _syncTimer;
 
   @override
@@ -95,6 +96,24 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
 
     // Load local queue first for instant offline start
     final local = await _localProgress(db, mediaId);
+
+    // Offline-first: seed the page count from the local extracted manifest BEFORE
+    // any network call, so a downloaded comic renders immediately instead of
+    // stalling behind sequential server timeouts. Extraction happens on demand
+    // (idempotent) for CBZ; other formats return null and fall through.
+    try {
+      final downloadDir = await resolveDownloadDir();
+      final manager = DownloadManager(client, db, downloadBaseDir: downloadDir);
+      final localPages = await manager.ensureExtractedPages(mediaId);
+      if (localPages != null && localPages.isNotEmpty) {
+        state = state.copyWith(totalPages: localPages.length);
+        // The reader screen reads page files from this provider — refresh it in
+        // case extraction only just happened.
+        ref.invalidate(extractedPagesProvider(mediaId));
+      }
+    } catch (_) {
+      // No local pages — rely on the server below.
+    }
 
     ReadingProgress? progress;
     try {
@@ -146,23 +165,6 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
       scrollMode: scrollMode,
       savedProgress: progress,
     );
-
-    // Offline-first: seed the page count from the local extracted manifest so a
-    // downloaded comic renders with no server connection. Extraction happens on
-    // demand (idempotent) for CBZ; other formats return null and fall through.
-    try {
-      final downloadDir = await resolveDownloadDir();
-      final manager = DownloadManager(client, db, downloadBaseDir: downloadDir);
-      final localPages = await manager.ensureExtractedPages(mediaId);
-      if (localPages != null && localPages.isNotEmpty) {
-        state = state.copyWith(totalPages: localPages.length);
-        // The reader screen reads page files from this provider — refresh it in
-        // case extraction only just happened.
-        ref.invalidate(extractedPagesProvider(mediaId));
-      }
-    } catch (_) {
-      // No local pages — rely on the server below.
-    }
 
     // Fetch page count + spread map from the server (augments spreads, triggers
     // server-side extraction if needed). Overrides the local count when online.
@@ -297,8 +299,12 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
       );
 }
 
+/// autoDispose so state is rebuilt every time a reader is opened: without it a
+/// non-disposed family entry reuses stale state, so re-opening a finished
+/// chapter lands on the last page instead of restarting at 0, and progress
+/// changed on another device is never re-fetched.
 final readerProvider =
-    NotifierProviderFamily<ReaderNotifier, ReaderState, ReaderArgs>(
+    NotifierProvider.autoDispose.family<ReaderNotifier, ReaderState, ReaderArgs>(
   ReaderNotifier.new,
 );
 

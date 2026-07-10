@@ -52,9 +52,13 @@ class DownloadManager {
     CancelToken? cancelToken,
   }) async {
     final base = downloadBaseDir ?? await _defaultDownloadsDir();
-    final localPath = relativePath.isNotEmpty
-        ? '${base.path}/$relativePath'
-        : '${base.path}/$mediaId.$format';
+    // relativePath is server-controlled — a hostile or compromised source could
+    // smuggle ../ (or an absolute path) and write outside the downloads dir.
+    final fallback = p.join(base.path, '$mediaId.$format');
+    final candidate = relativePath.isNotEmpty
+        ? p.normalize(p.join(base.path, relativePath))
+        : fallback;
+    final localPath = p.isWithin(base.path, candidate) ? candidate : fallback;
 
     // Ensure parent directories exist
     await File(localPath).parent.create(recursive: true);
@@ -80,7 +84,12 @@ class DownloadManager {
         },
       );
     } catch (e) {
-      if (e is DioException && e.type == DioExceptionType.cancel) rethrow;
+      if (e is DioException && e.type == DioExceptionType.cancel) {
+        // dio already removed the partial file (deleteOnError); drop the row
+        // too or the item restores as a phantom "downloading" forever.
+        await _db.delete('downloads', where: 'media_id = ?', whereArgs: [mediaId]);
+        rethrow;
+      }
       await _upsertDownload(mediaId, format, title, DownloadStatus.failed, 0, localPath);
       onProgress(DownloadState(
         status: DownloadStatus.failed,
@@ -154,7 +163,14 @@ class DownloadManager {
       pageNames.add(pageName);
     }
 
-    File('$extractDirPath/manifest.txt').writeAsStringSync(pageNames.join('\n'));
+    // Only write a manifest when extraction produced pages, so an imageless
+    // archive isn't cached as a permanent empty result. Temp + rename so a
+    // crash mid-write can't leave a truncated manifest that gets trusted.
+    if (pageNames.isNotEmpty) {
+      final tmp = File('$extractDirPath/manifest.txt.tmp');
+      tmp.writeAsStringSync(pageNames.join('\n'));
+      tmp.renameSync('$extractDirPath/manifest.txt');
+    }
   }
 
   /// Loads previously extracted page paths, or null if not extracted yet.
@@ -162,12 +178,15 @@ class DownloadManager {
     final dir = await _extractedDir(mediaId);
     final manifest = File('${dir.path}/manifest.txt');
     if (!manifest.existsSync()) return null;
-    return manifest
+    final names = manifest
         .readAsStringSync()
         .trim()
         .split('\n')
-        .map((name) => '${dir.path}/$name')
+        .where((name) => name.isNotEmpty)
         .toList();
+    // An empty manifest would otherwise parse to one bogus '' page path.
+    if (names.isEmpty) return null;
+    return names.map((name) => '${dir.path}/$name').toList();
   }
 
   /// Ensures a downloaded ZIP-container comic (CBZ) is extracted to local page
@@ -259,6 +278,14 @@ class DownloadManager {
       );
     }
 
+    if (status == DownloadStatus.downloading ||
+        status == DownloadStatus.extracting) {
+      // An in-progress row on restore can only be a leftover from a killed
+      // process — report FAILED so the item can be retried instead of showing
+      // a phantom spinner forever.
+      return const DownloadState(status: DownloadStatus.failed);
+    }
+
     return DownloadState(status: status);
   }
 
@@ -272,16 +299,24 @@ class DownloadManager {
     if (rows.isNotEmpty) {
       final path = rows.first['local_path'] as String?;
       if (path != null) {
-        final file = File(path);
-        if (file.existsSync()) file.deleteSync();
+        // Guarded: on Windows deleting a file that an in-flight transfer still
+        // has open throws; the DB row removal below must still happen.
+        try {
+          final file = File(path);
+          if (file.existsSync()) file.deleteSync();
+        } catch (_) {}
       }
     }
 
     final extractDir = await _extractedDir(mediaId);
-    if (extractDir.existsSync()) extractDir.deleteSync(recursive: true);
+    try {
+      if (extractDir.existsSync()) extractDir.deleteSync(recursive: true);
+    } catch (_) {}
 
-    final cover = File(await _coverFilePath(mediaId));
-    if (cover.existsSync()) cover.deleteSync();
+    try {
+      final cover = File(await _coverFilePath(mediaId));
+      if (cover.existsSync()) cover.deleteSync();
+    } catch (_) {}
 
     await _db.delete('downloads', where: 'media_id = ?', whereArgs: [mediaId]);
   }
