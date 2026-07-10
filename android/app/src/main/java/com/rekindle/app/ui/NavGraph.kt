@@ -72,14 +72,19 @@ fun Media.openRoute(libraryType: String? = null): String = when {
 
 @Composable
 fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
-    val startDestination by vm.startDestination.collectAsState()
+    val resolvedStart by vm.startDestination.collectAsState()
 
     // Hold an invisible placeholder while DataStore resolves the start route
     // (typically < 100 ms — imperceptible to the user).
-    if (startDestination == null) {
+    if (resolvedStart == null) {
         Box(modifier = Modifier.fillMaxSize())
         return
     }
+
+    // Capture the initial route once. Later token/URL changes must NOT flip this
+    // and rebuild the whole NavHost graph — that races the tokenLost redirect.
+    // Runtime auth loss is handled by tokenLost + the per-source sign-in prompt.
+    val startDestination = remember { resolvedStart!! }
 
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
@@ -110,7 +115,7 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
     Box(modifier = Modifier.fillMaxSize()) {
     NavHost(
         navController = navController,
-        startDestination = startDestination!!,
+        startDestination = startDestination,
         enterTransition = { fadeIn(animationSpec = tween(150)) },
         exitTransition = { fadeOut(animationSpec = tween(150)) },
         popEnterTransition = { fadeIn(animationSpec = tween(150)) },

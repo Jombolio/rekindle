@@ -19,8 +19,15 @@ class SyncWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        // syncAllPending swallows per-row failures, so it rarely throws; ask it
+        // whether anything is still unsynced and let WorkManager retry (with
+        // backoff) when the server was unreachable, instead of always reporting
+        // success and never retrying.
         return runCatching { mediaRepository.syncAllPending() }
-            .fold(onSuccess = { Result.success() }, onFailure = { Result.retry() })
+            .fold(
+                onSuccess = { allSynced -> if (allSynced) Result.success() else Result.retry() },
+                onFailure = { Result.retry() },
+            )
     }
 
     companion object {

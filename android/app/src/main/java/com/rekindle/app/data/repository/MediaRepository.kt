@@ -110,8 +110,10 @@ class MediaRepository @Inject constructor(
         } catch (_: Exception) { /* retry later */ }
     }
 
-    suspend fun syncAllPending() {
+    /** Syncs all queued progress; returns true only if nothing remains unsynced. */
+    suspend fun syncAllPending(): Boolean {
         progressDao.getUnsynced().forEach { syncProgress(it.mediaId) }
+        return progressDao.getUnsynced().isEmpty()
     }
 
     suspend fun searchFolders(libraryId: String, query: String): List<Media> =
