@@ -36,17 +36,18 @@ import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Streaming
+import retrofit2.http.Tag
 
 interface RekindleApi {
 
     @POST("api/auth/login")
-    suspend fun login(@Body request: LoginRequest): LoginResponse
+    suspend fun login(@Body request: LoginRequest, @Tag route: AuthRoute): LoginResponse
 
     @POST("api/auth/setup")
-    suspend fun setup(@Body request: SetupRequest): LoginResponse
+    suspend fun setup(@Body request: SetupRequest, @Tag route: AuthRoute): LoginResponse
 
     @GET("api/auth/setup/status")
-    suspend fun setupStatus(): Map<String, Boolean>
+    suspend fun setupStatus(@Tag route: AuthRoute): Map<String, Boolean>
 
     @GET("api/libraries")
     suspend fun getLibraries(): List<LibraryDto>

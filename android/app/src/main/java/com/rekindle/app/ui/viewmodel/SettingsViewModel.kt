@@ -71,10 +71,9 @@ class SettingsViewModel @Inject constructor(
 
     fun switchSource(source: ServerSource) {
         viewModelScope.launch {
+            // serverUrl/token/permissionLevel all derive from the active source;
+            // writing legacy keys here would leak this source's JWT to others.
             prefs.setActiveSourceId(source.id)
-            source.token?.let { prefs.setToken(it) }
-            prefs.setPermissionLevel(source.permissionLevel)
-            prefs.setServerUrl(source.baseUrl)
         }
     }
 

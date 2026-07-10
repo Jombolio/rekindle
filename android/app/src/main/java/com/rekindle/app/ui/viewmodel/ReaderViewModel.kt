@@ -8,7 +8,10 @@ import com.rekindle.app.data.repository.DownloadRepository
 import com.rekindle.app.data.repository.MediaRepository
 import com.rekindle.app.domain.model.Media
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -205,7 +208,12 @@ class ReaderViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         val s = _state.value
-        viewModelScope.launch {
+        // Nothing loaded (e.g. "not available offline") — saving here would mark
+        // the chapter completed because currentPage 0 >= totalPages-1 == -1.
+        if (s.totalPages <= 0) return
+        // viewModelScope is cancelled BEFORE onCleared is invoked, so a coroutine
+        // launched on it never runs — the exit-time save needs its own scope.
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             repo.saveProgress(mediaId, s.currentPage, s.currentPage >= s.totalPages - 1)
             repo.syncProgress(mediaId)
         }

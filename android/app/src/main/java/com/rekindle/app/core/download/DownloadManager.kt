@@ -13,7 +13,11 @@ import com.rekindle.app.data.db.DownloadEntity
 import com.rekindle.app.data.db.FolderDownloadDao
 import com.rekindle.app.data.db.FolderDownloadEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.rekindle.app.core.util.NaturalComparator
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -24,6 +28,7 @@ import java.io.OutputStream
 import java.util.zip.ZipInputStream
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.coroutineContext
 
 @Singleton
 class DownloadManager @Inject constructor(
@@ -50,6 +55,11 @@ class DownloadManager @Inject constructor(
                 localPath = entity.localPath,
                 extractedDir = if (manifest.exists()) extractDir.absolutePath else null,
             )
+        } else if (status == DownloadStatus.DOWNLOADING || status == DownloadStatus.EXTRACTING) {
+            // A persisted in-progress row can only be a leftover from a killed
+            // process — surface it as FAILED so the download can be retried
+            // (the guard blocks retries while DOWNLOADING/EXTRACTING).
+            DownloadState(status = DownloadStatus.FAILED)
         } else {
             DownloadState(status = status)
         }
@@ -76,58 +86,76 @@ class DownloadManager @Inject constructor(
         upsert(mediaId, format, title, DownloadStatus.DOWNLOADING, 0f, null)
         onProgress(DownloadState(status = DownloadStatus.DOWNLOADING))
 
-        // Resolve destination — either a SAF document or a plain File.
-        val (localPath, outputStream) = if (safBaseUri != null) {
-            val docUri = createSafFile(safBaseUri, mediaId, relativePath, format)
-                ?: error("Cannot create file in the selected folder — check storage permission")
-            Pair(docUri.toString(), context.contentResolver.openOutputStream(docUri)
-                ?: error("Cannot open output stream for selected folder"))
-        } else {
-            val destFile = appDestinationFile(mediaId, format, relativePath)
-            destFile.parentFile?.mkdirs()
-            Pair(destFile.absolutePath, destFile.outputStream())
-        }
-
-        val url = "${serverBaseUrl.trimEnd('/')}/api/media/$mediaId/download"
-        val request = Request.Builder().url(url).header("Authorization", authHeader).build()
-
         try {
-            outputStream.use { out ->
-                okHttpClient.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) error("HTTP ${response.code}")
-                    val body = response.body ?: error("Empty body")
-                    val total = body.contentLength().takeIf { it > 0 }
+            // Resolve destination — either a SAF document or a plain File.
+            val (localPath, outputStream) = if (safBaseUri != null) {
+                val docUri = createSafFile(safBaseUri, mediaId, relativePath, format)
+                    ?: error("Cannot create file in the selected folder — check storage permission")
+                Pair(docUri.toString(), context.contentResolver.openOutputStream(docUri)
+                    ?: error("Cannot open output stream for selected folder"))
+            } else {
+                val destFile = appDestinationFile(mediaId, format, relativePath)
+                destFile.parentFile?.mkdirs()
+                Pair(destFile.absolutePath, destFile.outputStream())
+            }
+            // Record the destination up front so an interrupted transfer's partial
+            // file can be found and removed after a process death or cancel.
+            upsert(mediaId, format, title, DownloadStatus.DOWNLOADING, 0f, localPath)
 
-                    var downloaded = 0L
-                    val buf = ByteArray(8192)
-                    body.byteStream().use { input ->
-                        var n: Int
-                        while (input.read(buf).also { n = it } != -1) {
-                            out.write(buf, 0, n)
-                            downloaded += n
-                            total?.let {
-                                onProgress(
-                                    DownloadState(
-                                        status = DownloadStatus.DOWNLOADING,
-                                        progress = downloaded.toFloat() / it,
+            val url = "${serverBaseUrl.trimEnd('/')}/api/media/$mediaId/download"
+            val request = Request.Builder().url(url).header("Authorization", authHeader).build()
+
+            try {
+                outputStream.use { out ->
+                    okHttpClient.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) error("HTTP ${response.code}")
+                        val body = response.body ?: error("Empty body")
+                        val total = body.contentLength().takeIf { it > 0 }
+
+                        var downloaded = 0L
+                        val buf = ByteArray(8192)
+                        body.byteStream().use { input ->
+                            var n: Int
+                            while (input.read(buf).also { n = it } != -1) {
+                                // Without this the blocking loop ignores job.cancel()
+                                // and streams the whole archive to the end.
+                                coroutineContext.ensureActive()
+                                out.write(buf, 0, n)
+                                downloaded += n
+                                total?.let {
+                                    onProgress(
+                                        DownloadState(
+                                            status = DownloadStatus.DOWNLOADING,
+                                            progress = downloaded.toFloat() / it,
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
                     }
                 }
+            } catch (e: Exception) {
+                // Clean up the partial file on failure or cancellation.
+                deleteByPath(localPath)
+                throw e
             }
+
+            upsert(mediaId, format, title, DownloadStatus.COMPLETE, 1f, localPath)
+            // Cache the cover locally so it renders offline (best-effort — never fails the download).
+            runCatching { downloadCover(mediaId, serverBaseUrl, authHeader) }
+            onProgress(DownloadState(status = DownloadStatus.COMPLETE, progress = 1f, localPath = localPath))
+            localPath
+        } catch (e: CancellationException) {
+            // Suspend calls on a cancelled job throw before running — the row
+            // removal must be non-cancellable or the DOWNLOADING row leaks.
+            withContext(NonCancellable) { downloadDao.delete(mediaId) }
+            throw e
         } catch (e: Exception) {
-            // Clean up the partial file on failure.
-            deleteByPath(localPath)
+            // Persist the failure — leaving the row DOWNLOADING made the item
+            // permanently un-downloadable after a restart.
+            upsert(mediaId, format, title, DownloadStatus.FAILED, 0f, null)
             throw e
         }
-
-        upsert(mediaId, format, title, DownloadStatus.COMPLETE, 1f, localPath)
-        // Cache the cover locally so it renders offline (best-effort — never fails the download).
-        runCatching { downloadCover(mediaId, serverBaseUrl, authHeader) }
-        onProgress(DownloadState(status = DownloadStatus.COMPLETE, progress = 1f, localPath = localPath))
-        localPath
     }
 
     /**
@@ -165,9 +193,15 @@ class DownloadManager @Inject constructor(
         }
 
         // Only persist a manifest once extraction produced pages, so an unsupported
-        // format isn't cached as an empty (permanent) result.
+        // format isn't cached as an empty (permanent) result. Written via temp +
+        // rename: a truncated manifest would otherwise be trusted forever.
         if (pageNames.isNotEmpty()) {
-            manifest.writeText(pageNames.joinToString("\n"))
+            val tmp = File(dir, "manifest.txt.tmp")
+            tmp.writeText(pageNames.joinToString("\n"))
+            if (!tmp.renameTo(manifest)) {
+                tmp.copyTo(manifest, overwrite = true)
+                tmp.delete()
+            }
         }
         dir.absolutePath
     }
@@ -177,25 +211,42 @@ class DownloadManager @Inject constructor(
         // Open the archive from either a content URI or a plain file path.
         val archiveStream: InputStream = openInputStream(localPath)
 
-        val entries = mutableListOf<Pair<String, ByteArray>>()
-        ZipInputStream(archiveStream.buffered()).use { zip ->
-            var entry = zip.nextEntry
-            while (entry != null) {
-                val ext = entry.name.substringAfterLast('.', "").lowercase()
-                if (!entry.isDirectory && ext in imageExtensions) {
-                    entries += entry.name to zip.readBytes()
+        // Stream each entry straight to a temp file — buffering a volume-sized
+        // CBZ (hundreds of MB decompressed) in memory OOMs the app — then rename
+        // into page order once all entry names are known.
+        val entries = mutableListOf<Pair<String, File>>()
+        try {
+            ZipInputStream(archiveStream.buffered()).use { zip ->
+                var entry = zip.nextEntry
+                var i = 0
+                while (entry != null) {
+                    val ext = entry.name.substringAfterLast('.', "").lowercase()
+                    if (!entry.isDirectory && ext in imageExtensions) {
+                        val tmp = File(dir, "page_tmp_${i++}")
+                        tmp.outputStream().use { out -> zip.copyTo(out) }
+                        entries += entry.name to tmp
+                    }
+                    zip.closeEntry()
+                    entry = zip.nextEntry
                 }
-                zip.closeEntry()
-                entry = zip.nextEntry
             }
-        }
 
-        entries.sortBy { it.first }
-        return entries.mapIndexed { i, (name, bytes) ->
-            val ext = name.substringAfterLast('.', "jpg").lowercase()
-            val pageName = "${i.toString().padStart(5, '0')}.$ext"
-            File(dir, pageName).writeBytes(bytes)
-            pageName
+            // Natural order, matching the server's page ordering — a plain sort
+            // puts "page10" before "page2" and desyncs offline page numbers.
+            entries.sortWith(compareBy(NaturalComparator) { it.first })
+            return entries.mapIndexed { i, (name, tmp) ->
+                val ext = name.substringAfterLast('.', "jpg").lowercase()
+                val pageName = "${i.toString().padStart(5, '0')}.$ext"
+                val target = File(dir, pageName)
+                if (!tmp.renameTo(target)) {
+                    tmp.copyTo(target, overwrite = true)
+                    tmp.delete()
+                }
+                pageName
+            }
+        } catch (e: Exception) {
+            entries.forEach { it.second.delete() }
+            throw e
         }
     }
 
@@ -248,7 +299,7 @@ class DownloadManager @Inject constructor(
                 ?: return emptyList()
             return flat.toList().chunked(2)
                 .filter { it.size == 2 }
-                .sortedBy { it[0] }   // order by original entry path
+                .sortedWith(compareBy(NaturalComparator) { it[0] })  // natural order by entry path, matching the server
                 .map { it[1] }        // written file name
         } finally {
             if (isTemp) archiveFile.delete()
@@ -361,7 +412,10 @@ class DownloadManager @Inject constructor(
         val mimeType = mimeTypeFor(format)
 
         if (relativePath.isNotBlank()) {
+            // Drop empty/./.. segments — relativePath is server-controlled.
             val parts = relativePath.replace('\\', '/').split('/')
+                .filter { it.isNotBlank() && it != "." && it != ".." }
+                .ifEmpty { listOf("$mediaId.$format") }
             // Traverse / create subdirectories for everything except the final filename.
             for (i in 0 until parts.size - 1) {
                 dir = dir.findFile(parts[i])
@@ -406,8 +460,12 @@ class DownloadManager @Inject constructor(
     private fun appDestinationFile(mediaId: String, format: String, relativePath: String): File {
         val base = context.getExternalFilesDir(null)?.let { File(it, "Rekindle Downloads") }
             ?: File(context.filesDir, "Rekindle Downloads")
-        return if (relativePath.isNotBlank()) File(base, relativePath)
-        else File(base, "$mediaId.$format")
+        if (relativePath.isBlank()) return File(base, "$mediaId.$format")
+        // relativePath comes from the server — a hostile/compromised source could
+        // smuggle ../ segments and write outside the downloads directory.
+        val dest = File(base, relativePath)
+        val inBase = dest.canonicalPath.startsWith(base.canonicalPath + File.separator)
+        return if (inBase) dest else File(base, "$mediaId.$format")
     }
 
     // Persistent (NOT cache) so decoded pages survive OS cache eviction / "Clear cache" and

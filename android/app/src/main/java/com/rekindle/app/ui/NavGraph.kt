@@ -60,7 +60,7 @@ sealed class Screen(val route: String) {
     }
 
     companion object {
-        private fun encode(s: String?) = java.net.URLEncoder.encode(s ?: "", "UTF-8")
+        private fun encode(s: String?) = android.net.Uri.encode(s ?: "")
     }
 }
 
@@ -146,8 +146,8 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
             ),
         ) { back ->
             val libraryId = back.arguments!!.getString("libraryId")!!
-            val libraryName = back.arguments!!.getString("libraryName")?.decode()
-            val libraryType = back.arguments!!.getString("libraryType")?.decode()
+            val libraryName = back.arguments!!.getString("libraryName")
+            val libraryType = back.arguments!!.getString("libraryType")
             MediaGridScreen(
                 libraryId = libraryId,
                 libraryName = libraryName?.ifBlank { null },
@@ -165,8 +165,8 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
             ),
         ) { back ->
             val folderId = back.arguments!!.getString("folderId")!!
-            val title = back.arguments!!.getString("title")?.decode()
-            val libraryType = back.arguments!!.getString("libraryType")?.decode()
+            val title = back.arguments!!.getString("title")
+            val libraryType = back.arguments!!.getString("libraryType")
             ChapterIndexScreen(
                 folderId = folderId,
                 title = title?.ifBlank { null },
@@ -183,7 +183,7 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
                 navArgument("libraryType") { type = NavType.StringType; defaultValue = "" },
             ),
         ) { back ->
-            val libraryType = back.arguments!!.getString("libraryType")?.decode()
+            val libraryType = back.arguments!!.getString("libraryType")
             ReaderScreen(
                 mediaId = back.arguments!!.getString("mediaId")!!,
                 onBack = { navController.popBackStack() },
@@ -203,7 +203,7 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
             ),
         ) { back ->
             val mediaId = back.arguments!!.getString("mediaId")!!
-            val title = back.arguments!!.getString("title")?.decode() ?: ""
+            val title = back.arguments!!.getString("title") ?: ""
             EpubReaderScreen(
                 mediaId = mediaId,
                 title = title,
@@ -258,6 +258,3 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
     }
     } // end outer Box
 }
-
-private fun String.decode(): String =
-    java.net.URLDecoder.decode(this, "UTF-8")

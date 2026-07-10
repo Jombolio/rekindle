@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rekindle.app.core.prefs.PrefsStore
+import com.rekindle.app.core.util.NaturalComparator
 import com.rekindle.app.data.repository.DownloadRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -141,25 +142,5 @@ class DownloadsViewModel @Inject constructor(
     private companion object {
         const val DEFAULT_FOLDER = "Downloads"
         const val DOWNLOAD_BASE_DIR = "Rekindle Downloads"
-    }
-}
-
-/** Compares strings with embedded numbers in natural order ("Chapter 2" before "Chapter 10"). */
-object NaturalComparator : Comparator<String> {
-    private val chunk = Regex("""\d+|\D+""")
-    override fun compare(a: String, b: String): Int {
-        val ac = chunk.findAll(a).map { it.value }.toList()
-        val bc = chunk.findAll(b).map { it.value }.toList()
-        for (i in 0 until minOf(ac.size, bc.size)) {
-            val x = ac[i]
-            val y = bc[i]
-            val cmp = if (x[0].isDigit() && y[0].isDigit()) {
-                (x.toLongOrNull() ?: Long.MAX_VALUE).compareTo(y.toLongOrNull() ?: Long.MAX_VALUE)
-            } else {
-                x.compareTo(y, ignoreCase = true)
-            }
-            if (cmp != 0) return cmp
-        }
-        return ac.size - bc.size
     }
 }

@@ -152,6 +152,9 @@ class MultiSourceLibraryViewModel @Inject constructor(
         viewModelScope.launch {
             val source = stateFor(sourceId)?.source ?: return@launch
             prefs.addOrUpdateSource(source.copy(token = null, permissionLevel = 0))
+            // Also drop the legacy single-server token so no fallback path can
+            // keep a signed-out install authenticated.
+            prefs.clearToken()
         }
     }
 
