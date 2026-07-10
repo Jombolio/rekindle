@@ -202,17 +202,29 @@ public class MediaController(
         if (userId is null)
             return Unauthorized();
 
+        // Trust the client's write timestamp when supplied (clamped to now so a
+        // skewed clock can't lock out later writes) — it preserves the true order
+        // of offline-queued writes across devices. Arrival time otherwise.
+        var now = DateTime.UtcNow;
+        var lastReadAt = req.LastReadAt is { } clientTs && clientTs.ToUniversalTime() < now
+            ? clientTs.ToUniversalTime()
+            : now;
+
         var progress = new ReadingProgress
         {
             UserId = userId,
             MediaId = id,
             CurrentPage = Math.Max(0, req.CurrentPage),
             IsCompleted = req.IsCompleted,
-            LastReadAt = DateTime.UtcNow
+            LastReadAt = lastReadAt
         };
 
-        await progressRepository.UpsertAsync(progress);
-        return Ok(progress);
+        await progressRepository.UpsertAsync(progress, trustClientOrdering: req.LastReadAt is not null);
+
+        // Return what is actually stored: the upsert may have rejected or clamped
+        // this write, and echoing the request back would hide that from clients.
+        var stored = await progressRepository.GetAsync(userId, id);
+        return Ok(stored ?? progress);
     }
 
     [HttpGet("{id}/progress")]
@@ -246,5 +258,9 @@ public class MediaController(
         _ => "application/octet-stream"
     };
 
-    public record UpdateProgressRequest(int CurrentPage, bool IsCompleted);
+    /// <param name="LastReadAt">
+    /// Client-side time of the write (UTC). Optional for backwards compatibility;
+    /// when present the server trusts it for ordering (see ProgressRepository).
+    /// </param>
+    public record UpdateProgressRequest(int CurrentPage, bool IsCompleted, DateTime? LastReadAt = null);
 }

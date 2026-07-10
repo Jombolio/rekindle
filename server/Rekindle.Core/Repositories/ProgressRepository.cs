@@ -33,22 +33,36 @@ public class ProgressRepository(DbConnectionFactory factory)
             new { userId });
     }
 
-    public async Task UpsertAsync(ReadingProgress progress)
+    /// <param name="trustClientOrdering">
+    /// True when the write carries a client-supplied timestamp. Those writes are
+    /// applied verbatim (newest-timestamp-wins via the WHERE guard), so backward
+    /// navigation persists and a stale offline-queued flush is rejected outright.
+    /// Legacy writes (no client timestamp) get an arrival-time stamp that always
+    /// passes the guard, so they keep the high-water-mark clamp as protection
+    /// against open-time page-0 races from older clients.
+    /// </param>
+    public async Task UpsertAsync(ReadingProgress progress, bool trustClientOrdering = false)
     {
+        var currentPageExpr = trustClientOrdering
+            ? "excluded.current_page"
+            : """
+              CASE
+                  -- Re-reading a finished book: the client restarts at 0, so take
+                  -- the new (lower) resume position instead of the high-water mark,
+                  -- otherwise page and is_completed desync (page stuck at the end).
+                  WHEN reading_progress.is_completed = 1 AND excluded.is_completed = 0
+                      THEN excluded.current_page
+                  ELSE MAX(current_page, excluded.current_page)
+              END
+              """;
+
         using var conn = factory.Create();
         await conn.ExecuteAsync(
-            """
+            $"""
             INSERT INTO reading_progress (user_id, media_id, current_page, is_completed, last_read_at)
             VALUES (@UserId, @MediaId, @CurrentPage, @IsCompleted, @LastReadAt)
             ON CONFLICT(user_id, media_id) DO UPDATE SET
-                current_page = CASE
-                    -- Re-reading a finished book: the client restarts at 0, so take
-                    -- the new (lower) resume position instead of the high-water mark,
-                    -- otherwise page and is_completed desync (page stuck at the end).
-                    WHEN reading_progress.is_completed = 1 AND excluded.is_completed = 0
-                        THEN excluded.current_page
-                    ELSE MAX(current_page, excluded.current_page)
-                END,
+                current_page = {currentPageExpr},
                 is_completed = excluded.is_completed,
                 last_read_at = excluded.last_read_at
             WHERE excluded.last_read_at >= reading_progress.last_read_at;
