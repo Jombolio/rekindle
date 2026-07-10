@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import javax.inject.Inject
 
 data class LoginState(
@@ -51,18 +52,24 @@ class LoginViewModel @Inject constructor(
             _state.update { it.copy(error = "All fields are required") }
             return
         }
+        val serverUrl = s.serverUrl.trim().trimEnd('/')
+        if (serverUrl.toHttpUrlOrNull() == null) {
+            _state.update { it.copy(error = "Server URL must start with http:// or https://") }
+            return
+        }
         if (s.isSetupMode && s.setupToken.isBlank()) {
             _state.update { it.copy(error = "Setup token is required — check the server log") }
             return
         }
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
-            prefs.setServerUrl(s.serverUrl.trimEnd('/'))
+            // Legacy key: only read while no sources exist; kept for URL prefill.
+            prefs.setServerUrl(serverUrl)
 
             val result = if (s.isSetupMode) {
-                authRepo.setup(s.username, s.password, s.setupToken)
+                authRepo.setup(serverUrl, s.username, s.password, s.setupToken)
             } else {
-                authRepo.login(s.username, s.password)
+                authRepo.login(serverUrl, s.username, s.password)
             }
 
             result

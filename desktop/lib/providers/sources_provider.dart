@@ -7,9 +7,24 @@ class SourcesNotifier extends Notifier<List<ServerSource>> {
   @override
   List<ServerSource> build() => Prefs.instance.sources;
 
-  Future<void> add(ServerSource source) async {
+  /// Adds [source], or — if a source with the same base URL already exists
+  /// (e.g. re-signing in after the token was lost) — updates that one in place
+  /// instead of creating a duplicate. Returns the id of the effective source.
+  Future<String> add(ServerSource source) async {
+    String norm(String u) => u.trim().replaceAll(RegExp(r'/+$'), '');
+    final idx = state.indexWhere((s) => norm(s.baseUrl) == norm(source.baseUrl));
+    if (idx >= 0) {
+      final existing = state[idx];
+      state = [
+        for (var i = 0; i < state.length; i++)
+          if (i == idx) existing.copyWith(token: source.token) else state[i],
+      ];
+      await Prefs.instance.setSources(state);
+      return existing.id;
+    }
     state = [...state, source];
     await Prefs.instance.setSources(state);
+    return source.id;
   }
 
   Future<void> remove(String id) async {

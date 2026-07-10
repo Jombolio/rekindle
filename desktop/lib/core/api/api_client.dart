@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 class ApiClient {
   final String baseUrl;
@@ -18,7 +19,11 @@ class ApiClient {
       },
     ));
 
-    dio.interceptors.add(LogInterceptor(responseBody: false));
+    // LogInterceptor prints request headers — including the Authorization
+    // bearer token — so keep it out of release builds.
+    if (kDebugMode) {
+      dio.interceptors.add(LogInterceptor(responseBody: false));
+    }
     if (onUnauthorized != null) {
       dio.interceptors.add(_UnauthorizedInterceptor(onUnauthorized!));
     }

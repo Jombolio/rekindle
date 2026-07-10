@@ -73,7 +73,19 @@ class UpdateService {
   /// Launches the downloaded Windows installer detached and returns. The caller
   /// should exit the app so the installer can replace files.
   Future<void> launchInstaller(String path) async {
-    await Process.start(path, const [], mode: ProcessStartMode.detached);
+    if (Platform.isWindows) {
+      // The installer's manifest requires elevation (PrivilegesRequired=admin),
+      // so CreateProcess — what Process.start uses — fails with
+      // ERROR_ELEVATION_REQUIRED. cmd's `start` goes through ShellExecute,
+      // which shows the UAC prompt instead.
+      await Process.start(
+        'cmd',
+        ['/c', 'start', '', path],
+        mode: ProcessStartMode.detached,
+      );
+    } else {
+      await Process.start(path, const [], mode: ProcessStartMode.detached);
+    }
   }
 
   /// Opens [url] in the user's default browser. Best-effort; never throws.

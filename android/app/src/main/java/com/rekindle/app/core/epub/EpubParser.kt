@@ -3,6 +3,7 @@ package com.rekindle.app.core.epub
 import org.jsoup.Jsoup
 import org.w3c.dom.Element
 import java.io.InputStream
+import java.net.URLDecoder
 import java.util.zip.ZipInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 
@@ -17,7 +18,7 @@ object EpubParser {
             var entry = zip.nextEntry
             while (entry != null) {
                 if (!entry.isDirectory) {
-                    files[entry.name] = zip.readBytes()
+                    files[normalizePath(entry.name)] = zip.readBytes()
                 }
                 entry = zip.nextEntry
             }
@@ -55,8 +56,13 @@ object EpubParser {
             val el = spine.item(i) as? Element ?: continue
             val idref = el.getAttribute("idref").takeIf { it.isNotBlank() } ?: continue
             val href = manifest[idref] ?: continue
-            val fullPath = "$opfDir$href"
-            val htmlBytes = files[fullPath] ?: files[fullPath.removePrefix("/")] ?: continue
+            // Manifest hrefs are URIs (percent-encoded, may carry a #fragment and
+            // ../ segments); zip entry names are raw paths — decode before lookup
+            // or chapters with spaces in their filenames are silently dropped.
+            val decoded = decodeHref(href.substringBefore('#'))
+            val htmlBytes = files[normalizePath("$opfDir$decoded")]
+                ?: files[normalizePath("$opfDir$href")]
+                ?: continue
             val html = htmlBytes.toString(Charsets.UTF_8)
             val chapterTitle = extractTitle(html) ?: href.substringAfterLast('/')
             chapters += EpubChapter(title = chapterTitle, html = html)
@@ -65,8 +71,32 @@ object EpubParser {
         return EpubBook(title = bookTitle, chapters = chapters)
     }
 
+    /** URLDecoder form-decodes '+' to space, which is wrong for URIs — protect it. */
+    private fun decodeHref(href: String): String =
+        runCatching { URLDecoder.decode(href.replace("+", "%2B"), "UTF-8") }.getOrDefault(href)
+
+    /** Resolves ./ and ../ segments and drops empty ones so hrefs and zip entry names compare equal. */
+    private fun normalizePath(path: String): String {
+        val parts = mutableListOf<String>()
+        for (seg in path.split('/')) when (seg) {
+            "", "." -> {}
+            ".." -> parts.removeLastOrNull()
+            else -> parts.add(seg)
+        }
+        return parts.joinToString("/")
+    }
+
     private fun parseXml(bytes: ByteArray): org.w3c.dom.Document =
-        DocumentBuilderFactory.newInstance().also { it.isNamespaceAware = true }
+        DocumentBuilderFactory.newInstance()
+            .also { f ->
+                f.isNamespaceAware = true
+                // EPUBs are untrusted input — never resolve external entities (XXE).
+                f.isExpandEntityReferences = false
+                f.isXIncludeAware = false
+                runCatching { f.setFeature("http://xml.org/sax/features/external-general-entities", false) }
+                runCatching { f.setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
+                runCatching { f.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false) }
+            }
             .newDocumentBuilder()
             .parse(bytes.inputStream())
 

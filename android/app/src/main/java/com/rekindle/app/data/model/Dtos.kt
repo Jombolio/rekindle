@@ -151,10 +151,12 @@ data class ScrapeResultDto(
 )
 
 fun ScrapeResultDto.toDomain(): com.rekindle.app.domain.model.ScrapeResult {
+    // The server emits Status.ToString().ToLowerInvariant(), i.e. "nochange"
+    // (no underscore); "no_change" is tolerated in case that ever changes.
     val status = when (this.status) {
-        "no_change" -> com.rekindle.app.domain.model.ScrapeStatus.NO_CHANGE
-        "conflict"  -> com.rekindle.app.domain.model.ScrapeStatus.CONFLICT
-        else        -> com.rekindle.app.domain.model.ScrapeStatus.CREATED
+        "nochange", "no_change" -> com.rekindle.app.domain.model.ScrapeStatus.NO_CHANGE
+        "conflict"              -> com.rekindle.app.domain.model.ScrapeStatus.CONFLICT
+        else                    -> com.rekindle.app.domain.model.ScrapeStatus.CREATED
     }
     return com.rekindle.app.domain.model.ScrapeResult(
         status   = status,

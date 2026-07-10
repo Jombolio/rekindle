@@ -74,6 +74,13 @@ typedef ReaderArgs = (String mediaId, String? libraryType);
 class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
   Timer? _syncTimer;
 
+  // Guard against wiping a finished item's completion flag: completed items
+  // restart at page/chapter 0, so the dispose-time flush would otherwise push
+  // (page 0, isCompleted=false) over the server's isCompleted=true after a
+  // mere open+close.
+  bool _completedOnLoad = false;
+  bool _userNavigated = false;
+
   @override
   ReaderState build(ReaderArgs arg) {
     final (mediaId, _) = arg;
@@ -95,17 +102,47 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
 
     // Load local queue first for instant offline start
     final local = await _localProgress(db, mediaId);
+    // Unsynced local progress is newer than anything the server has (it was
+    // never pushed), so prefer it — otherwise an online open resumes at the
+    // stale server page and the debounce overwrites the real progress.
+    // (Kept as a nullable snapshot, not a bool, so this compiles on Dart
+    // versions without boolean-variable promotion.)
+    final unsynced = (local != null && !local.$3) ? local : null;
+
+    // Offline-first: seed the page count from the local extracted manifest BEFORE
+    // any network call, so a downloaded comic renders immediately instead of
+    // stalling behind sequential server timeouts. Extraction happens on demand
+    // (idempotent) for CBZ; other formats return null and fall through.
+    try {
+      final downloadDir = await resolveDownloadDir();
+      final manager = DownloadManager(client, db, downloadBaseDir: downloadDir);
+      final localPages = await manager.ensureExtractedPages(mediaId);
+      if (localPages != null && localPages.isNotEmpty) {
+        state = state.copyWith(totalPages: localPages.length);
+        // The reader screen reads page files from this provider — refresh it in
+        // case extraction only just happened.
+        ref.invalidate(extractedPagesProvider(mediaId));
+      }
+    } catch (_) {
+      // No local pages — rely on the server below.
+    }
 
     ReadingProgress? progress;
-    try {
-      progress = await api.getProgress(mediaId);
-    } catch (_) {
-      // Offline — use local queue value
+    if (unsynced == null) {
+      try {
+        progress = await api.getProgress(mediaId);
+      } catch (_) {
+        // Offline — use local queue value
+      }
     }
 
     // If the archive was finished, start from the beginning on the next open.
-    final isCompleted = progress?.isCompleted ?? local?.$2 ?? false;
-    final savedPage = isCompleted ? 0 : (progress?.currentPage ?? local?.$1 ?? 0);
+    final isCompleted =
+        unsynced?.$2 ?? progress?.isCompleted ?? local?.$2 ?? false;
+    _completedOnLoad = isCompleted;
+    final savedPage = isCompleted
+        ? 0
+        : (unsynced?.$1 ?? progress?.currentPage ?? local?.$1 ?? 0);
 
     // Determine reading direction. If the user has never explicitly toggled
     // direction for this item, fall back to the library type: manga → RTL.
@@ -147,23 +184,6 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
       savedProgress: progress,
     );
 
-    // Offline-first: seed the page count from the local extracted manifest so a
-    // downloaded comic renders with no server connection. Extraction happens on
-    // demand (idempotent) for CBZ; other formats return null and fall through.
-    try {
-      final downloadDir = await resolveDownloadDir();
-      final manager = DownloadManager(client, db, downloadBaseDir: downloadDir);
-      final localPages = await manager.ensureExtractedPages(mediaId);
-      if (localPages != null && localPages.isNotEmpty) {
-        state = state.copyWith(totalPages: localPages.length);
-        // The reader screen reads page files from this provider — refresh it in
-        // case extraction only just happened.
-        ref.invalidate(extractedPagesProvider(mediaId));
-      }
-    } catch (_) {
-      // No local pages — rely on the server below.
-    }
-
     // Fetch page count + spread map from the server (augments spreads, triggers
     // server-side extraction if needed). Overrides the local count when online.
     try {
@@ -191,6 +211,7 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
 
   void goToPage(int page, String mediaId) {
     final clamped = page.clamp(0, (state.totalPages - 1).clamp(0, 999999));
+    if (clamped != state.currentPage) _userNavigated = true;
     state = state.copyWith(currentPage: clamped);
     _scheduleSync(mediaId);
   }
@@ -230,6 +251,9 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
   }
 
   Future<void> _syncNow(String mediaId) async {
+    // A finished item restarts at 0 — don't overwrite its completion flag
+    // unless the user actually navigated this session.
+    if (_completedOnLoad && !_userNavigated) return;
     final page = state.currentPage;
     final isCompleted =
         state.totalPages > 0 && page >= state.totalPages - 1;
@@ -255,11 +279,12 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
 
   // ── Local DB helpers ─────────────────────────────────────────────────────
 
-  /// Returns `(currentPage, isCompleted)` from the local queue, or null if absent.
-  Future<(int, bool)?> _localProgress(Database db, String mediaId) async {
+  /// Returns `(currentPage, isCompleted, synced)` from the local queue, or null
+  /// if absent.
+  Future<(int, bool, bool)?> _localProgress(Database db, String mediaId) async {
     final rows = await db.query(
       'progress_queue',
-      columns: ['current_page', 'is_completed'],
+      columns: ['current_page', 'is_completed', 'synced'],
       where: 'media_id = ?',
       whereArgs: [mediaId],
     );
@@ -267,6 +292,7 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
     return (
       rows.first['current_page'] as int,
       (rows.first['is_completed'] as int) == 1,
+      (rows.first['synced'] as int? ?? 0) == 1,
     );
   }
 
@@ -297,6 +323,10 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
       );
 }
 
+/// Kept non-autoDispose because the EPUB screen only reads it (autoDispose would
+/// churn it and re-run _init on every access). To still get fresh state per
+/// open — so a finished chapter restarts at 0 and cross-device progress is
+/// re-fetched — the reader screens invalidate this on dispose (see #20).
 final readerProvider =
     NotifierProviderFamily<ReaderNotifier, ReaderState, ReaderArgs>(
   ReaderNotifier.new,

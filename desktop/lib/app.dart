@@ -40,7 +40,11 @@ final _routerProvider = Provider<GoRouter>((ref) {
           ? sources.where((s) => s.id == activeId).firstOrNull
           : sources.firstOrNull;
       final isLoggedOut = activeSource != null && activeSource.token == null;
-      const protectedPrefixes = ['/libraries/', '/series/', '/reader/', '/epub/', '/admin/'];
+      // The reader and EPUB routes are intentionally NOT protected: a downloaded
+      // item must stay readable offline even after the token is lost (server
+      // restart / 401). They degrade to local pages, or show an explicit
+      // "not available offline" message for anything not downloaded.
+      const protectedPrefixes = ['/libraries/', '/series/', '/admin/'];
       if (isLoggedOut && protectedPrefixes.any((p) => loc.startsWith(p))) {
         return '/libraries';
       }
@@ -114,11 +118,28 @@ final _routerProvider = Provider<GoRouter>((ref) {
   );
 });
 
-class RekindleApp extends ConsumerWidget {
+class RekindleApp extends ConsumerStatefulWidget {
   const RekindleApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RekindleApp> createState() => _RekindleAppState();
+}
+
+class _RekindleAppState extends ConsumerState<RekindleApp> {
+  @override
+  void initState() {
+    super.initState();
+    // Flush any progress queued during a previous offline session on startup,
+    // not only on a later offline→online transition.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && ref.read(isOnlineProvider)) {
+        syncPendingProgress(ref);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final router = ref.watch(_routerProvider);
     final settings = ref.watch(settingsProvider);
 

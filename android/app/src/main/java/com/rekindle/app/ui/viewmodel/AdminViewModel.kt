@@ -26,14 +26,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.RequestBody
+import okio.BufferedSink
+import okio.source
 import org.json.JSONObject
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
@@ -182,42 +187,57 @@ class AdminViewModel @Inject constructor(
     fun uploadFile(fileUri: Uri, libraryId: String, relativePath: String?) {
         viewModelScope.launch {
             _state.update { it.copy(uploadLoading = true, uploadError = null, uploadSuccess = null) }
+            // viewModelScope runs on Main — the synchronous OkHttp call (and the
+            // content-resolver reads) must move off it or every upload dies with
+            // NetworkOnMainThreadException.
             runCatching {
-                val baseUrl = prefs.serverUrl.first().trimEnd('/')
-                val token = prefs.token.first() ?: ""
-                val fileName = resolveFileName(fileUri)
-                val bytes = context.contentResolver.openInputStream(fileUri)?.use { it.readBytes() }
-                    ?: error("Cannot read selected file")
+                withContext(Dispatchers.IO) {
+                    val baseUrl = prefs.serverUrl.first().trimEnd('/')
+                    val token = prefs.token.first() ?: ""
+                    val fileName = resolveFileName(fileUri)
+                    context.contentResolver.openInputStream(fileUri)?.close()
+                        ?: error("Cannot read selected file")
 
-                val filePart = MultipartBody.Part.createFormData(
-                    "file", fileName,
-                    bytes.toRequestBody("application/octet-stream".toMediaType()),
-                )
-                val bodyBuilder = MultipartBody.Builder()
-                    .setType(MultipartBody.FORM)
-                    .addFormDataPart("libraryId", libraryId)
-                    .addPart(filePart)
-                if (!relativePath.isNullOrBlank()) {
-                    bodyBuilder.addFormDataPart("relativePath", relativePath)
+                    // Stream from the content URI instead of buffering the whole
+                    // archive (often hundreds of MB) in memory.
+                    val fileBody = object : RequestBody() {
+                        override fun contentType() = "application/octet-stream".toMediaType()
+                        override fun writeTo(sink: BufferedSink) {
+                            val input = context.contentResolver.openInputStream(fileUri)
+                                ?: throw IOException("Cannot read selected file")
+                            input.source().use { sink.writeAll(it) }
+                        }
+                    }
+                    val filePart = MultipartBody.Part.createFormData("file", fileName, fileBody)
+                    val bodyBuilder = MultipartBody.Builder()
+                        .setType(MultipartBody.FORM)
+                        .addFormDataPart("libraryId", libraryId)
+                        .addPart(filePart)
+                    if (!relativePath.isNullOrBlank()) {
+                        bodyBuilder.addFormDataPart("relativePath", relativePath)
+                    }
+
+                    val request = Request.Builder()
+                        .url("$baseUrl/api/admin/upload")
+                        .header("Authorization", "Bearer $token")
+                        .post(bodyBuilder.build())
+                        .build()
+
+                    uploadClient.newCall(request).execute().use { response ->
+                        val body = response.body?.string() ?: ""
+                        if (!response.isSuccessful) {
+                            val msg = runCatching { JSONObject(body).optString("error") }.getOrNull()
+                            error(msg?.ifBlank { null } ?: "HTTP ${response.code}")
+                        }
+                        JSONObject(body).optString("message", "Upload complete.")
+                    }
                 }
-
-                val request = Request.Builder()
-                    .url("$baseUrl/api/admin/upload")
-                    .header("Authorization", "Bearer $token")
-                    .post(bodyBuilder.build())
-                    .build()
-
-                val response = uploadClient.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val msg = runCatching { JSONObject(body).optString("error") }.getOrNull()
-                    error(msg?.ifBlank { null } ?: "HTTP ${response.code}")
-                }
-                val body = response.body?.string() ?: ""
-                JSONObject(body).optString("message", "Upload complete.")
             }
                 .onSuccess { msg -> _state.update { it.copy(uploadLoading = false, uploadSuccess = msg) } }
-                .onFailure { e -> _state.update { it.copy(uploadLoading = false, uploadError = e.message) } }
+                .onFailure { e ->
+                    val msg = e.message ?: e.javaClass.simpleName
+                    _state.update { it.copy(uploadLoading = false, uploadError = msg) }
+                }
         }
     }
 

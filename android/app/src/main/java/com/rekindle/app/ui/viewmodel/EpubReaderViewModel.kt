@@ -80,10 +80,15 @@ class EpubReaderViewModel @Inject constructor(
                 }
                 stream.use { EpubParser.parse(it) }
             }
-            val savedChapter = _state.value.chapterIndex.coerceIn(0, (book.chapters.size - 1).coerceAtLeast(0))
+            if (book.chapters.isEmpty()) {
+                // Publishing the book anyway would crash the screen on chapters[0].
+                _state.update { it.copy(error = "This EPUB contains no readable chapters.") }
+                return
+            }
+            val savedChapter = _state.value.chapterIndex.coerceIn(0, book.chapters.size - 1)
             _state.update { it.copy(book = book, chapterIndex = savedChapter) }
         }.onFailure { e ->
-            _state.update { it.copy(error = e.message) }
+            _state.update { it.copy(error = e.message ?: "Failed to open EPUB.") }
         }
     }
 

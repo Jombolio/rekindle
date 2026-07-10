@@ -67,6 +67,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     } on DioException catch (e) {
       final status = e.response?.statusCode;
       if (status != 401 && status != 409) {
+        if (!mounted) return;
         setState(() {
           _busy = false;
           _error = 'Could not reach server. Check the URL and try again.';
@@ -74,6 +75,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
         return;
       }
     } catch (_) {
+      if (!mounted) return;
       setState(() {
         _busy = false;
         _error = 'Could not reach server. Check the URL and try again.';
@@ -81,6 +83,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
       return;
     }
 
+    if (!mounted) return;
     _pendingSource = ServerSource.create(
       name: name.isEmpty ? _hostFromUrl(rawUrl) : name,
       baseUrl: url,
@@ -110,20 +113,23 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
       }
 
       final withToken = source.copyWith(token: result.token);
-      // Cache before adding the source so sourceAuthProvider finds it
-      // immediately on the first watch — no network call required on restart.
+      // add() dedupes by base URL and returns the effective source id (the
+      // existing one when re-signing in), so cache/active-id use the right id.
+      final effectiveId =
+          await ref.read(sourcesProvider.notifier).add(withToken);
       await Prefs.instance.setCachedAuth(
-          withToken.id, result.username, result.permissionLevel);
-      await ref.read(sourcesProvider.notifier).add(withToken);
-      ref.read(activeSourceIdProvider.notifier).state = withToken.id;
+          effectiveId, result.username, result.permissionLevel);
+      ref.read(activeSourceIdProvider.notifier).state = effectiveId;
 
       if (mounted) context.go('/libraries');
     } on DioException catch (e) {
+      if (!mounted) return;
       setState(() {
         _busy = false;
         _error = AuthNotifier.errorMessage(e);
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _busy = false;
         _error = e.toString();

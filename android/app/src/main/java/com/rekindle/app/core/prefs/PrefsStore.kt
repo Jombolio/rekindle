@@ -73,30 +73,27 @@ class PrefsStore @Inject constructor(
     fun newSourceId(): String = UUID.randomUUID().toString()
 
     // ── Active-source derived values ──────────────────────────────────────────
-    // These delegate to the active source, with fallback to legacy single-server
-    // prefs so existing installations continue to work without re-login.
+    // These delegate to the active source. The legacy single-server prefs are
+    // consulted ONLY while no sources exist (pre-multi-source installations,
+    // until their first re-login) — falling back whenever the active source's
+    // token happened to be null kept signed-out sources authenticated and
+    // could send one server's JWT to another.
 
     val serverUrl: Flow<String> = combine(activeSource, store.data) { source, prefs ->
-        source?.baseUrl ?: prefs[Keys.SERVER_URL] ?: ""
+        if (source != null) source.baseUrl else prefs[Keys.SERVER_URL] ?: ""
     }
 
     val token: Flow<String?> = combine(activeSource, store.data) { source, prefs ->
-        source?.token ?: prefs[Keys.TOKEN]
+        if (source != null) source.token else prefs[Keys.TOKEN]
     }
 
     val permissionLevel: Flow<Int> = combine(activeSource, store.data) { source, prefs ->
-        source?.permissionLevel ?: prefs[Keys.PERMISSION_LEVEL] ?: 2
+        if (source != null) source.permissionLevel else prefs[Keys.PERMISSION_LEVEL] ?: 2
     }
 
-    // Legacy setters — still used during login before the source is committed.
+    // Legacy setter — still used during login before the source is committed.
     suspend fun setServerUrl(url: String) =
         store.edit { it[Keys.SERVER_URL] = url }
-
-    suspend fun setToken(token: String) =
-        store.edit { it[Keys.TOKEN] = token }
-
-    suspend fun setPermissionLevel(level: Int) =
-        store.edit { it[Keys.PERMISSION_LEVEL] = level }
 
     suspend fun clearToken() =
         store.edit {
@@ -111,7 +108,11 @@ class PrefsStore @Inject constructor(
             val current = runCatching<List<ServerSource>> {
                 gson.fromJson(prefs[Keys.SOURCES_JSON] ?: "[]", sourceListType)
             }.getOrDefault(emptyList()).toMutableList()
+            // Mirror the activeSource fallback: an unknown/stale active id
+            // resolves to the first source, so clear that one's token too —
+            // otherwise a 401 loops forever without ever signing out.
             val idx = current.indexOfFirst { it.id == activeId }
+                .let { if (it < 0 && current.isNotEmpty()) 0 else it }
             if (idx >= 0) current[idx] = current[idx].copy(token = null, permissionLevel = 0)
             prefs[Keys.SOURCES_JSON] = gson.toJson(current)
             // Clear legacy single-token storage too

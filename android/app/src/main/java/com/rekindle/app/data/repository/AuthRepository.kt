@@ -1,6 +1,7 @@
 package com.rekindle.app.data.repository
 
 import com.rekindle.app.core.prefs.PrefsStore
+import com.rekindle.app.data.api.AuthRoute
 import com.rekindle.app.data.api.RekindleApi
 import com.rekindle.app.data.model.LoginRequest
 import com.rekindle.app.data.model.SetupRequest
@@ -14,22 +15,22 @@ class AuthRepository @Inject constructor(
     private val api: RekindleApi,
     private val prefs: PrefsStore,
 ) {
-    suspend fun login(username: String, password: String): Result<Unit> = runCatching {
-        val url = prefs.serverUrl.first()
-        val response = api.login(LoginRequest(username, password))
+    suspend fun login(baseUrl: String, username: String, password: String): Result<Unit> = runCatching {
+        val url = baseUrl.trimEnd('/')
+        val response = api.login(LoginRequest(username, password), AuthRoute(url))
         commitSource(url, response.token, response.permissionLevel)
     }
 
-    suspend fun setup(username: String, password: String, setupToken: String): Result<Unit> = runCatching {
-        val url = prefs.serverUrl.first()
-        val response = api.setup(SetupRequest(username, password, setupToken))
+    suspend fun setup(baseUrl: String, username: String, password: String, setupToken: String): Result<Unit> = runCatching {
+        val url = baseUrl.trimEnd('/')
+        val response = api.setup(SetupRequest(username, password, setupToken), AuthRoute(url))
         commitSource(url, response.token, response.permissionLevel)
     }
 
     val permissionLevel = prefs.permissionLevel
 
-    suspend fun needsSetup(): Boolean = runCatching {
-        api.setupStatus()["needsSetup"] == true
+    suspend fun needsSetup(baseUrl: String): Boolean = runCatching {
+        api.setupStatus(AuthRoute(baseUrl.trimEnd('/')))["needsSetup"] == true
     }.getOrDefault(false)
 
     suspend fun logout() {
@@ -60,8 +61,8 @@ class AuthRepository @Inject constructor(
         )
         prefs.addOrUpdateSource(source)
         prefs.setActiveSourceId(source.id)
-        // Keep legacy keys in sync for interceptors that use runBlocking reads
-        prefs.setToken(token)
-        prefs.setPermissionLevel(permissionLevel)
+        // A source now exists, so the legacy single-server keys are never read
+        // again — clear them so a stale JWT can't linger on disk.
+        prefs.clearToken()
     }
 }

@@ -117,8 +117,8 @@ fun AdminScreen(
     LaunchedEffect(selectedTab) {
         when (selectedTab) {
             1 -> adminVm.loadUsers()
-            3 -> adminVm.loadStats()
-            4 -> adminVm.loadApisConfig()
+            2 -> adminVm.loadStats()
+            3 -> adminVm.loadApisConfig()
         }
     }
 

@@ -60,8 +60,12 @@ class EpubParser {
       final href = manifest[idref];
       if (href == null) continue;
 
-      final fullPath = '$opfDir$href';
-      final entry = _findEntry(archive, fullPath);
+      // Manifest hrefs are URIs — percent-encoded and may carry a #fragment.
+      // Archive entry names are raw paths, so decode before looking up or a
+      // chapter whose filename has spaces (e.g. "chapter%201.xhtml") is dropped.
+      final decodedHref = _decodeHref(href.split('#').first);
+      final entry = _findEntry(archive, '$opfDir$decodedHref') ??
+          _findEntry(archive, '$opfDir$href');
       if (entry == null) continue;
 
       final html = utf8.decode(entry.content as List<int>, allowMalformed: true);
@@ -70,6 +74,14 @@ class EpubParser {
     }
 
     return EpubBook(title: title, chapters: chapters);
+  }
+
+  static String _decodeHref(String href) {
+    try {
+      return Uri.decodeFull(href);
+    } catch (_) {
+      return href;
+    }
   }
 
   static XmlDocument _readXml(Archive archive, String path) {

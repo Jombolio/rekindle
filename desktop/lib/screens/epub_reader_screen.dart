@@ -5,10 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
+import 'package:sqflite/sqflite.dart';
 
+import '../core/api/api_client.dart';
+import '../core/api/media_api.dart';
 import '../core/db/local_db_provider.dart';
 import '../core/download/download_manager.dart';
 import '../core/epub/epub_parser.dart';
+import '../core/models/reading_progress.dart';
 import '../providers/auth_provider.dart';
 import '../providers/reader_provider.dart';
 import '../providers/settings_provider.dart';
@@ -36,6 +40,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   _Theme _theme = _Theme.light;
   bool _showControls = true;
   bool _notDownloaded = false;
+  String? _loadError;
   final FocusNode _focusNode = FocusNode();
 
   @override
@@ -50,6 +55,8 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   @override
   void dispose() {
     _focusNode.dispose();
+    // Reset reader state so re-opening restarts a finished book at chapter 0.
+    ref.invalidate(readerProvider((widget.mediaId, null)));
     super.dispose();
   }
 
@@ -69,18 +76,72 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     final bytes = await File(localPath).readAsBytes();
     if (!mounted) return;
 
-    final book = await Isolate.run(() => EpubParser.parse(bytes));
-    final savedChapter = ref.read(readerProvider((widget.mediaId, null))).currentPage;
+    final EpubBook book;
+    try {
+      book = await Isolate.run(() => EpubParser.parse(bytes));
+    } catch (_) {
+      // A malformed EPUB would otherwise throw out of here and leave the
+      // reader on an endless spinner.
+      if (mounted) {
+        setState(() => _loadError = "This book couldn't be opened.");
+      }
+      return;
+    }
+    if (book.chapters.isEmpty) {
+      if (mounted) {
+        setState(() => _loadError = 'This EPUB has no readable chapters.');
+      }
+      return;
+    }
+
+    // Resolve the saved chapter directly. Reading it from the reader provider
+    // synchronously would return 0, because that first access only KICKS OFF
+    // the provider's async init — the restored value isn't there yet.
+    final savedChapter = await _savedChapter(client, db);
+    if (!mounted) return;
 
     setState(() {
       _book = book;
-      _chapterIndex =
-          savedChapter.clamp(0, (book.chapters.length - 1).clamp(0, 999999));
+      _chapterIndex = savedChapter.clamp(0, book.chapters.length - 1);
     });
 
     ref
         .read(readerProvider((widget.mediaId, null)).notifier)
         .setTotalPages(book.chapters.length);
+  }
+
+  /// The saved chapter index. Unsynced local progress wins (it's newer than
+  /// anything the server has — same rule as the comic reader); otherwise the
+  /// server value, then the synced local row. Completed books restart at 0.
+  Future<int> _savedChapter(ApiClient client, Database db) async {
+    final rows = await db.query(
+      'progress_queue',
+      columns: ['current_page', 'is_completed', 'synced'],
+      where: 'media_id = ?',
+      whereArgs: [widget.mediaId],
+    );
+    (int, bool)? localRow;
+    var localSynced = true;
+    if (rows.isNotEmpty) {
+      localRow = (
+        rows.first['current_page'] as int,
+        (rows.first['is_completed'] as int) == 1,
+      );
+      localSynced = (rows.first['synced'] as int? ?? 0) == 1;
+    }
+    if (localRow != null && !localSynced) {
+      return localRow.$2 ? 0 : localRow.$1;
+    }
+
+    ReadingProgress? progress;
+    try {
+      progress = await MediaApi(client).getProgress(widget.mediaId);
+    } catch (_) {
+      // Offline — fall back to the local queue below.
+    }
+    if (progress != null) return progress.isCompleted ? 0 : progress.currentPage;
+    if (localRow != null) return localRow.$2 ? 0 : localRow.$1;
+    return 0;
   }
 
   void _prevChapter() {
@@ -140,7 +201,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
         body: book == null
             ? (_notDownloaded
                 ? _OfflineUnavailable(fgColor: _fgColor)
-                : const Center(child: CircularProgressIndicator()))
+                : _loadError != null
+                    ? _EpubLoadError(message: _loadError!, fgColor: _fgColor)
+                    : const Center(child: CircularProgressIndicator()))
             : Stack(
                 children: [
                   GestureDetector(
@@ -261,6 +324,40 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                   ],
                 ],
               ),
+      ),
+    );
+  }
+}
+
+/// Shown when a downloaded EPUB can't be parsed (corrupt / no chapters).
+class _EpubLoadError extends StatelessWidget {
+  final String message;
+  final Color fgColor;
+  const _EpubLoadError({required this.message, required this.fgColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline,
+                size: 64, color: fgColor.withValues(alpha: 0.5)),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: fgColor.withValues(alpha: 0.8)),
+            ),
+            const SizedBox(height: 20),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Back'),
+            ),
+          ],
+        ),
       ),
     );
   }

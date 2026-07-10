@@ -58,7 +58,8 @@ class DownloadRepository @Inject constructor(
         if (_states.value.containsKey(mediaId)) return
         scope.launch {
             val restored = downloadManager.restore(mediaId)
-            _states.update { it + (mediaId to restored) }
+            // Don't clobber a download that started while the DB read was in flight.
+            _states.update { map -> if (map.containsKey(mediaId)) map else map + (mediaId to restored) }
         }
     }
 
@@ -70,17 +71,35 @@ class DownloadRepository @Inject constructor(
     suspend fun awaitState(mediaId: String): DownloadState {
         _states.value[mediaId]?.let { return it }
         val restored = downloadManager.restore(mediaId)
-        _states.update { it + (mediaId to restored) }
-        return restored
+        // Don't clobber a download that started while the DB read was in flight.
+        _states.update { map -> if (map.containsKey(mediaId)) map else map + (mediaId to restored) }
+        return _states.value[mediaId] ?: restored
+    }
+
+    /**
+     * Atomically claims [mediaId] for a new transfer by marking it DOWNLOADING,
+     * unless one is already in flight. Both the individual and the folder path
+     * claim through here, so they can never write the same file concurrently.
+     */
+    private fun claimDownload(mediaId: String): Boolean {
+        var claimed = false
+        _states.update { map ->
+            val status = map[mediaId]?.status
+            if (status == DownloadStatus.DOWNLOADING || status == DownloadStatus.EXTRACTING) {
+                claimed = false
+                map
+            } else {
+                claimed = true
+                map + (mediaId to DownloadState(status = DownloadStatus.DOWNLOADING))
+            }
+        }
+        return claimed
     }
 
     fun download(mediaId: String, format: String, title: String, relativePath: String) {
-        val current = stateFor(mediaId).status
-        if (current == DownloadStatus.DOWNLOADING || current == DownloadStatus.EXTRACTING) return
-
-        // Immediately reflect the queued state so the button blocks duplicate taps
-        // and shows feedback even while waiting for a semaphore slot to open.
-        update(mediaId, DownloadState(status = DownloadStatus.DOWNLOADING))
+        // Claiming also immediately reflects the queued state, so the button blocks
+        // duplicate taps and shows feedback while waiting for a semaphore slot.
+        if (!claimDownload(mediaId)) return
 
         val job = scope.launch {
             val baseUrl = prefs.serverUrl.first()
@@ -121,7 +140,10 @@ class DownloadRepository @Inject constructor(
         _jobs.remove(mediaId)
         scope.launch {
             downloadManager.cancelIncomplete(mediaId)
-            update(mediaId, DownloadState())
+            // Re-derive from the DB: if the transfer had already finished, blanking
+            // the state would show a completed download as not downloaded.
+            val restored = downloadManager.restore(mediaId)
+            update(mediaId, restored)
         }
     }
 
@@ -185,6 +207,9 @@ class DownloadRepository @Inject constructor(
         val existing = folderStateFor(folderId).status
         if (existing == FolderDownloadStatus.DOWNLOADING) return
 
+        val successfulIds = ConcurrentHashMap.newKeySet<String>()
+        val claimedIds = ConcurrentHashMap.newKeySet<String>()
+
         val job = scope.launch {
             val baseUrl = prefs.serverUrl.first()
             val token = prefs.token.first() ?: ""
@@ -214,7 +239,6 @@ class DownloadRepository @Inject constructor(
                 ))
             }
 
-            val successfulIds = ConcurrentHashMap.newKeySet<String>()
             val completedCount = AtomicInteger(0)
 
             // Pre-submit all downloads; semaphore enforces the 3-concurrent cap.
@@ -223,6 +247,10 @@ class DownloadRepository @Inject constructor(
                     launch {
                         semaphore.withPermit {
                             if (!coroutineContext.isActive) return@withPermit
+                            // Claim through the shared guard so an individual download of
+                            // the same archive can't open a second writer on the file.
+                            if (!claimDownload(archive.id)) return@withPermit
+                            claimedIds.add(archive.id)
                             runCatching {
                                 downloadManager.download(
                                     mediaId = archive.id,
@@ -231,7 +259,7 @@ class DownloadRepository @Inject constructor(
                                     relativePath = archive.relativePath,
                                     serverBaseUrl = baseUrl,
                                     authHeader = "Bearer $token",
-                                    onProgress = {},
+                                    onProgress = { update(archive.id, it) },
                                     safBaseUri = safUri,
                                 )
                             }.onSuccess { path ->
@@ -245,6 +273,11 @@ class DownloadRepository @Inject constructor(
                                         runCatching { downloadManager.extractPages(archive.id, path, archive.format) {} }
                                     }
                                 }
+                            }.onFailure { e ->
+                                // Swallowing cancellation here would keep the loop
+                                // counting up after the folder download was cancelled.
+                                if (e is kotlinx.coroutines.CancellationException) throw e
+                                update(archive.id, DownloadState(status = DownloadStatus.FAILED, error = e.message))
                             }
                         }
 
@@ -260,12 +293,23 @@ class DownloadRepository @Inject constructor(
 
             val grandTotal = archives.size
             val allDone = alreadyDone + successfulIds
+            // Report what actually happened — claiming "complete" after partial
+            // failures hides missing chapters until the user is offline.
             _folderStates.update {
-                it + (folderId to FolderDownloadState(
-                    status = FolderDownloadStatus.COMPLETE,
-                    total = grandTotal,
-                    completed = grandTotal,
-                ))
+                it + (folderId to if (allDone.size >= grandTotal) {
+                    FolderDownloadState(
+                        status = FolderDownloadStatus.COMPLETE,
+                        total = grandTotal,
+                        completed = grandTotal,
+                    )
+                } else {
+                    FolderDownloadState(
+                        status = FolderDownloadStatus.FAILED,
+                        total = grandTotal,
+                        completed = allDone.size,
+                        error = "${grandTotal - allDone.size} of $grandTotal chapters failed to download",
+                    )
+                })
             }
 
             for ((fId, ids) in folderArchiveIds) {
@@ -276,7 +320,15 @@ class DownloadRepository @Inject constructor(
         }
 
         _folderJobs[folderId] = job
-        job.invokeOnCompletion { _folderJobs.remove(folderId) }
+        job.invokeOnCompletion { cause ->
+            _folderJobs.remove(folderId)
+            if (cause is kotlinx.coroutines.CancellationException) {
+                // Items that were mid-transfer had their DB rows cleaned by the
+                // manager; reset their tiles too or they show DOWNLOADING forever.
+                val inFlight = claimedIds - successfulIds
+                _states.update { map -> map + inFlight.associateWith { DownloadState() } }
+            }
+        }
     }
 
     fun cancelFolderDownload(folderId: String) {

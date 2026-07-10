@@ -60,7 +60,7 @@ sealed class Screen(val route: String) {
     }
 
     companion object {
-        private fun encode(s: String?) = java.net.URLEncoder.encode(s ?: "", "UTF-8")
+        private fun encode(s: String?) = android.net.Uri.encode(s ?: "")
     }
 }
 
@@ -72,14 +72,19 @@ fun Media.openRoute(libraryType: String? = null): String = when {
 
 @Composable
 fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
-    val startDestination by vm.startDestination.collectAsState()
+    val resolvedStart by vm.startDestination.collectAsState()
 
     // Hold an invisible placeholder while DataStore resolves the start route
     // (typically < 100 ms — imperceptible to the user).
-    if (startDestination == null) {
+    if (resolvedStart == null) {
         Box(modifier = Modifier.fillMaxSize())
         return
     }
+
+    // Capture the initial route once. Later token/URL changes must NOT flip this
+    // and rebuild the whole NavHost graph — that races the tokenLost redirect.
+    // Runtime auth loss is handled by tokenLost + the per-source sign-in prompt.
+    val startDestination = remember { resolvedStart!! }
 
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
@@ -110,7 +115,7 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
     Box(modifier = Modifier.fillMaxSize()) {
     NavHost(
         navController = navController,
-        startDestination = startDestination!!,
+        startDestination = startDestination,
         enterTransition = { fadeIn(animationSpec = tween(150)) },
         exitTransition = { fadeOut(animationSpec = tween(150)) },
         popEnterTransition = { fadeIn(animationSpec = tween(150)) },
@@ -146,8 +151,8 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
             ),
         ) { back ->
             val libraryId = back.arguments!!.getString("libraryId")!!
-            val libraryName = back.arguments!!.getString("libraryName")?.decode()
-            val libraryType = back.arguments!!.getString("libraryType")?.decode()
+            val libraryName = back.arguments!!.getString("libraryName")
+            val libraryType = back.arguments!!.getString("libraryType")
             MediaGridScreen(
                 libraryId = libraryId,
                 libraryName = libraryName?.ifBlank { null },
@@ -165,8 +170,8 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
             ),
         ) { back ->
             val folderId = back.arguments!!.getString("folderId")!!
-            val title = back.arguments!!.getString("title")?.decode()
-            val libraryType = back.arguments!!.getString("libraryType")?.decode()
+            val title = back.arguments!!.getString("title")
+            val libraryType = back.arguments!!.getString("libraryType")
             ChapterIndexScreen(
                 folderId = folderId,
                 title = title?.ifBlank { null },
@@ -183,7 +188,7 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
                 navArgument("libraryType") { type = NavType.StringType; defaultValue = "" },
             ),
         ) { back ->
-            val libraryType = back.arguments!!.getString("libraryType")?.decode()
+            val libraryType = back.arguments!!.getString("libraryType")
             ReaderScreen(
                 mediaId = back.arguments!!.getString("mediaId")!!,
                 onBack = { navController.popBackStack() },
@@ -203,7 +208,7 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
             ),
         ) { back ->
             val mediaId = back.arguments!!.getString("mediaId")!!
-            val title = back.arguments!!.getString("title")?.decode() ?: ""
+            val title = back.arguments!!.getString("title") ?: ""
             EpubReaderScreen(
                 mediaId = mediaId,
                 title = title,
@@ -258,6 +263,3 @@ fun RekindleApp(vm: MainViewModel = hiltViewModel()) {
     }
     } // end outer Box
 }
-
-private fun String.decode(): String =
-    java.net.URLDecoder.decode(this, "UTF-8")
