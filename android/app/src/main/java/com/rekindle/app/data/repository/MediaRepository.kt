@@ -66,13 +66,22 @@ class MediaRepository @Inject constructor(
         return PageLayout(dto.pageCount, dto.spreads)
     }
 
-    suspend fun getProgress(mediaId: String): ReadingProgress? = try {
-        api.getProgress(mediaId).toDomain()
-    } catch (_: Exception) {
-        // Offline: fall back to the locally-queued progress so a downloaded item
-        // resumes at the saved page (and completed archives restart at 0) with no server.
-        progressDao.getByMediaId(mediaId)?.let {
-            ReadingProgress(it.mediaId, it.currentPage, it.isCompleted, it.lastReadAt)
+    suspend fun getProgress(mediaId: String): ReadingProgress? {
+        val local = progressDao.getByMediaId(mediaId)
+        // Unsynced local progress is newer than anything the server has (it was
+        // never pushed) — prefer it, or an online open would resume at the stale
+        // server page and the debounce would then overwrite the real progress.
+        if (local != null && !local.synced) {
+            return ReadingProgress(local.mediaId, local.currentPage, local.isCompleted, local.lastReadAt)
+        }
+        return try {
+            api.getProgress(mediaId).toDomain()
+        } catch (_: Exception) {
+            // Offline: fall back to the locally-queued progress so a downloaded item
+            // resumes at the saved page (and completed archives restart at 0) with no server.
+            local?.let {
+                ReadingProgress(it.mediaId, it.currentPage, it.isCompleted, it.lastReadAt)
+            }
         }
     }
 
@@ -92,7 +101,12 @@ class MediaRepository @Inject constructor(
         val local = progressDao.getByMediaId(mediaId) ?: return
         try {
             api.saveProgress(mediaId, SaveProgressRequest(local.currentPage, local.isCompleted))
-            progressDao.markSynced(mediaId)
+            // Only clear the synced flag if the row is still the one we sent — a
+            // page turn between the read and here writes a newer unsynced row that
+            // must NOT be marked synced, or that progress would never be sent.
+            progressDao.markSyncedIfUnchanged(
+                mediaId, local.currentPage, local.isCompleted, local.lastReadAt,
+            )
         } catch (_: Exception) { /* retry later */ }
     }
 

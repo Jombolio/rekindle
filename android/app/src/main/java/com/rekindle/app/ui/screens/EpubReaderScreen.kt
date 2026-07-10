@@ -1,5 +1,7 @@
 package com.rekindle.app.ui.screens
 
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
@@ -78,11 +80,33 @@ fun EpubReaderScreen(
                             webViewClient = WebViewClient()
                             settings.javaScriptEnabled = false
                             setBackgroundColor(bgColor.toArgb())
+                            // The WebView consumes touches, so the parent Box's
+                            // clickable never fires over the page — feed a gesture
+                            // detector that toggles the HUD on a tap while letting
+                            // the WebView keep handling scroll/links (returns false).
+                            val detector = GestureDetector(ctx,
+                                object : GestureDetector.SimpleOnGestureListener() {
+                                    override fun onSingleTapUp(e: MotionEvent): Boolean {
+                                        vm.toggleControls()
+                                        return false
+                                    }
+                                })
+                            setOnTouchListener { v, ev ->
+                                detector.onTouchEvent(ev)
+                                if (ev.actionMasked == MotionEvent.ACTION_UP) v.performClick()
+                                false
+                            }
                         }
                     },
                     update = { wv ->
                         wv.setBackgroundColor(bgColor.toArgb())
-                        wv.loadDataWithBaseURL(null, styledHtml, "text/html", "utf-8", null)
+                        // Only reload when the rendered content actually changes.
+                        // Reloading on every recomposition (e.g. each HUD toggle)
+                        // reset the reading position to the top of the chapter.
+                        if (wv.tag != styledHtml) {
+                            wv.tag = styledHtml
+                            wv.loadDataWithBaseURL(null, styledHtml, "text/html", "utf-8", null)
+                        }
                     },
                     modifier = Modifier
                         .fillMaxSize()

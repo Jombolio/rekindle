@@ -40,6 +40,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   _Theme _theme = _Theme.light;
   bool _showControls = true;
   bool _notDownloaded = false;
+  String? _loadError;
   final FocusNode _focusNode = FocusNode();
 
   @override
@@ -73,7 +74,23 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     final bytes = await File(localPath).readAsBytes();
     if (!mounted) return;
 
-    final book = await Isolate.run(() => EpubParser.parse(bytes));
+    final EpubBook book;
+    try {
+      book = await Isolate.run(() => EpubParser.parse(bytes));
+    } catch (_) {
+      // A malformed EPUB would otherwise throw out of here and leave the
+      // reader on an endless spinner.
+      if (mounted) {
+        setState(() => _loadError = "This book couldn't be opened.");
+      }
+      return;
+    }
+    if (book.chapters.isEmpty) {
+      if (mounted) {
+        setState(() => _loadError = 'This EPUB has no readable chapters.');
+      }
+      return;
+    }
 
     // Resolve the saved chapter directly. Reading it from the reader provider
     // synchronously would return 0, because that first access only KICKS OFF
@@ -83,8 +100,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
 
     setState(() {
       _book = book;
-      _chapterIndex =
-          savedChapter.clamp(0, (book.chapters.length - 1).clamp(0, 999999));
+      _chapterIndex = savedChapter.clamp(0, book.chapters.length - 1);
     });
 
     ref
@@ -174,7 +190,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
         body: book == null
             ? (_notDownloaded
                 ? _OfflineUnavailable(fgColor: _fgColor)
-                : const Center(child: CircularProgressIndicator()))
+                : _loadError != null
+                    ? _EpubLoadError(message: _loadError!, fgColor: _fgColor)
+                    : const Center(child: CircularProgressIndicator()))
             : Stack(
                 children: [
                   GestureDetector(
@@ -295,6 +313,40 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                   ],
                 ],
               ),
+      ),
+    );
+  }
+}
+
+/// Shown when a downloaded EPUB can't be parsed (corrupt / no chapters).
+class _EpubLoadError extends StatelessWidget {
+  final String message;
+  final Color fgColor;
+  const _EpubLoadError({required this.message, required this.fgColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline,
+                size: 64, color: fgColor.withValues(alpha: 0.5)),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: fgColor.withValues(alpha: 0.8)),
+            ),
+            const SizedBox(height: 20),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Back'),
+            ),
+          ],
+        ),
       ),
     );
   }

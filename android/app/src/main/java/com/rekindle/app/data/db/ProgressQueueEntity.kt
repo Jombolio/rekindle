@@ -33,4 +33,20 @@ interface ProgressQueueDao {
 
     @Query("UPDATE progress_queue SET synced = 1 WHERE media_id = :mediaId")
     suspend fun markSynced(mediaId: String)
+
+    /**
+     * Marks a row synced only if it still matches the snapshot that was sent to
+     * the server. A concurrent page turn writes a new [lastReadAt], so this
+     * no-ops and the newer progress stays queued for the next sync.
+     */
+    @Query(
+        "UPDATE progress_queue SET synced = 1 WHERE media_id = :mediaId " +
+            "AND current_page = :currentPage AND is_completed = :isCompleted AND last_read_at = :lastReadAt",
+    )
+    suspend fun markSyncedIfUnchanged(
+        mediaId: String,
+        currentPage: Int,
+        isCompleted: Boolean,
+        lastReadAt: Long,
+    )
 }

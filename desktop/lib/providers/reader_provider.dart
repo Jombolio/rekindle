@@ -96,6 +96,10 @@ class ReaderNotifier
 
     // Load local queue first for instant offline start
     final local = await _localProgress(db, mediaId);
+    // Unsynced local progress is newer than anything the server has (it was
+    // never pushed), so prefer it — otherwise an online open resumes at the
+    // stale server page and the debounce overwrites the real progress.
+    final preferLocal = local != null && !local.$3;
 
     // Offline-first: seed the page count from the local extracted manifest BEFORE
     // any network call, so a downloaded comic renders immediately instead of
@@ -116,15 +120,20 @@ class ReaderNotifier
     }
 
     ReadingProgress? progress;
-    try {
-      progress = await api.getProgress(mediaId);
-    } catch (_) {
-      // Offline — use local queue value
+    if (!preferLocal) {
+      try {
+        progress = await api.getProgress(mediaId);
+      } catch (_) {
+        // Offline — use local queue value
+      }
     }
 
     // If the archive was finished, start from the beginning on the next open.
-    final isCompleted = progress?.isCompleted ?? local?.$2 ?? false;
-    final savedPage = isCompleted ? 0 : (progress?.currentPage ?? local?.$1 ?? 0);
+    final isCompleted =
+        preferLocal ? local.$2 : (progress?.isCompleted ?? local?.$2 ?? false);
+    final savedPage = isCompleted
+        ? 0
+        : (preferLocal ? local.$1 : (progress?.currentPage ?? local?.$1 ?? 0));
 
     // Determine reading direction. If the user has never explicitly toggled
     // direction for this item, fall back to the library type: manga → RTL.
@@ -257,11 +266,12 @@ class ReaderNotifier
 
   // ── Local DB helpers ─────────────────────────────────────────────────────
 
-  /// Returns `(currentPage, isCompleted)` from the local queue, or null if absent.
-  Future<(int, bool)?> _localProgress(Database db, String mediaId) async {
+  /// Returns `(currentPage, isCompleted, synced)` from the local queue, or null
+  /// if absent.
+  Future<(int, bool, bool)?> _localProgress(Database db, String mediaId) async {
     final rows = await db.query(
       'progress_queue',
-      columns: ['current_page', 'is_completed'],
+      columns: ['current_page', 'is_completed', 'synced'],
       where: 'media_id = ?',
       whereArgs: [mediaId],
     );
@@ -269,6 +279,7 @@ class ReaderNotifier
     return (
       rows.first['current_page'] as int,
       (rows.first['is_completed'] as int) == 1,
+      (rows.first['synced'] as int? ?? 0) == 1,
     );
   }
 

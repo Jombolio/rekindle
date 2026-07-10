@@ -1,5 +1,6 @@
 package com.rekindle.app.data.di
 
+import com.rekindle.app.BuildConfig
 import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.data.api.AuthInterceptor
 import com.rekindle.app.data.api.BaseUrlInterceptor
@@ -34,9 +35,15 @@ object NetworkModule {
             .addInterceptor(baseUrlInterceptor)
             .addInterceptor(authInterceptor)
             .addInterceptor(unauthorizedInterceptor)
-            .addInterceptor(HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BASIC
-            })
+            .apply {
+                // Request logging only in debug — release builds must not log
+                // URLs (or, at higher levels, headers/tokens).
+                if (BuildConfig.DEBUG) {
+                    addInterceptor(HttpLoggingInterceptor().apply {
+                        level = HttpLoggingInterceptor.Level.BASIC
+                    })
+                }
+            }
             .build()
 
     @Provides
