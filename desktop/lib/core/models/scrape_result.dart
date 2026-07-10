@@ -15,10 +15,12 @@ class ScrapeResult {
 
   factory ScrapeResult.fromJson(Map<String, dynamic> j) {
     final statusStr = j['status'] as String? ?? '';
+    // The server emits Status.ToString().ToLowerInvariant(), i.e. "nochange"
+    // (no underscore). "no_change" is accepted too in case that ever changes.
     final status = switch (statusStr) {
-      'no_change' => ScrapeStatus.noChange,
-      'conflict'  => ScrapeStatus.conflict,
-      _           => ScrapeStatus.created,
+      'nochange' || 'no_change' => ScrapeStatus.noChange,
+      'conflict'                => ScrapeStatus.conflict,
+      _                         => ScrapeStatus.created,
     };
     return ScrapeResult(
       status:   status,

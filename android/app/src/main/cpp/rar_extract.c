@@ -34,6 +34,24 @@ static int image_ext(const char *name, char *out) {
            strcmp(out, "gif") == 0 || strcmp(out, "bmp") == 0;
 }
 
+// Copies `src` into a freshly malloc'd buffer guaranteed to be valid Modified
+// UTF-8 for JNI NewStringUTF. Raw RAR entry names can be CP437/Latin-1 or true
+// UTF-8 with 4-byte sequences, none of which NewStringUTF accepts — feeding it
+// those is undefined behavior and can abort the VM. Non-ASCII bytes are mapped
+// to '?'; the names are only used to sort pages, so ASCII fidelity suffices.
+// Caller frees. Returns NULL on OOM.
+static char *safe_mutf8_dup(const char *src) {
+    size_t len = strlen(src);
+    char *out = (char *) malloc(len + 1);
+    if (!out) return NULL;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char) src[i];
+        out[i] = (c >= 0x20 && c < 0x80) ? (char) c : '?';
+    }
+    out[len] = '\0';
+    return out;
+}
+
 // Streams the current entry's data to `path`. Returns 0 on success.
 static int write_entry(struct archive *a, const char *path) {
     FILE *f = fopen(path, "wb");
@@ -104,10 +122,17 @@ Java_com_rekindle_app_core_download_RarExtractor_nativeExtract(
             if (n >= cap) {
                 cap *= 2;
                 char **grown = (char **) realloc(pairs, sizeof(char *) * cap * 2);
-                if (grown == NULL) break;
+                if (grown == NULL) {
+                    // Abort cleanly rather than returning a silently truncated
+                    // page set that would be cached as complete.
+                    for (size_t k = 0; k < n * 2; k++) free(pairs[k]);
+                    free(pairs);
+                    pairs = NULL;
+                    break;
+                }
                 pairs = grown;
             }
-            pairs[n * 2] = strdup(ename);
+            pairs[n * 2] = safe_mutf8_dup(ename);
             pairs[n * 2 + 1] = strdup(fileName);
             n++;
             idx++;

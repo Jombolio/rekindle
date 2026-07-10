@@ -24,6 +24,10 @@ class ScanProgressSheet extends StatefulWidget {
 class _ScanProgressSheetState extends State<ScanProgressSheet> {
   Timer? _timer;
   ScanProgress _progress = const ScanProgress();
+  int _consecutiveFailures = 0;
+  bool _failed = false;
+
+  static const _maxFailures = 4;
 
   @override
   void initState() {
@@ -42,9 +46,21 @@ class _ScanProgressSheetState extends State<ScanProgressSheet> {
     try {
       final p = await widget.api.getScanProgress(widget.libraryId);
       if (!mounted) return;
-      setState(() => _progress = p);
+      setState(() {
+        _progress = p;
+        _consecutiveFailures = 0;
+      });
       if (p.isComplete) _timer?.cancel();
-    } catch (_) {}
+    } catch (_) {
+      if (!mounted) return;
+      // The sheet is non-dismissible, so a server that stops responding would
+      // trap the user behind a disabled button — surface an error and let them
+      // close it after a few consecutive failures.
+      if (++_consecutiveFailures >= _maxFailures) {
+        _timer?.cancel();
+        setState(() => _failed = true);
+      }
+    }
   }
 
   @override
@@ -70,7 +86,11 @@ class _ScanProgressSheetState extends State<ScanProgressSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        isDone ? 'Scan complete' : 'Scanning library…',
+                        _failed
+                            ? 'Lost contact with the server'
+                            : isDone
+                                ? 'Scan complete'
+                                : 'Scanning library…',
                         style: theme.textTheme.titleMedium
                             ?.copyWith(fontWeight: FontWeight.w600),
                       ),
@@ -158,8 +178,12 @@ class _ScanProgressSheetState extends State<ScanProgressSheet> {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: isDone ? () => Navigator.of(context).pop() : null,
-                child: Text(isDone ? 'Done' : 'Scanning…'),
+                onPressed: (isDone || _failed)
+                    ? () => Navigator.of(context).pop()
+                    : null,
+                child: Text(
+                  _failed ? 'Close' : (isDone ? 'Done' : 'Scanning…'),
+                ),
               ),
             ),
           ],
