@@ -18,6 +18,10 @@ public sealed class CoverGenerationService(
 {
     private readonly string _coversDir = Path.Combine(options.Value.CachePath, "covers");
 
+    // Max source-image pixel count before decoding a cover (~100 MP ≈ 400 MB
+    // decoded). A real cover is a few megapixels; anything larger is a bomb.
+    private const long MaxCoverPixels = 100_000_000;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         Directory.CreateDirectory(_coversDir);
@@ -50,6 +54,22 @@ public sealed class CoverGenerationService(
         {
             logger.LogWarning("No cover image found in {FilePath}", job.FilePath);
             return;
+        }
+
+        // Guard against an image decompression bomb (a tiny file declaring huge
+        // dimensions): inspect the header first and skip anything that would
+        // allocate gigabytes on full decode.
+        if (sourceStream.CanSeek)
+        {
+            var info = await Image.IdentifyAsync(sourceStream);
+            if ((long)info.Width * info.Height > MaxCoverPixels)
+            {
+                logger.LogWarning(
+                    "Cover for {MediaId} is {Width}x{Height}, exceeding the {Max}px limit — skipped",
+                    job.MediaId, info.Width, info.Height, MaxCoverPixels);
+                return;
+            }
+            sourceStream.Position = 0;
         }
 
         using var image = await Image.LoadAsync(sourceStream);

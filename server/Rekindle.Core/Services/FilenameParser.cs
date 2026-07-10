@@ -22,18 +22,24 @@ public static partial class FilenameParser
 
         var volMatch = VolumePattern().Match(name);
         if (volMatch.Success)
-            return new FileMeta(name, volMatch.Groups["series"].Value.Trim(), int.Parse(volMatch.Groups["vol"].Value));
+            return new FileMeta(name, volMatch.Groups["series"].Value.Trim(), ParseNumber(volMatch.Groups["vol"].Value));
 
         var issueMatch = IssuePattern().Match(name);
         if (issueMatch.Success)
-            return new FileMeta(name, issueMatch.Groups["series"].Value.Trim(), int.Parse(issueMatch.Groups["num"].Value));
+            return new FileMeta(name, issueMatch.Groups["series"].Value.Trim(), ParseNumber(issueMatch.Groups["num"].Value));
 
         var seqMatch = SequencePattern().Match(name);
         if (seqMatch.Success)
-            return new FileMeta(name, seqMatch.Groups["series"].Value.Trim(), int.Parse(seqMatch.Groups["num"].Value));
+            return new FileMeta(name, seqMatch.Groups["series"].Value.Trim(), ParseNumber(seqMatch.Groups["num"].Value));
 
         return new FileMeta(name, null, null);
     }
+
+    /// Parses a digit run to an int, returning null on overflow (e.g. a
+    /// timestamp-like token) instead of throwing — int.Parse would crash the
+    /// scan and the archive would be silently dropped from the library.
+    private static int? ParseNumber(string digits) =>
+        int.TryParse(digits, out var n) ? n : null;
 
     [GeneratedRegex(@"^(?<series>.+?)\s+[vV](?:ol\.?\s*)?(?<vol>\d+)", RegexOptions.Compiled)]
     public static partial Regex VolumePattern();

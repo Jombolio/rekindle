@@ -1,8 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Channels;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Rekindle.Server.Authorization;
@@ -113,6 +115,26 @@ builder.Services.AddAuthorization(opts =>
 builder.Services.AddControllers();
 
 // ------------------------------------------------------------------
+// Rate limiting — throttle the auth endpoints so an attacker can't brute-force
+// credentials or DoS the server by flooding the expensive Argon2 login path.
+// Partitioned per client IP; other endpoints are unaffected.
+// ------------------------------------------------------------------
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("auth", httpContext =>
+    {
+        var key = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        });
+    });
+});
+
+// ------------------------------------------------------------------
 // App
 // ------------------------------------------------------------------
 var app = builder.Build();
@@ -144,6 +166,7 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

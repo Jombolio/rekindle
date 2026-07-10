@@ -36,11 +36,20 @@ public class AuthService(UserRepository users, IOptions<RekindleOptions> options
         return user;
     }
 
+    // A fixed dummy salt used to run a hash even when the username is unknown,
+    // so login latency doesn't reveal whether an account exists (CWE-208).
+    private static readonly byte[] DummySalt = new byte[SaltSize];
+
     public async Task<string?> AuthenticateAsync(string username, string password)
     {
         var user = await users.GetByUsernameAsync(username);
         if (user is null)
+        {
+            // Spend comparable time so an attacker can't enumerate usernames by
+            // timing the fast no-hash path against the slow real one.
+            await ComputeHashAsync(Encoding.UTF8.GetBytes(password), DummySalt);
             return null;
+        }
 
         var parts = user.PasswordHash.Split(':');
         if (parts.Length != 2)

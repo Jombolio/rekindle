@@ -46,6 +46,16 @@ public class DbInitializer(DbConnectionFactory factory, ILogger<DbInitializer> l
             await ApplyMigration(connection, 6, Migration_006);
         if (fromVersion < 7)
             await ApplyMigration(connection, 7, Migration_007);
+        if (fromVersion < 8)
+            await ApplyMigration(connection, 8, Migration_008);
+    }
+
+    private static async Task Migration_008(SqliteConnection connection)
+    {
+        // parent_id (Migration_004) is filtered on every folder open and during
+        // recursive deletes/rescans but was never indexed — full table scans.
+        await connection.ExecuteAsync(
+            "CREATE INDEX IF NOT EXISTS idx_media_parent ON media(parent_id);");
     }
 
     private static async Task ApplyMigration(SqliteConnection connection, int version, Func<SqliteConnection, Task> migration)

@@ -20,12 +20,23 @@ public sealed class NaturalStringComparer : IComparer<string?>
 
             if (xDigit && yDigit)
             {
-                long nx = 0, ny = 0;
-                while (ix < x.Length && char.IsAsciiDigit(x[ix]))
-                    nx = nx * 10 + (x[ix++] - '0');
-                while (iy < y.Length && char.IsAsciiDigit(y[iy]))
-                    ny = ny * 10 + (y[iy++] - '0');
-                if (nx != ny) return nx.CompareTo(ny);
+                // Compare digit runs by value without parsing to a fixed-width
+                // integer, so a 19+ digit run can't overflow and misorder.
+                int sx = ix, sy = iy;
+                while (ix < x.Length && char.IsAsciiDigit(x[ix])) ix++;
+                while (iy < y.Length && char.IsAsciiDigit(y[iy])) iy++;
+
+                // Skip leading zeros, then longer remaining run = larger number;
+                // equal length falls back to lexicographic digit comparison.
+                int zx = sx; while (zx < ix - 1 && x[zx] == '0') zx++;
+                int zy = sy; while (zy < iy - 1 && y[zy] == '0') zy++;
+                int lenX = ix - zx, lenY = iy - zy;
+                if (lenX != lenY) return lenX.CompareTo(lenY);
+                for (int k = 0; k < lenX; k++)
+                {
+                    int cmp = x[zx + k].CompareTo(y[zy + k]);
+                    if (cmp != 0) return cmp;
+                }
             }
             else
             {

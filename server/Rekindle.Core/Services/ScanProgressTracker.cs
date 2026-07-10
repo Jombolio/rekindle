@@ -62,6 +62,17 @@ public sealed class ScanProgress
 public sealed class ScanProgressTracker
 {
     private readonly ConcurrentDictionary<string, ScanProgress> _state = new();
+    private readonly ConcurrentDictionary<string, byte> _active = new();
+
+    /// <summary>
+    /// Atomically marks a scan of <paramref name="libraryId"/> as in progress.
+    /// Returns false if one is already running, so callers can skip concurrent
+    /// scans that would race the DB and mis-parent chapters. Pair with
+    /// <see cref="ReleaseScan"/> in a finally block.
+    /// </summary>
+    public bool TryBeginScan(string libraryId) => _active.TryAdd(libraryId, 0);
+
+    public void ReleaseScan(string libraryId) => _active.TryRemove(libraryId, out _);
 
     public ScanProgress Begin(string libraryId, int filesTotal)
     {

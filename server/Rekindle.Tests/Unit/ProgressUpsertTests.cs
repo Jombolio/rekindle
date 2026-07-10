@@ -95,6 +95,29 @@ public class ProgressUpsertTests : IDisposable
     }
 
     [Fact]
+    public async Task Upsert_ReReadAfterCompletion_ResetsToNewLowerPage()
+    {
+        var (userId, mediaId) = await SeedAsync();
+        var baseTime = DateTime.UtcNow;
+
+        // Finish the book.
+        await _sut.UpsertAsync(new ReadingProgress
+        {
+            UserId = userId, MediaId = mediaId, CurrentPage = 100, IsCompleted = true, LastReadAt = baseTime
+        });
+        // Re-open (client restarts at 0) and read to page 5.
+        await _sut.UpsertAsync(new ReadingProgress
+        {
+            UserId = userId, MediaId = mediaId, CurrentPage = 5, IsCompleted = false, LastReadAt = baseTime.AddSeconds(1)
+        });
+
+        var result = await _sut.GetAsync(userId, mediaId);
+        // Un-completing must reset the resume position instead of clamping to 100.
+        result!.CurrentPage.Should().Be(5);
+        result.IsCompleted.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Upsert_IsCompleted_CanBeSetTrue()
     {
         var (userId, mediaId) = await SeedAsync();
