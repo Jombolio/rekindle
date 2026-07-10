@@ -71,6 +71,7 @@ public class AdminController(
 public class UploadController(
     LibraryRepository libraryRepository,
     LibraryScannerService scanner,
+    ScanProgressTracker progressTracker,
     ILogger<UploadController> logger) : ControllerBase
 {
     private static readonly HashSet<string> AllowedExtensions =
@@ -119,10 +120,12 @@ public class UploadController(
                         StringComparison.OrdinalIgnoreCase)
                     && !resolved.Equals(libraryRoot, StringComparison.OrdinalIgnoreCase))
                 {
+                    // Log the absolute paths for diagnostics, but don't echo the
+                    // server's filesystem layout back to the caller.
                     logger.LogWarning(
                         "Upload path escape attempt: normRel={NormRel} resolved={Resolved} libraryRoot={LibraryRoot}",
                         normRel, resolved, libraryRoot);
-                    return BadRequest(new { error = $"Relative path '{normRel}' resolves outside the library root. (resolved: {resolved}, root: {libraryRoot})" });
+                    return BadRequest(new { error = $"Relative path '{normRel}' resolves outside the library root." });
                 }
 
                 Directory.CreateDirectory(resolved);
@@ -149,7 +152,16 @@ public class UploadController(
             return StatusCode(500, new { error = "Failed to save the file on the server." });
         }
 
-        _ = Task.Run(() => scanner.ScanAsync(library));
+        // Only kick off a scan if one isn't already running for this library —
+        // rapid successive uploads must not race concurrent scans.
+        if (progressTracker.TryBeginScan(libraryId))
+        {
+            _ = Task.Run(async () =>
+            {
+                try { await scanner.ScanAsync(library); }
+                finally { progressTracker.ReleaseScan(libraryId); }
+            });
+        }
 
         logger.LogInformation("Uploaded '{FileName}' to library {LibraryId} at '{RelPath}'",
             safeName, libraryId, relativePath ?? "root");

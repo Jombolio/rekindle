@@ -74,6 +74,11 @@ public class MetadataController(
         if (metadata.MediaId != mediaId)
             return BadRequest(new { error = "mediaId in body does not match the route." });
 
+        // Reject unknown media so a caller can't insert unbounded orphan rows
+        // (and so foreign-key enforcement doesn't surface as a raw 500).
+        if (await mediaRepo.GetByIdAsync(mediaId) is null)
+            return NotFound(new { error = "Media item not found." });
+
         metadata.LastScrapedAt = DateTime.UtcNow;
         await metadataRepo.UpsertAsync(metadata);
         return Ok(metadata);
@@ -92,6 +97,9 @@ public class MetadataController(
     {
         if (metadata.MediaId != mediaId)
             return BadRequest(new { error = "mediaId in body does not match the route." });
+
+        if (await mediaRepo.GetByIdAsync(mediaId) is null)
+            return NotFound(new { error = "Media item not found." });
 
         metadata.LastScrapedAt = DateTime.UtcNow;
         await metadataRepo.UpsertAsync(metadata);

@@ -54,14 +54,20 @@ public class MediaRepository(DbConnectionFactory factory)
     public async Task<IEnumerable<Media>> SearchFoldersAsync(string libraryId, string query)
     {
         using var conn = factory.Create();
-        var pattern = $"%{query}%";
+        // Escape LIKE metacharacters so a query containing % or _ matches those
+        // literals instead of acting as wildcards.
+        var escaped = query
+            .Replace("\\", "\\\\")
+            .Replace("%", "\\%")
+            .Replace("_", "\\_");
+        var pattern = $"%{escaped}%";
         var rows = await conn.QueryAsync<Media>(
             $"""
             SELECT {SelectColumns}
             FROM media
             WHERE library_id = @libraryId
               AND media_type = 'folder'
-              AND (title LIKE @pattern OR series LIKE @pattern)
+              AND (title LIKE @pattern ESCAPE '\' OR series LIKE @pattern ESCAPE '\')
             ORDER BY relative_path;
             """,
             new { libraryId, pattern });

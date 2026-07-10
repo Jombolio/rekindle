@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Rekindle.Core.Repositories;
 using Rekindle.Core.Services;
 
@@ -13,24 +14,38 @@ public class AuthController(
     UserRepository users,
     SetupTokenService setupToken) : ControllerBase
 {
+    // Serializes setup so the AdminExists check, token validation, admin creation
+    // and token consumption are atomic — otherwise two concurrent requests could
+    // each create a level-4 admin from the one-time token (TOCTOU).
+    private static readonly SemaphoreSlim SetupLock = new(1, 1);
+
+    [EnableRateLimiting("auth")]
     [HttpPost("setup")]
     public async Task<IActionResult> Setup([FromBody] SetupRequest req)
     {
-        if (await users.AdminExistsAsync())
-            return Conflict(new { error = "Admin account already exists." });
+        await SetupLock.WaitAsync();
+        try
+        {
+            if (await users.AdminExistsAsync())
+                return Conflict(new { error = "Admin account already exists." });
 
-        if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.Password))
-            return BadRequest(new { error = "Username and password are required." });
+            if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.Password))
+                return BadRequest(new { error = "Username and password are required." });
 
-        if (!setupToken.Validate(req.SetupToken))
-            return Unauthorized(new { error = "Invalid or missing setup token. Check the server log." });
+            if (!setupToken.Validate(req.SetupToken))
+                return Unauthorized(new { error = "Invalid or missing setup token. Check the server log." });
 
-        var user = await authService.CreateUserAsync(req.Username, req.Password, permissionLevel: 4);
-        var token = authService.GenerateToken(user);
+            var user = await authService.CreateUserAsync(req.Username, req.Password, permissionLevel: 4);
+            var token = authService.GenerateToken(user);
 
-        setupToken.Consume();
+            setupToken.Consume();
 
-        return Ok(new { token, username = user.Username, permissionLevel = user.PermissionLevel });
+            return Ok(new { token, username = user.Username, permissionLevel = user.PermissionLevel });
+        }
+        finally
+        {
+            SetupLock.Release();
+        }
     }
 
     [HttpGet("setup/status")]
@@ -40,6 +55,7 @@ public class AuthController(
         return Ok(new { needsSetup });
     }
 
+    [EnableRateLimiting("auth")]
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest req)
     {

@@ -263,7 +263,7 @@ public class ArchiveService
             else
                 await ExtractArchiveAsync(mediaId, filePath, outDir, manifestPath);
 
-            await EvictCacheIfNeededAsync();
+            await EvictCacheIfNeededAsync(protectMediaId: mediaId);
         }
         finally
         {
@@ -389,6 +389,7 @@ public class ArchiveService
         var pages = new List<string>(imageEntries.Count);
         var spreads = new List<bool>(imageEntries.Count);
 
+        long totalWritten = 0;
         for (var i = 0; i < imageEntries.Count; i++)
         {
             var entry = imageEntries[i];
@@ -398,10 +399,16 @@ public class ArchiveService
 
             // Write the entry to disk first, fully closing the stream so the
             // file is flushed before ImageSharp reads the header below.
+            // A bounded copy caps a decompression bomb: a hostile archive whose
+            // entries expand to hundreds of GB is aborted before it fills the disk.
             using (var entryStream = entry.OpenEntryStream())
             await using (var fileStream = File.Create(fullPath))
             {
-                await entryStream.CopyToAsync(fileStream);
+                var written = await CopyWithLimitAsync(entryStream, fileStream, MaxEntryBytes);
+                totalWritten += written;
+                if (totalWritten > MaxArchiveBytes)
+                    throw new InvalidOperationException(
+                        $"Extraction of '{archivePath}' exceeded {MaxArchiveBytes} bytes (possible decompression bomb).");
             }
 
             // Detect spread: landscape images are double-page spreads.
@@ -465,8 +472,19 @@ public class ArchiveService
             manifest.Spreads = spreads;
             manifest.Version = ManifestVersion;
 
-            var manifestPath = Path.Combine(_pagesCache, mediaId, "manifest.json");
-            await File.WriteAllTextAsync(manifestPath, JsonSerializer.Serialize(manifest));
+            // This runs outside the extract lock, so two concurrent pagecount
+            // requests for the same media can race on the write. The content is
+            // identical and the first write wins, so swallow the transient
+            // sharing violation instead of surfacing a 500.
+            try
+            {
+                var manifestPath = Path.Combine(_pagesCache, mediaId, "manifest.json");
+                await File.WriteAllTextAsync(manifestPath, JsonSerializer.Serialize(manifest));
+            }
+            catch (IOException ex)
+            {
+                logger.LogDebug(ex, "Concurrent manifest rewrite for {MediaId} lost the race (harmless)", mediaId);
+            }
         }
 
         return manifest.Spreads;
@@ -484,7 +502,7 @@ public class ArchiveService
 
     // ── Cache eviction ──────────────────────────────────────────────────────
 
-    private async Task EvictCacheIfNeededAsync()
+    private async Task EvictCacheIfNeededAsync(string? protectMediaId = null)
     {
         var cacheDir = new DirectoryInfo(_pagesCache);
         if (!cacheDir.Exists)
@@ -504,12 +522,31 @@ public class ArchiveService
             if (totalSize <= _maxCacheBytes * 0.8)
                 break;
 
+            // Never evict the media we just extracted for the current request —
+            // if it alone exceeds the cache budget, deleting it here would return
+            // a 404 and re-extract it (multiple GB) on every subsequent request.
+            if (id == protectMediaId)
+                continue;
+
             var dir = new DirectoryInfo(Path.Combine(_pagesCache, id));
             if (!dir.Exists)
                 continue;
 
             var dirSize = dir.EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
-            dir.Delete(recursive: true);
+            try
+            {
+                // A concurrent request may be streaming a page from this media
+                // (its handle open). On Windows the recursive delete then throws;
+                // skip it this pass rather than 500 the extracting request. It is
+                // no longer the LRU-oldest once that read touches it, so a later
+                // pass evicts it cleanly.
+                dir.Delete(recursive: true);
+            }
+            catch (IOException ex)
+            {
+                logger.LogDebug(ex, "Deferred eviction of {MediaId} (files in use)", id);
+                continue;
+            }
             _accessTimes.TryRemove(id, out _);
             totalSize -= dirSize;
 
@@ -517,6 +554,29 @@ public class ArchiveService
         }
 
         await Task.CompletedTask;
+    }
+
+    // Decompression-bomb caps for archive extraction: no legitimate comic page
+    // image approaches 512 MB, and no single archive should expand past 8 GB.
+    private const long MaxEntryBytes   = 512L * 1024 * 1024;
+    private const long MaxArchiveBytes = 8L * 1024 * 1024 * 1024;
+
+    /// Copies at most [maxBytes] from [src] to [dst], throwing if the source
+    /// exceeds it. Returns the number of bytes copied.
+    private static async Task<long> CopyWithLimitAsync(Stream src, Stream dst, long maxBytes)
+    {
+        var buffer = new byte[81920];
+        long total = 0;
+        int read;
+        while ((read = await src.ReadAsync(buffer)) > 0)
+        {
+            total += read;
+            if (total > maxBytes)
+                throw new InvalidOperationException(
+                    "Archive entry exceeds the per-page size limit (possible decompression bomb).");
+            await dst.WriteAsync(buffer.AsMemory(0, read));
+        }
+        return total;
     }
 
     private static bool IsImageEntry(string? key) =>

@@ -41,7 +41,14 @@ public class ProgressRepository(DbConnectionFactory factory)
             INSERT INTO reading_progress (user_id, media_id, current_page, is_completed, last_read_at)
             VALUES (@UserId, @MediaId, @CurrentPage, @IsCompleted, @LastReadAt)
             ON CONFLICT(user_id, media_id) DO UPDATE SET
-                current_page = MAX(current_page, excluded.current_page),
+                current_page = CASE
+                    -- Re-reading a finished book: the client restarts at 0, so take
+                    -- the new (lower) resume position instead of the high-water mark,
+                    -- otherwise page and is_completed desync (page stuck at the end).
+                    WHEN reading_progress.is_completed = 1 AND excluded.is_completed = 0
+                        THEN excluded.current_page
+                    ELSE MAX(current_page, excluded.current_page)
+                END,
                 is_completed = excluded.is_completed,
                 last_read_at = excluded.last_read_at
             WHERE excluded.last_read_at >= reading_progress.last_read_at;

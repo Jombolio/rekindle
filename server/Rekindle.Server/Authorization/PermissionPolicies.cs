@@ -23,6 +23,10 @@ public class MinPermissionLevelHandler : AuthorizationHandler<MinPermissionLevel
         AuthorizationHandlerContext context,
         MinPermissionLevelRequirement requirement)
     {
+        // The permission_level claim is refreshed from the database on every
+        // request by the JWT OnTokenValidated event (see Program.cs), so this is
+        // the user's live level — a downgrade is enforced without waiting for the
+        // token to expire.
         var claim = context.User.FindFirst("permission_level");
         if (claim is not null
             && int.TryParse(claim.Value, out var level)

@@ -16,10 +16,14 @@ public sealed class MalService(ILogger<MalService> logger) : IDisposable
         var url = $"{BaseUrl}?q={Uri.EscapeDataString(title)}&limit=1&fields={Fields}";
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Add("X-MAL-CLIENT-ID", clientId);
 
         try
         {
+            // Inside the try: a client ID with an invalid header character (e.g. a
+            // stray newline from a paste) throws FormatException, which must land
+            // on the graceful null path, not surface as an unhandled 500.
+            request.Headers.Add("X-MAL-CLIENT-ID", clientId);
+
             using var response = await _http.SendAsync(request, ct);
             if (!response.IsSuccessStatusCode)
             {
