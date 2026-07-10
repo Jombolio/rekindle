@@ -205,10 +205,16 @@ public class MediaController(
         // Trust the client's write timestamp when supplied (clamped to now so a
         // skewed clock can't lock out later writes) — it preserves the true order
         // of offline-queued writes across devices. Arrival time otherwise.
+        // Offset-less ISO strings bind as Kind=Unspecified, which ToUniversalTime
+        // would reinterpret as SERVER-local time; treat them as the UTC the API
+        // contract specifies instead.
         var now = DateTime.UtcNow;
-        var lastReadAt = req.LastReadAt is { } clientTs && clientTs.ToUniversalTime() < now
-            ? clientTs.ToUniversalTime()
-            : now;
+        DateTime? clientUtc = req.LastReadAt is { } clientTs
+            ? clientTs.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(clientTs, DateTimeKind.Utc)
+                : clientTs.ToUniversalTime()
+            : null;
+        var lastReadAt = clientUtc is { } utc && utc < now ? utc : now;
 
         var progress = new ReadingProgress
         {

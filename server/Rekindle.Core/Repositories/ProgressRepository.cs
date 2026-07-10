@@ -9,7 +9,7 @@ public class ProgressRepository(DbConnectionFactory factory)
     public async Task<ReadingProgress?> GetAsync(string userId, string mediaId)
     {
         using var conn = factory.Create();
-        return await conn.QuerySingleOrDefaultAsync<ReadingProgress>(
+        var row = await conn.QuerySingleOrDefaultAsync<ReadingProgress>(
             """
             SELECT user_id AS UserId, media_id AS MediaId, current_page AS CurrentPage,
                    is_completed AS IsCompleted, last_read_at AS LastReadAt
@@ -17,12 +17,13 @@ public class ProgressRepository(DbConnectionFactory factory)
             WHERE user_id = @userId AND media_id = @mediaId;
             """,
             new { userId, mediaId });
+        return row is null ? null : NormalizeUtc(row);
     }
 
     public async Task<IEnumerable<ReadingProgress>> GetAllForUserAsync(string userId)
     {
         using var conn = factory.Create();
-        return await conn.QueryAsync<ReadingProgress>(
+        var rows = await conn.QueryAsync<ReadingProgress>(
             """
             SELECT user_id AS UserId, media_id AS MediaId, current_page AS CurrentPage,
                    is_completed AS IsCompleted, last_read_at AS LastReadAt
@@ -31,6 +32,17 @@ public class ProgressRepository(DbConnectionFactory factory)
             ORDER BY last_read_at DESC;
             """,
             new { userId });
+        return rows.Select(NormalizeUtc);
+    }
+
+    // SQLite stores last_read_at as offset-less TEXT, so Dapper materialises it
+    // with Kind=Unspecified and JSON serialisation would emit it without the 'Z'
+    // suffix — which ISO-8601 consumers then parse as LOCAL time. The column is
+    // always written from UTC values; restore that fact on the way out.
+    private static ReadingProgress NormalizeUtc(ReadingProgress row)
+    {
+        row.LastReadAt = DateTime.SpecifyKind(row.LastReadAt, DateTimeKind.Utc);
+        return row;
     }
 
     /// <param name="trustClientOrdering">
