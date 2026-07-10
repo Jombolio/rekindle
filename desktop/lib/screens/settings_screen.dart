@@ -151,24 +151,40 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
 
+    // Capture the root navigator up front so the progress dialog can be closed
+    // even if the screen unmounts mid-download.
+    final rootNav = Navigator.of(context, rootNavigator: true);
+
+    String? path;
+    Object? downloadError;
     try {
-      final path = await service.downloadAsset(
+      path = await service.downloadAsset(
         installer,
         onProgress: (p) => progress.value = p,
       );
-      if (!mounted) return;
-      Navigator.of(context).pop(); // close the progress dialog
-      // Launch the installer, then quit so it can replace the running files.
-      // The Inno Setup installer closes and relaunches the app itself.
+    } catch (e) {
+      downloadError = e;
+    }
+
+    // Close the progress dialog exactly once, mounted or not.
+    rootNav.pop();
+    progress.dispose();
+    if (!mounted) return;
+
+    if (path == null) {
+      _snack('Download failed: $downloadError');
+      return;
+    }
+
+    // Launch the installer and quit so it can replace the running files (the
+    // Inno Setup installer closes and relaunches the app itself). Kept out of
+    // the dialog-pop path so a launch failure cannot double-pop the navigator.
+    try {
       await service.launchInstaller(path);
       await Future<void>.delayed(const Duration(milliseconds: 400));
       exit(0);
     } catch (e) {
-      if (mounted) {
-        Navigator.of(context).pop();
-        _snack('Download failed: $e');
-      }
-      progress.dispose();
+      if (mounted) _snack('Could not start the installer: $e');
     }
   }
 
