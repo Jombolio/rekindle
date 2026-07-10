@@ -53,6 +53,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -72,6 +73,7 @@ import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import com.rekindle.app.ui.viewmodel.ReaderViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -125,10 +127,12 @@ fun ReaderScreen(
         return slides
     }
 
-    val slides = if (state.doublePage)
-        buildSlides(state.totalPages, state.spreads)
-    else
-        List(state.totalPages) { listOf(it) }
+    val slides = remember(state.totalPages, state.spreads, state.doublePage) {
+        if (state.doublePage)
+            buildSlides(state.totalPages, state.spreads)
+        else
+            List(state.totalPages) { listOf(it) }
+    }
 
     val slideCount = slides.size.coerceAtLeast(1)
 
@@ -340,10 +344,13 @@ private fun ScrollModeContent(
 ) {
     val listState = rememberLazyListState()
 
-    // Jump to saved page once totalPages is known
-    LaunchedEffect(state.totalPages, state.initialPage) {
-        if (state.totalPages > 0 && state.initialPage > 0) {
-            listState.scrollToItem(state.initialPage)
+    // Restore the LIVE reading position on (re)mount — state.currentPage, not
+    // the never-updated initialPage, so toggling scroll/paged mode keeps the
+    // user's place instead of teleporting back to the originally-resumed page.
+    // Content only composes once totalPages > 0, so no gating is needed.
+    LaunchedEffect(Unit) {
+        if (state.currentPage > 0) {
+            listState.scrollToItem(state.currentPage)
         }
     }
 
@@ -356,9 +363,25 @@ private fun ScrollModeContent(
         }
     }
 
-    // Track current page from first visible item
-    LaunchedEffect(listState.firstVisibleItemIndex) {
-        onPageChange(listState.firstVisibleItemIndex)
+    // Track the current page. firstVisibleItemIndex alone can never equal the
+    // final page index when that page is shorter than the viewport, so books
+    // finished in scroll mode were stored as in-progress forever (and resumed
+    // at the end instead of restarting). Report the last page once its bottom
+    // edge is fully on screen.
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val info = listState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()
+            if (last != null && last.index == info.totalItemsCount - 1 &&
+                last.offset + last.size <= info.viewportEndOffset
+            ) {
+                last.index
+            } else {
+                listState.firstVisibleItemIndex
+            }
+        }
+            .distinctUntilChanged()
+            .collect { onPageChange(it) }
     }
 
     LazyColumn(
@@ -440,12 +463,25 @@ private fun PagedModeContent(
             onPrevChapter()
     }
 
-    // Jump to initial/saved page once pages load
-    LaunchedEffect(state.totalPages, state.initialPage) {
-        if (state.totalPages > 0) {
-            val slideIndex = slides.indexWhere { it.contains(state.initialPage) }
-                .coerceAtLeast(0)
-            pagerState.scrollToPage(slideIndex)
+    // Restore/remap. Fires at mount (jump to the slide containing the live
+    // currentPage — not the never-updated initialPage, so a scroll/paged mode
+    // toggle keeps the user's place) and again whenever the slide grouping
+    // changes (the server spread map arriving after a local-manifest open, or a
+    // corrected page count). Re-mapping through the OLD grouping keeps the same
+    // logical page on screen instead of letting the pager's retained numeric
+    // index silently point at different pages.
+    var prevSlides by remember { mutableStateOf<List<List<Int>>?>(null) }
+    // Slide index of an in-flight programmatic jump; -1 when idle. The sync
+    // effect below must not report programmatic jumps as reading progress.
+    var programmaticTarget by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(slides) {
+        val anchor = prevSlides?.getOrNull(pagerState.currentPage)?.lastOrNull()
+            ?: state.currentPage
+        prevSlides = slides
+        val target = slides.indexWhere { it.contains(anchor) }.coerceAtLeast(0)
+        if (target != pagerState.currentPage) {
+            programmaticTarget = target
+            pagerState.scrollToPage(target)
         }
     }
 
@@ -454,6 +490,14 @@ private fun PagedModeContent(
     LaunchedEffect(pagerState.currentPage) {
         zoom.reset()
         if (state.totalPages > 0) {
+            // Skip while a restore/remap jump is in flight: the ViewModel already
+            // holds the logical page, and reporting the new slide's last page here
+            // is what crept progress forward whenever slide grouping differed
+            // between sessions (e.g. offline opens have no spreads array).
+            if (programmaticTarget != -1) {
+                if (pagerState.currentPage == programmaticTarget) programmaticTarget = -1
+                return@LaunchedEffect
+            }
             // Report the LAST page of the slide so finishing a book on a double-
             // page spread reaches totalPages-1 and marks completion.
             val pageIndex = slides.getOrNull(pagerState.currentPage)?.last() ?: pagerState.currentPage

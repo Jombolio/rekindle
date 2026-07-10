@@ -36,6 +36,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   bool _didJump = false;
   bool _didInitialPageJump = false;
   int _lastPrefetchedPage = -1;
+  // Restore epochs already acted on (see ReaderState.restoreEpoch).
+  int _handledRestoreEpoch = 0;
+  // Slide grouping of the previous build; when the server spread map arrives it
+  // regroups, and the pager's numeric index must be re-mapped to keep the same
+  // logical page on screen.
+  List<List<int>>? _prevSlides;
+  // True while a programmatic jump is in flight: restore/remap jumps must not
+  // report progress (the provider already holds the logical page, and writing
+  // the new slide's last page is what crept progress forward whenever slide
+  // grouping differed between sessions).
+  bool _suppressPageReport = false;
   // True while a page-turn animation is running. Rapid taps / held arrow keys
   // are ignored during this window so they cannot stack multiple animations
   // and accidentally overshoot into the chapter-navigation branch.
@@ -47,6 +58,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   bool _didScrollJump = false;
   // Track scroll changes; throttle page-index updates to scroll-end events.
   int _scrollTrackedPage = 0;
+  // jumpTo/ensureVisible dispatch ScrollEndNotification SYNCHRONOUSLY, against
+  // pre-jump layout. Without this guard the restore jump's own notification ran
+  // the page tracker while it still pointed at page 0 and clobbered the
+  // restored position back to "1 / N" (persisting it 3 s later).
+  bool _suppressScrollSync = false;
 
   // ── Shared ────────────────────────────────────────────────────────────────
   final FocusNode _focusNode = FocusNode();
@@ -82,7 +98,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     _transformCtrl.dispose();
     // Reset the reader state so re-opening this media rebuilds fresh: a finished
     // chapter must restart at 0 and cross-device progress must be re-fetched.
+    // Order matters: invalidating readerProvider first schedules the dispose-time
+    // progress flush on sqflite's serial queue, so the badge re-query below reads
+    // the row that flush wrote.
     ref.invalidate(readerProvider((widget.mediaId, widget.libraryType)));
+    // Refresh the chapter/grid badges: the list screen underneath stays mounted,
+    // so localProgressProvider never auto-disposes and would keep showing the
+    // pre-open progress.
+    ref.invalidate(localProgressProvider(widget.mediaId));
     super.dispose();
   }
 
@@ -201,12 +224,34 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     return slides;
   }
 
+  static bool _slidesEqual(List<List<int>> a, List<List<int>> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].length != b[i].length) return false;
+      for (var j = 0; j < a[i].length; j++) {
+        if (a[i][j] != b[i][j]) return false;
+      }
+    }
+    return true;
+  }
+
   // ── Paged-mode helpers ────────────────────────────────────────────────────
+
+  /// Programmatic jump that does NOT report progress via onPageChanged — the
+  /// provider already holds the logical page for restore/remap jumps.
+  void _jumpWithoutReport(int viewIndex) {
+    _suppressPageReport = true;
+    try {
+      _pageCtrl.jumpToPage(viewIndex);
+    } finally {
+      _suppressPageReport = false;
+    }
+  }
 
   void _jumpToSavedPage(int savedPage, List<List<int>> slides, bool isRtl) {
     if (_didJump || savedPage == 0 || !_pageCtrl.hasClients) return;
     _didJump = true;
-    _pageCtrl.jumpToPage(_pageToViewIndex(savedPage, slides, isRtl));
+    _jumpWithoutReport(_pageToViewIndex(savedPage, slides, isRtl));
   }
 
   int _pageToViewIndex(int page, List<List<int>> slides, bool isRtl) {
@@ -272,23 +317,32 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     if (_didScrollJump || savedPage == 0 || !_scrollCtrl.hasClients) return;
     _didScrollJump = true;
 
-    // Try the key first (item may already be rendered near the top).
-    if (savedPage < _pageKeys.length) {
-      final ctx = _pageKeys[savedPage].currentContext;
-      if (ctx != null) {
-        Scrollable.ensureVisible(ctx, alignment: 0.0, duration: Duration.zero);
-        _scrollTrackedPage = savedPage;
-        return;
-      }
-    }
-
-    // Fallback: estimated offset based on screen width and a 2:3 page ratio.
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    final estimatedPageHeight = screenWidth * 1.45;
-    final target = (savedPage * estimatedPageHeight)
-        .clamp(0.0, _scrollCtrl.position.maxScrollExtent);
-    _scrollCtrl.jumpTo(target);
+    // Set the tracking state BEFORE jumping and suppress the scroll-end
+    // handler: the jump dispatches its notifications synchronously against
+    // pre-jump layout, which used to resolve "current page ≈ 0" and clobber
+    // the restored position.
     _scrollTrackedPage = savedPage;
+    _suppressScrollSync = true;
+    try {
+      // Try the key first (item may already be rendered near the top).
+      if (savedPage < _pageKeys.length) {
+        final ctx = _pageKeys[savedPage].currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(ctx,
+              alignment: 0.0, duration: Duration.zero);
+          return;
+        }
+      }
+
+      // Fallback: estimated offset based on screen width and a 2:3 page ratio.
+      final screenWidth = MediaQuery.sizeOf(context).width;
+      final estimatedPageHeight = screenWidth * 1.45;
+      final target = (savedPage * estimatedPageHeight)
+          .clamp(0.0, _scrollCtrl.position.maxScrollExtent);
+      _scrollCtrl.jumpTo(target);
+    } finally {
+      _suppressScrollSync = false;
+    }
   }
 
   /// Scroll keyboard navigation: move by ~90 % of the viewport height.
@@ -361,18 +415,25 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   /// Jump the scroll position to [page] (called from the slider).
   void _scrollToPage(int page) {
     if (!_scrollCtrl.hasClients || page >= _pageKeys.length) return;
-    final ctx = _pageKeys[page].currentContext;
-    if (ctx != null) {
-      Scrollable.ensureVisible(ctx, alignment: 0.0, duration: Duration.zero);
-    } else {
-      // Item not rendered yet — use estimate.
-      final screenWidth = MediaQuery.sizeOf(context).width;
-      final estimatedPageHeight = screenWidth * 1.45;
-      final target = (page * estimatedPageHeight)
-          .clamp(0.0, _scrollCtrl.position.maxScrollExtent);
-      _scrollCtrl.jumpTo(target);
-    }
+    // Same synchronous-notification hazard as the restore jump: track first,
+    // suppress the scroll-end handler for the duration of the jump.
     _scrollTrackedPage = page;
+    _suppressScrollSync = true;
+    try {
+      final ctx = _pageKeys[page].currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(ctx, alignment: 0.0, duration: Duration.zero);
+      } else {
+        // Item not rendered yet — use estimate.
+        final screenWidth = MediaQuery.sizeOf(context).width;
+        final estimatedPageHeight = screenWidth * 1.45;
+        final target = (page * estimatedPageHeight)
+            .clamp(0.0, _scrollCtrl.position.maxScrollExtent);
+        _scrollCtrl.jumpTo(target);
+      }
+    } finally {
+      _suppressScrollSync = false;
+    }
   }
 
   // ── Prefetch ──────────────────────────────────────────────────────────────
@@ -443,6 +504,28 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
     _ensurePageKeys(totalPages);
 
+    // Slide grouping changed (the server spread map arrived after a local-
+    // manifest open, or the page count was corrected): the PageController keeps
+    // its numeric index, which now maps to DIFFERENT pages. Re-map the index
+    // through the old grouping so the same logical page stays on screen.
+    if (!scrollMode &&
+        _prevSlides != null &&
+        _pageCtrl.hasClients &&
+        !_slidesEqual(_prevSlides!, slides)) {
+      final oldSlides = _prevSlides!;
+      final rawIdx = _pageCtrl.page?.round() ?? 0;
+      final anchor = rawIdx < oldSlides.length
+          ? oldSlides[rawIdx].last
+          : readerState.currentPage;
+      final newIdx = _pageToViewIndex(anchor, slides, isRtl);
+      if (newIdx != rawIdx) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _pageCtrl.hasClients) _jumpWithoutReport(newIdx);
+        });
+      }
+    }
+    _prevSlides = slides;
+
     // Prefetch surrounding pages whenever the current page changes (paged mode).
     if (totalPages > 0 && !scrollMode &&
         readerState.currentPage != _lastPrefetchedPage) {
@@ -458,23 +541,42 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     // resets _didJump/_didScrollJump. (Previously initialPage != null blocked
     // that branch forever, so mode toggles regressed to page 0.)
     if (totalPages > 0) {
+      final restoreEpoch = readerState.restoreEpoch;
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         if (widget.initialPage != null && !_didInitialPageJump) {
           // Caller specified an explicit start page (e.g. chapter auto-advance).
           _didInitialPageJump = true;
           _didJump = true;
           _didScrollJump = true;
           final target = widget.initialPage!;
+          // Keep the provider in step: without this the HUD counter/slider kept
+          // showing the chapter's old saved progress while page 0 was displayed.
+          ref
+              .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
+              .applyExternalPage(target);
           if (scrollMode) {
             if (target > 0) _jumpToSavedPageInScrollMode(target);
-          } else {
-            _pageCtrl.jumpToPage(_pageToViewIndex(target, slides, isRtl));
+          } else if (_pageCtrl.hasClients) {
+            _jumpWithoutReport(_pageToViewIndex(target, slides, isRtl));
           }
-        } else if (readerState.currentPage > 0) {
-          if (scrollMode) {
-            _jumpToSavedPageInScrollMode(readerState.currentPage);
-          } else {
-            _jumpToSavedPage(readerState.currentPage, slides, isRtl);
+        } else {
+          // Server progress resolved after the locally-seeded first render
+          // (first open on this device, or newer cross-device progress): allow
+          // the saved-progress jump to run again. Explicit initialPage opens
+          // ignore epochs — the route override wins.
+          if (widget.initialPage == null &&
+              restoreEpoch != _handledRestoreEpoch) {
+            _handledRestoreEpoch = restoreEpoch;
+            _didJump = false;
+            _didScrollJump = false;
+          }
+          if (readerState.currentPage > 0) {
+            if (scrollMode) {
+              _jumpToSavedPageInScrollMode(readerState.currentPage);
+            } else {
+              _jumpToSavedPage(readerState.currentPage, slides, isRtl);
+            }
           }
         }
       });
@@ -606,7 +708,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     final totalPages = readerState.totalPages;
     return NotificationListener<ScrollNotification>(
       onNotification: (notif) {
-        if (notif is ScrollEndNotification) {
+        if (notif is ScrollEndNotification && !_suppressScrollSync) {
           _updateCurrentPageFromScroll(totalPages);
         }
         return false;
@@ -673,6 +775,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
           if (_isZoomed) _resetZoom();
           // A manual swipe settles the animation externally — unblock the gate.
           _pageAnimating = false;
+          // Restore/remap jumps must not write progress: the provider already
+          // holds the logical page, and reporting the new slide's last page
+          // crept progress forward whenever slide grouping differed between
+          // sessions (e.g. offline opens have no spreads array).
+          if (_suppressPageReport) return;
           // Report the LAST page of the slide so finishing a book on a double-
           // page spread reaches totalPages-1 and marks completion. Restore maps
           // any contained page back to this slide, so this is safe.

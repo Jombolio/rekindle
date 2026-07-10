@@ -57,6 +57,10 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     _focusNode.dispose();
     // Reset reader state so re-opening restarts a finished book at chapter 0.
     ref.invalidate(readerProvider((widget.mediaId, null)));
+    // Refresh the chapter/grid badges: the list screen underneath stays mounted,
+    // so localProgressProvider never auto-disposes and would keep showing the
+    // pre-open progress.
+    ref.invalidate(localProgressProvider(widget.mediaId));
     super.dispose();
   }
 

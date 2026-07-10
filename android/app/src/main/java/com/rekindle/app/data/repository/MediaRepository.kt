@@ -11,6 +11,7 @@ import com.rekindle.app.domain.model.PagedResponse
 import com.rekindle.app.domain.model.ReadingProgress
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -100,7 +101,17 @@ class MediaRepository @Inject constructor(
     suspend fun syncProgress(mediaId: String) {
         val local = progressDao.getByMediaId(mediaId) ?: return
         try {
-            api.saveProgress(mediaId, SaveProgressRequest(local.currentPage, local.isCompleted))
+            api.saveProgress(
+                mediaId,
+                SaveProgressRequest(
+                    local.currentPage,
+                    local.isCompleted,
+                    // The row's write time, not now(): a queued offline write must
+                    // carry when it actually happened so the server orders it
+                    // correctly against progress from other devices.
+                    Instant.ofEpochMilli(local.lastReadAt).toString(),
+                ),
+            )
             // Only clear the synced flag if the row is still the one we sent — a
             // page turn between the read and here writes a newer unsynced row that
             // must NOT be marked synced, or that progress would never be sent.
