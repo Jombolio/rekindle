@@ -1,6 +1,6 @@
 name: rekindle
 description: Self-hosted comic, manga, and book reader.
-version: 1.2.1+1
+version: 1.2.2+1
 publish_to: none
 
 environment:
