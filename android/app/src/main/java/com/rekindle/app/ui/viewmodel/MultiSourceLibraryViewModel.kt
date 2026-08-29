@@ -3,6 +3,7 @@ package com.rekindle.app.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rekindle.app.core.prefs.PrefsStore
+import com.rekindle.app.data.api.TOKEN_RENEWAL_HEADER
 import com.rekindle.app.data.model.ScanProgressDto
 import com.rekindle.app.domain.model.Library
 import com.rekindle.app.domain.model.ServerSource
@@ -20,6 +21,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
@@ -123,18 +125,29 @@ class MultiSourceLibraryViewModel @Inject constructor(
             val deadline = System.currentTimeMillis() + 5 * 60_000L
             while (System.currentTimeMillis() < deadline) {
                 delay(1_000)
-                val progress = runCatching {
-                    withContext(Dispatchers.IO) {
-                        http.newCall(
+                val polled = runCatching {
+                    parseScanProgress(
+                        execute(
+                            source,
                             Request.Builder()
                                 .url("${source.baseUrl.trimEnd('/')}/api/libraries/$libraryId/scan/progress")
-                                .header("Authorization", "Bearer ${source.token ?: ""}")
-                                .build()
-                        ).execute().use { resp ->
-                            if (resp.isSuccessful) parseScanProgress(resp.body?.string() ?: "{}") else null
-                        }
+                                .build(),
+                        ).ifBlank { "{}" }
+                    )
+                }
+                // Once the session is gone every remaining poll is a guaranteed
+                // 401 — bail out rather than spend five minutes hammering them.
+                if (polled.exceptionOrNull() is SessionExpiredException) {
+                    updateState(sourceId) {
+                        it.copy(
+                            scanning = null,
+                            scanProgress = null,
+                            error = polled.exceptionOrNull()?.describe(),
+                        )
                     }
-                }.getOrNull()
+                    return@launch
+                }
+                val progress = polled.getOrNull()
                 updateState(sourceId) { it.copy(scanProgress = progress) }
                 if (progress?.phase == "complete") break
             }
@@ -175,23 +188,18 @@ class MultiSourceLibraryViewModel @Inject constructor(
 
     private fun fetchLibraries(source: ServerSource) {
         viewModelScope.launch {
-            val token = source.token ?: run {
+            if (source.token == null) {
                 updateState(source.id) { it.copy(loading = false, libraries = emptyList(), error = null) }
                 return@launch
             }
             updateState(source.id) { it.copy(loading = true, error = null) }
             runCatching {
-                withContext(Dispatchers.IO) {
-                    http.newCall(
-                        Request.Builder()
-                            .url("${source.baseUrl.trimEnd('/')}/api/libraries")
-                            .header("Authorization", "Bearer $token")
-                            .build()
-                    ).execute().use { resp ->
-                        if (!resp.isSuccessful) error("HTTP ${resp.code}")
-                        parseLibraries(resp.body?.string() ?: "[]")
-                    }
-                }
+                parseLibraries(
+                    execute(
+                        source,
+                        Request.Builder().url("${source.baseUrl.trimEnd('/')}/api/libraries").build(),
+                    ).ifBlank { "[]" }
+                )
             }
                 .onSuccess { libs -> updateState(source.id) { it.copy(libraries = libs, loading = false) } }
                 .onFailure { e -> updateState(source.id) { it.copy(loading = false, error = e.describe()) } }
@@ -203,20 +211,50 @@ class MultiSourceLibraryViewModel @Inject constructor(
         method: String,
         path: String,
         jsonBody: String? = null,
-    ) = withContext(Dispatchers.IO) {
+    ) {
         val body = jsonBody?.toRequestBody("application/json".toMediaType())
-        val req = Request.Builder()
-            .url("${source.baseUrl.trimEnd('/')}/$path")
-            .header("Authorization", "Bearer ${source.token ?: ""}")
-            .method(method, body ?: if (method == "GET" || method == "DELETE") null
-                    else "".toRequestBody())
-            .build()
-        // .use closes the body — otherwise the connection leaks (this path never
-        // reads the body, so it is never implicitly closed).
-        http.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) error("HTTP ${resp.code}")
-        }
+        execute(
+            source,
+            Request.Builder()
+                .url("${source.baseUrl.trimEnd('/')}/$path")
+                .method(method, body ?: if (method == "GET" || method == "DELETE") null
+                        else "".toRequestBody())
+                .build(),
+        )
     }
+
+    /**
+     * Runs [request] against [source] and applies the session side-effects the
+     * shared Retrofit client gets from its interceptors.
+     *
+     * This screen talks to every configured server at once, so it cannot use that
+     * client — its interceptors rewrite every request to the *active* source. That
+     * left this path with no session handling at all: an expired token surfaced as
+     * the literal text "HTTP 401" while the dead token stayed on disk, so the
+     * screen never fell back to its sign-in prompt and a manual sign-out was the
+     * only way back in.
+     */
+    private suspend fun execute(source: ServerSource, request: Request): String =
+        withContext(Dispatchers.IO) {
+            val authed = request.newBuilder()
+                .header("Authorization", "Bearer ${source.token ?: ""}")
+                .build()
+            // .use closes the body — otherwise connections leak on the paths here
+            // that never read it, since nothing else closes them implicitly.
+            http.newCall(authed).execute().use { resp ->
+                resp.header(TOKEN_RENEWAL_HEADER)?.let { prefs.setSourceToken(source.id, it) }
+                if (resp.code == 401) {
+                    // This server rejected this source's token. Drop it so the row
+                    // switches to its sign-in prompt instead of showing a raw code.
+                    prefs.clearSourceToken(source.id)
+                    throw SessionExpiredException()
+                }
+                if (!resp.isSuccessful) error("HTTP ${resp.code}")
+                resp.body?.string() ?: ""
+            }
+        }
+
+    private class SessionExpiredException : IOException("Session expired")
 
     private fun stateFor(sourceId: String): SourceLibraryState? =
         _states.value.find { it.source.id == sourceId }
@@ -254,6 +292,8 @@ class MultiSourceLibraryViewModel @Inject constructor(
     }
 
     // Produce a non-null, human-readable error message from any Throwable.
-    private fun Throwable.describe(): String =
-        message?.ifBlank { null } ?: "${this::class.simpleName ?: "Error"}"
+    private fun Throwable.describe(): String = when (this) {
+        is SessionExpiredException -> "Session expired — sign in again."
+        else -> message?.ifBlank { null } ?: "${this::class.simpleName ?: "Error"}"
+    }
 }

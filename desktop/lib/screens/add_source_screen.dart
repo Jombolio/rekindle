@@ -60,7 +60,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
 
     bool setupNeeded = false;
     try {
-      final client = ApiClient(baseUrl: url);
+      final client = ApiClient.anonymous(baseUrl: url);
       final authApi = AuthApi(client);
       await authApi.me();
       setupNeeded = await authApi.needsSetup();
@@ -103,7 +103,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     setState(() { _busy = true; _error = null; });
 
     try {
-      final client = ApiClient(baseUrl: source.baseUrl);
+      final client = ApiClient.anonymous(baseUrl: source.baseUrl);
       final AuthResult result;
       if (_isSetupMode) {
         result = await AuthApi(client)

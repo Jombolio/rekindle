@@ -4,6 +4,7 @@ import com.rekindle.app.BuildConfig
 import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.data.api.AuthInterceptor
 import com.rekindle.app.data.api.BaseUrlInterceptor
+import com.rekindle.app.data.api.TokenRenewalInterceptor
 import com.rekindle.app.data.api.UnauthorizedInterceptor
 import com.rekindle.app.data.api.RekindleApi
 import dagger.Module
@@ -27,6 +28,7 @@ object NetworkModule {
         authInterceptor: AuthInterceptor,
         baseUrlInterceptor: BaseUrlInterceptor,
         unauthorizedInterceptor: UnauthorizedInterceptor,
+        tokenRenewalInterceptor: TokenRenewalInterceptor,
     ): OkHttpClient =
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -35,6 +37,7 @@ object NetworkModule {
             .addInterceptor(baseUrlInterceptor)
             .addInterceptor(authInterceptor)
             .addInterceptor(unauthorizedInterceptor)
+            .addInterceptor(tokenRenewalInterceptor)
             .apply {
                 // Request logging only in debug — release builds must not log
                 // URLs (or, at higher levels, headers/tokens).

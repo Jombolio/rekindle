@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/api/api_client.dart';
 import '../core/api/libraries_api.dart';
 import '../core/models/library.dart';
+import 'auth_provider.dart';
 import 'sources_provider.dart';
 
 class SourceLibraryNotifier
@@ -14,7 +15,7 @@ class SourceLibraryNotifier
     final sources = ref.read(sourcesProvider);
     final source = sources.where((s) => s.id == sourceId).firstOrNull;
     if (source == null) return [];
-    final client = ApiClient(baseUrl: source.baseUrl, token: source.token);
+    final client = clientForSource(ref.read(sourcesProvider.notifier), source);
     return LibrariesApi(client).getAll();
   }
 
@@ -64,7 +65,7 @@ class SourceLibraryNotifier
     final sources = ref.read(sourcesProvider);
     final source = sources.where((s) => s.id == arg).firstOrNull;
     if (source == null) return null;
-    return ApiClient(baseUrl: source.baseUrl, token: source.token);
+    return clientForSource(ref.read(sourcesProvider.notifier), source);
   }
 }
 

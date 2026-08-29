@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../core/api/api_client.dart';
 import '../core/api/libraries_api.dart';
 import '../core/models/library.dart';
 import '../core/models/server_source.dart';
@@ -420,7 +419,8 @@ class _LibraryList extends StatelessWidget {
       final sources = ref.read(sourcesProvider);
       final source = sources.where((s) => s.id == sourceId).firstOrNull;
       if (source == null) return;
-      final api = LibrariesApi(ApiClient(baseUrl: source.baseUrl, token: source.token));
+      final api = LibrariesApi(
+          clientForSource(ref.read(sourcesProvider.notifier), source));
 
       await notifier.scan(lib.id);
 

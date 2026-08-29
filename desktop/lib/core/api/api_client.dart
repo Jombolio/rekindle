@@ -1,13 +1,44 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+/// Response header carrying a replacement JWT, issued by the server shortly
+/// before the current one expires.
+const tokenRenewalHeader = 'x-rekindle-token';
+
 class ApiClient {
   final String baseUrl;
   final String? token;
   final void Function()? onUnauthorized;
+  final void Function(String token)? onTokenRenewed;
   late final Dio dio;
 
-  ApiClient({required this.baseUrl, this.token, this.onUnauthorized}) {
+  /// Authenticated client for a configured source.
+  ///
+  /// [onUnauthorized] and [onTokenRenewed] are required rather than optional
+  /// because a client built without them silently opts out of session recovery:
+  /// an expired token then surfaces as a raw error while the dead token stays on
+  /// disk, so nothing ever prompts a re-login. Prefer `clientForSource` in
+  /// `providers/auth_provider.dart`, which wires both to the right source.
+  ApiClient({
+    required this.baseUrl,
+    required this.token,
+    required this.onUnauthorized,
+    required this.onTokenRenewed,
+  }) {
+    _init();
+  }
+
+  /// Client for login, setup and reachability probes — calls that carry no
+  /// session, where a 401 means "wrong credentials" rather than "session lost"
+  /// and so must not clear anything.
+  ApiClient.anonymous({required this.baseUrl})
+      : token = null,
+        onUnauthorized = null,
+        onTokenRenewed = null {
+    _init();
+  }
+
+  void _init() {
     dio = Dio(BaseOptions(
       baseUrl: baseUrl.endsWith('/') ? baseUrl : '$baseUrl/',
       connectTimeout: const Duration(seconds: 30),
@@ -24,8 +55,8 @@ class ApiClient {
     if (kDebugMode) {
       dio.interceptors.add(LogInterceptor(responseBody: false));
     }
-    if (onUnauthorized != null) {
-      dio.interceptors.add(_UnauthorizedInterceptor(onUnauthorized!));
+    if (onUnauthorized != null || onTokenRenewed != null) {
+      dio.interceptors.add(_SessionInterceptor(onUnauthorized, onTokenRenewed));
     }
   }
 
@@ -43,16 +74,35 @@ class ApiClient {
       token != null ? {'Authorization': 'Bearer $token'} : {};
 }
 
-class _UnauthorizedInterceptor extends Interceptor {
-  final void Function() onUnauthorized;
+/// Keeps the stored session in step with what the server says about it: banks a
+/// server-issued replacement token, and reports a rejected one so the source can
+/// be signed out and its sign-in prompt shown.
+class _SessionInterceptor extends Interceptor {
+  _SessionInterceptor(this._onUnauthorized, this._onTokenRenewed);
 
-  _UnauthorizedInterceptor(this.onUnauthorized);
+  final void Function()? _onUnauthorized;
+  final void Function(String token)? _onTokenRenewed;
+
+  @override
+  void onResponse(Response<dynamic> response, ResponseInterceptorHandler handler) {
+    _bankRenewedToken(response);
+    handler.next(response);
+  }
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
+    // A renewal can ride along on an error response too — don't lose it.
+    _bankRenewedToken(err.response);
     if (err.response?.statusCode == 401) {
-      onUnauthorized();
+      _onUnauthorized?.call();
     }
     handler.next(err);
+  }
+
+  void _bankRenewedToken(Response<dynamic>? response) {
+    final renewed = response?.headers.value(tokenRenewalHeader);
+    if (renewed != null && renewed.isNotEmpty) {
+      _onTokenRenewed?.call(renewed);
+    }
   }
 }
