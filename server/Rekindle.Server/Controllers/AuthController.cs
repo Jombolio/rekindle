@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Rekindle.Core.Repositories;
 using Rekindle.Core.Services;
+using Rekindle.Server.Authorization;
 
 namespace Rekindle.Server.Controllers;
 
@@ -79,12 +80,12 @@ public class AuthController(
         var user = await users.GetByIdAsync(userId);
         if (user is null) return NotFound();
 
-        var claimLevelStr = User.FindFirstValue("permission_level");
-        var claimLevel = claimLevelStr is not null && int.TryParse(claimLevelStr, out var l) ? l : -1;
-
-        string? freshToken = null;
-        if (claimLevel != user.PermissionLevel)
-            freshToken = authService.GenerateToken(user);
+        // Renewal is decided in one place — the JWT OnTokenValidated event — which
+        // has already put any replacement on the response header. Echo it in the
+        // body so a client that only reads JSON still picks it up. (Comparing
+        // permission_level here would never fire: that claim is overwritten with
+        // the live DB value on every request, so it always matches.)
+        var freshToken = Response.Headers[TokenRenewal.HeaderName].FirstOrDefault();
 
         return Ok(new
         {

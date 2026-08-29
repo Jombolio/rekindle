@@ -121,6 +121,58 @@ class PrefsStore @Inject constructor(
         }
     }
 
+    /** Applies [transform] to the source with [sourceId], if it is still present. */
+    private suspend fun editSource(sourceId: String, transform: (ServerSource) -> ServerSource) {
+        store.edit { prefs ->
+            val current = runCatching<List<ServerSource>> {
+                gson.fromJson(prefs[Keys.SOURCES_JSON] ?: "[]", sourceListType)
+            }.getOrDefault(emptyList()).toMutableList()
+            val idx = current.indexOfFirst { it.id == sourceId }
+            if (idx < 0) return@edit
+            current[idx] = transform(current[idx])
+            prefs[Keys.SOURCES_JSON] = gson.toJson(current)
+        }
+    }
+
+    /**
+     * Clears one specific source's token. The library screen talks to every server
+     * at once, so a 401 from one of them must sign out the source that actually
+     * rejected the token — [clearActiveSourceToken] would sign out whichever
+     * source happens to be active instead.
+     */
+    suspend fun clearSourceToken(sourceId: String) =
+        editSource(sourceId) { it.copy(token = null, permissionLevel = 0) }
+
+    /** Stores a server-issued replacement token for one specific source. */
+    suspend fun setSourceToken(sourceId: String, token: String) =
+        editSource(sourceId) { it.copy(token = token) }
+
+    /**
+     * Stores a replacement token for the active source — the one the shared
+     * Retrofit client is pointed at. The server issues these shortly before the
+     * current token expires; persisting them is what keeps a long-running session
+     * alive, instead of dropping the user at the absolute expiry with no recovery
+     * but a manual sign-out and sign-in.
+     */
+    suspend fun renewActiveSourceToken(token: String) {
+        val activeId = activeSourceId.first()
+        store.edit { prefs ->
+            val current = runCatching<List<ServerSource>> {
+                gson.fromJson(prefs[Keys.SOURCES_JSON] ?: "[]", sourceListType)
+            }.getOrDefault(emptyList()).toMutableList()
+            if (current.isEmpty()) {
+                // Pre-multi-source install, still on the legacy single-token store.
+                if (prefs[Keys.TOKEN] != null) prefs[Keys.TOKEN] = token
+                return@edit
+            }
+            // Mirror the activeSource fallback: an unknown/stale active id resolves
+            // to the first source, so that is the one being renewed.
+            val idx = current.indexOfFirst { it.id == activeId }.let { if (it < 0) 0 else it }
+            current[idx] = current[idx].copy(token = token)
+            prefs[Keys.SOURCES_JSON] = gson.toJson(current)
+        }
+    }
+
     // ── App settings ──────────────────────────────────────────────────────────
 
     val themeMode: Flow<String> = store.data.map { it[Keys.THEME_MODE] ?: "system" }

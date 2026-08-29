@@ -13,6 +13,24 @@ import 'sources_provider.dart';
 
 final activeSourceIdProvider = StateProvider<String?>((ref) => null);
 
+/// Builds an [ApiClient] for [source] with session recovery wired up.
+///
+/// Every authenticated call site must go through this. A 401 clears that
+/// source's token, which cascades through the provider graph into the per-source
+/// sign-in prompt and the router redirect; a server-issued replacement token is
+/// banked so an actively-used session survives the JWT's absolute expiry instead
+/// of dying mid-use with a manual re-login as the only way back.
+///
+/// It takes the notifier rather than a `Ref` so it can be called from widgets
+/// (`WidgetRef`) and providers (`Ref`) alike.
+ApiClient clientForSource(SourcesNotifier sources, ServerSource source) =>
+    ApiClient(
+      baseUrl: source.baseUrl,
+      token: source.token,
+      onUnauthorized: () => sources.clearToken(source.id),
+      onTokenRenewed: (renewed) => sources.setToken(source.id, renewed),
+    );
+
 final apiClientProvider = Provider<ApiClient>((ref) {
   final sources = ref.watch(sourcesProvider);
   final activeId = ref.watch(activeSourceIdProvider);
@@ -24,16 +42,9 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   source ??= sources.where((s) => s.token != null).firstOrNull;
   source ??= sources.firstOrNull;
 
-  if (source == null) return ApiClient(baseUrl: '', token: null);
+  if (source == null) return ApiClient.anonymous(baseUrl: '');
 
-  final sourceId = source.id;
-  return ApiClient(
-    baseUrl: source.baseUrl,
-    token: source.token,
-    onUnauthorized: () {
-      ref.read(sourcesProvider.notifier).clearToken(sourceId);
-    },
-  );
+  return clientForSource(ref.read(sourcesProvider.notifier), source);
 });
 
 // ---------------------------------------------------------------------------
@@ -56,7 +67,7 @@ final sourceAuthProvider =
 
   // No cache yet — first launch after a data-clear or migration; ask the server.
   try {
-    final client = ApiClient(baseUrl: source.baseUrl, token: source.token);
+    final client = clientForSource(ref.read(sourcesProvider.notifier), source);
     final data = await AuthApi(client).me();
     final username = data['username'] as String;
     final permLevel = data['permissionLevel'] as int? ?? 2;
@@ -130,7 +141,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     }
 
     try {
-      final client = ApiClient(baseUrl: source.baseUrl, token: source.token);
+      final client = clientForSource(ref.read(sourcesProvider.notifier), source);
       final data = await AuthApi(client).me();
       return AuthAuthenticated(
         username: data['username'] as String,

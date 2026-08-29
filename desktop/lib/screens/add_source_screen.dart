@@ -60,20 +60,23 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
 
     bool setupNeeded = false;
     try {
-      final client = ApiClient(baseUrl: url);
+      final client = ApiClient.anonymous(baseUrl: url);
       final authApi = AuthApi(client);
-      await authApi.me();
-      setupNeeded = await authApi.needsSetup();
-    } on DioException catch (e) {
-      final status = e.response?.statusCode;
-      if (status != 401 && status != 409) {
-        if (!mounted) return;
-        setState(() {
-          _busy = false;
-          _error = 'Could not reach server. Check the URL and try again.';
-        });
-        return;
+
+      // Reachability probe: /api/auth/me answers 401 without credentials, which
+      // is proof enough that this URL is a Rekindle server. Its expected 401
+      // must be caught here rather than by the outer handler — thrown that far
+      // it skipped the needsSetup() call below entirely, leaving setupNeeded
+      // false, so a server with no admin yet only ever offered the login form
+      // and first-time setup was impossible from this client.
+      try {
+        await authApi.me();
+      } on DioException catch (e) {
+        final status = e.response?.statusCode;
+        if (status != 401 && status != 409) rethrow;
       }
+
+      setupNeeded = await authApi.needsSetup();
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -103,7 +106,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     setState(() { _busy = true; _error = null; });
 
     try {
-      final client = ApiClient(baseUrl: source.baseUrl);
+      final client = ApiClient.anonymous(baseUrl: source.baseUrl);
       final AuthResult result;
       if (_isSetupMode) {
         result = await AuthApi(client)

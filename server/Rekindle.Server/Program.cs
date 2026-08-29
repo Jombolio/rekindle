@@ -240,12 +240,33 @@ internal sealed class JwtBearerPostConfigure(IOptions<RekindleOptions> rekindleO
                 }
 
                 // Overwrite the token's permission_level with the current DB value
-                // so MinPermissionLevelHandler authorizes against live data.
+                // so MinPermissionLevelHandler authorizes against live data. What
+                // the token itself asserted is preserved first — after the
+                // overwrite the two agree by construction, so nothing downstream
+                // could otherwise tell that the level had drifted.
                 if (principal!.Identity is ClaimsIdentity identity)
                 {
                     var stale = identity.FindFirst("permission_level");
-                    if (stale is not null) identity.RemoveClaim(stale);
+                    if (stale is not null)
+                    {
+                        identity.AddClaim(new Claim(TokenRenewal.TokenPermissionLevelClaim, stale.Value));
+                        identity.RemoveClaim(stale);
+                    }
                     identity.AddClaim(new Claim("permission_level", user.PermissionLevel.ToString()));
+                }
+
+                // Hand back a replacement before this token lapses. The expiry is
+                // absolute and there is no refresh flow, so without this an active
+                // session dies mid-use and the only way back in is a manual
+                // re-login. Renewing off normal traffic costs nothing extra: once
+                // the client persists the new token it is far from expiry again,
+                // so the header stops being emitted.
+                var jwtOpts = context.HttpContext.RequestServices
+                    .GetRequiredService<IOptions<RekindleOptions>>().Value.Jwt;
+                if (TokenRenewal.ShouldRenew(principal!, user.PermissionLevel, jwtOpts.ExpiryDays))
+                {
+                    var auth = context.HttpContext.RequestServices.GetRequiredService<AuthService>();
+                    context.Response.Headers[TokenRenewal.HeaderName] = auth.GenerateToken(user);
                 }
             }
         };

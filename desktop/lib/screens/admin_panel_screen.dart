@@ -10,6 +10,7 @@ import '../core/api/media_api.dart';
 import '../core/api/metadata_api.dart';
 import '../core/models/library.dart';
 import '../core/models/media.dart';
+import '../providers/auth_provider.dart';
 import '../providers/sources_provider.dart';
 import 'widgets/cover_image.dart';
 
@@ -20,8 +21,8 @@ final _sourceClientProvider =
     Provider.autoDispose.family<ApiClient, String>((ref, sourceId) {
   final sources = ref.watch(sourcesProvider);
   final source = sources.where((s) => s.id == sourceId).firstOrNull;
-  if (source == null) return ApiClient(baseUrl: '', token: null);
-  return ApiClient(baseUrl: source.baseUrl, token: source.token);
+  if (source == null) return ApiClient.anonymous(baseUrl: '');
+  return clientForSource(ref.read(sourcesProvider.notifier), source);
 });
 
 final _statsProvider =

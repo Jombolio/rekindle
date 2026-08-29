@@ -46,9 +46,12 @@ class AuthApi {
 
   Future<bool> needsSetup() async {
     try {
-      final resp = await _client.dio.get('api/auth/setup-status');
+      final resp = await _client.dio.get('api/auth/setup/status');
       return (resp.data as Map<String, dynamic>)['needsSetup'] == true;
     } catch (_) {
+      // Assume an already-configured server. This also swallows a 404, which is
+      // how the wrong path here (`setup-status`) stayed invisible: any failure
+      // came back as a plausible-looking answer rather than an error.
       return false;
     }
   }
