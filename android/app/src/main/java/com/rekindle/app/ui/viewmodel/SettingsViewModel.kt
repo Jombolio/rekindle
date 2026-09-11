@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rekindle.app.core.prefs.DEFAULT_CHAPTER_CONFIRM_MS
 import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.domain.model.ServerSource
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,6 +25,10 @@ data class SettingsState(
     val downloadSafUri: String = "",
     /** Human-readable label derived from the SAF URI, e.g. "Downloads/Rekindle". */
     val downloadLocationLabel: String = "",
+    /** Require a second input to leave the current chapter. */
+    val confirmChapterChange: Boolean = true,
+    /** How long an armed chapter-change confirmation stays open, in milliseconds. */
+    val chapterConfirmMs: Int = DEFAULT_CHAPTER_CONFIRM_MS,
 )
 
 @HiltViewModel
@@ -45,11 +50,18 @@ class SettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            combine(prefs.themeMode, prefs.downloadSafUri) { theme, safUri ->
+            combine(
+                prefs.themeMode,
+                prefs.downloadSafUri,
+                prefs.confirmChapterChange,
+                prefs.chapterConfirmMs,
+            ) { theme, safUri, confirmChapter, confirmMs ->
                 SettingsState(
                     themeMode = theme,
                     downloadSafUri = safUri,
                     downloadLocationLabel = if (safUri.isBlank()) "" else safUriLabel(safUri),
+                    confirmChapterChange = confirmChapter,
+                    chapterConfirmMs = confirmMs,
                 )
             }.collect { _state.value = it }
         }
@@ -57,6 +69,14 @@ class SettingsViewModel @Inject constructor(
 
     fun setThemeMode(mode: String) {
         viewModelScope.launch { prefs.setThemeMode(mode) }
+    }
+
+    fun setConfirmChapterChange(confirm: Boolean) {
+        viewModelScope.launch { prefs.setConfirmChapterChange(confirm) }
+    }
+
+    fun setChapterConfirmMs(ms: Int) {
+        viewModelScope.launch { prefs.setChapterConfirmMs(ms) }
     }
 
     /** Persist the URI obtained from ACTION_OPEN_DOCUMENT_TREE. */

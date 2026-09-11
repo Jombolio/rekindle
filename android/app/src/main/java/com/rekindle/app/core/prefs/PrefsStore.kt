@@ -23,6 +23,13 @@ import javax.inject.Singleton
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore("rekindle_prefs")
 
+// Bounds for the chapter-change confirmation window. These, the defaults and the
+// pref keys deliberately match the desktop client (core/storage/prefs.dart), so
+// the feature behaves the same on both.
+const val MIN_CHAPTER_CONFIRM_MS = 250
+const val MAX_CHAPTER_CONFIRM_MS = 5000
+const val DEFAULT_CHAPTER_CONFIRM_MS = 2000
+
 @Singleton
 class PrefsStore @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -180,6 +187,20 @@ class PrefsStore @Inject constructor(
     val spineGap: Flow<Float> = store.data.map { it[Keys.SPINE_GAP] ?: 0f }
 
     /**
+     * Require a second input to leave the current chapter. A chapter change sits
+     * one tap past the last page, so a stray tap at the boundary otherwise drops
+     * the reader into the next archive.
+     */
+    val confirmChapterChange: Flow<Boolean> =
+        store.data.map { it[Keys.CONFIRM_CHAPTER_CHANGE] ?: true }
+
+    /** How long an armed chapter-change confirmation stays open, in milliseconds. */
+    val chapterConfirmMs: Flow<Int> = store.data.map {
+        (it[Keys.CHAPTER_CONFIRM_MS] ?: DEFAULT_CHAPTER_CONFIRM_MS)
+            .coerceIn(MIN_CHAPTER_CONFIRM_MS, MAX_CHAPTER_CONFIRM_MS)
+    }
+
+    /**
      * Content URI string granted via ACTION_OPEN_DOCUMENT_TREE.
      * Empty = use app-private external storage (no permission needed).
      */
@@ -199,6 +220,15 @@ class PrefsStore @Inject constructor(
 
     suspend fun setSpineGap(gap: Float) =
         store.edit { it[Keys.SPINE_GAP] = gap }
+
+    suspend fun setConfirmChapterChange(confirm: Boolean) =
+        store.edit { it[Keys.CONFIRM_CHAPTER_CHANGE] = confirm }
+
+    // Clamped on write as well as on read, so a value stored by another build can
+    // never produce an unusable window.
+    suspend fun setChapterConfirmMs(ms: Int) = store.edit {
+        it[Keys.CHAPTER_CONFIRM_MS] = ms.coerceIn(MIN_CHAPTER_CONFIRM_MS, MAX_CHAPTER_CONFIRM_MS)
+    }
 
     // ── Per-media reader prefs ────────────────────────────────────────────────
 
@@ -235,6 +265,8 @@ class PrefsStore @Inject constructor(
         val DOWNLOAD_DIR = stringPreferencesKey("download_directory")
         val DOWNLOAD_SAF_URI = stringPreferencesKey("download_saf_uri")
         val SPINE_GAP = floatPreferencesKey("spine_gap")
+        val CONFIRM_CHAPTER_CHANGE = booleanPreferencesKey("confirm_chapter_change")
+        val CHAPTER_CONFIRM_MS = intPreferencesKey("chapter_confirm_ms")
         val SOURCES_JSON = stringPreferencesKey("sources_json")
         val ACTIVE_SOURCE_ID = stringPreferencesKey("active_source_id")
     }

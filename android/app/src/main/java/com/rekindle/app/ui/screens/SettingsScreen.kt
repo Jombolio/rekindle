@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -36,7 +37,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -54,6 +57,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.rekindle.app.domain.model.ServerSource
+import com.rekindle.app.core.prefs.MAX_CHAPTER_CONFIRM_MS
+import com.rekindle.app.core.prefs.MIN_CHAPTER_CONFIRM_MS
 import com.rekindle.app.ui.viewmodel.SettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -172,6 +177,56 @@ fun SettingsScreen(
                             label = { Text(label) },
                         )
                     }
+                }
+
+                // ── Reader ────────────────────────────────────────────────────────
+                SectionHeader("Reader")
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Confirm chapter change", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Turning past the last or first page needs a second tap, " +
+                                "so a stray input cannot leave the chapter by itself.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Switch(
+                        checked = state.confirmChapterChange,
+                        onCheckedChange = { vm.setConfirmChapterChange(it) },
+                    )
+                }
+
+                if (state.confirmChapterChange) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Confirmation window",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            formatConfirmWindow(state.chapterConfirmMs),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Text(
+                        "How long the second tap stays accepted.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Slider(
+                        value = state.chapterConfirmMs
+                            .coerceIn(MIN_CHAPTER_CONFIRM_MS, MAX_CHAPTER_CONFIRM_MS)
+                            .toFloat(),
+                        onValueChange = { vm.setChapterConfirmMs(it.toInt()) },
+                        valueRange = MIN_CHAPTER_CONFIRM_MS.toFloat()..MAX_CHAPTER_CONFIRM_MS.toFloat(),
+                        // 250 ms steps; steps counts the gaps *between* endpoints.
+                        steps = (MAX_CHAPTER_CONFIRM_MS - MIN_CHAPTER_CONFIRM_MS) / 250 - 1,
+                    )
                 }
 
                 // ── Downloads / Storage ───────────────────────────────────────────
@@ -297,6 +352,16 @@ fun SettingsScreen(
             },
         )
     }
+}
+
+/** "750 ms" below a second, "1.5 s" above — the slider steps in 250 ms, so one
+ *  decimal is always enough. Matches the desktop client's wording. */
+private fun formatConfirmWindow(ms: Int): String {
+    if (ms < 1000) return "$ms ms"
+    val seconds = ms / 1000.0
+    val text = if (seconds == Math.floor(seconds)) seconds.toInt().toString()
+    else String.format(java.util.Locale.US, "%.1f", seconds)
+    return "$text s"
 }
 
 @Composable

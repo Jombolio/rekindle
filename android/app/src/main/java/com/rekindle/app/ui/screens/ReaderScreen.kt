@@ -1,6 +1,7 @@
 package com.rekindle.app.ui.screens
 
 import android.net.Uri
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -37,6 +38,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -49,6 +53,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -72,9 +77,11 @@ import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import com.rekindle.app.ui.viewmodel.ReaderViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -136,16 +143,75 @@ fun ReaderScreen(
 
     val slideCount = slides.size.coerceAtLeast(1)
 
+    // ── Chapter-change confirmation ───────────────────────────────────────────
+    // Leaving a chapter replaces the reader's content, and the trigger sits one
+    // tap past the last page — so a stray tap in the page-turn zone drops you
+    // into the next archive with no way back but navigating there yourself.
+    // When enabled, the first attempt only arms a confirmation and says so; a
+    // second attempt the same way, inside the window, commits it.
+    val chapterConfirmSnackbar = remember { SnackbarHostState() }
+    val chapterConfirmScope = rememberCoroutineScope()
+    // -1 previous, 1 next, 0 nothing armed. Arming per-direction means a
+    // confirmation for "next" can never be spent by a tap that went the other way.
+    var armedChapterDir by remember { mutableIntStateOf(0) }
+    var armedAtMs by remember { mutableLongStateOf(0L) }
+    var chapterPromptJob by remember { mutableStateOf<Job?>(null) }
+
+    fun dismissChapterPrompt() {
+        chapterPromptJob?.cancel()
+        chapterPromptJob = null
+    }
+
+    // A real page turn means the reader moved off the boundary, so a confirmation
+    // armed there is stale. Keying on currentPage catches every way a page can
+    // change without threading a callback through both content composables.
+    LaunchedEffect(state.currentPage) {
+        armedChapterDir = 0
+        dismissChapterPrompt()
+    }
+
+    /** Whether a chapter change in [direction] may proceed right now. */
+    fun passesChapterConfirm(direction: Int, label: String): Boolean {
+        if (!state.confirmChapterChange) return true
+
+        val now = SystemClock.elapsedRealtime()
+        if (armedChapterDir == direction && now - armedAtMs <= state.chapterConfirmMs) {
+            armedChapterDir = 0
+            dismissChapterPrompt()
+            return true
+        }
+
+        armedChapterDir = direction
+        armedAtMs = now
+        dismissChapterPrompt()
+        chapterPromptJob = chapterConfirmScope.launch {
+            // Indefinite plus a timed cancel, because SnackbarDuration only offers
+            // coarse presets: matching the window exactly makes the prompt its own
+            // countdown, so when it goes the confirmation has expired too.
+            withTimeoutOrNull(state.chapterConfirmMs.toLong()) {
+                chapterConfirmSnackbar.showSnackbar(
+                    "Again to open the $label chapter",
+                    duration = SnackbarDuration.Indefinite,
+                )
+            }
+        }
+        return false
+    }
+
     // ── Chapter helpers ───────────────────────────────────────────────────────
     fun tryPrevChapter() {
         val idx = state.siblings.indexWhere { it.id == mediaId }
-        if (idx > 0) vm.navigateToChapter(state.siblings[idx - 1].id, 0)
+        // Bounds first: never prompt for a chapter that isn't there.
+        if (idx <= 0) return
+        if (!passesChapterConfirm(-1, "previous")) return
+        vm.navigateToChapter(state.siblings[idx - 1].id, 0)
     }
 
     fun tryNextChapter() {
         val idx = state.siblings.indexWhere { it.id == mediaId }
-        if (idx >= 0 && idx < state.siblings.size - 1)
-            vm.navigateToChapter(state.siblings[idx + 1].id, 0)
+        if (idx < 0 || idx >= state.siblings.size - 1) return
+        if (!passesChapterConfirm(1, "next")) return
+        vm.navigateToChapter(state.siblings[idx + 1].id, 0)
     }
 
     // ── Image model helper ────────────────────────────────────────────────────
@@ -165,6 +231,7 @@ fun ReaderScreen(
         containerColor = Color.Black,
         topBar = {},
         bottomBar = {},
+        snackbarHost = { SnackbarHost(chapterConfirmSnackbar) },
     ) { padding ->
         Box(
             modifier = Modifier
