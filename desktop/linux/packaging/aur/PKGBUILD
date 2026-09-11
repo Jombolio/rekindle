@@ -9,7 +9,7 @@
 pkgname=rekindle-bin
 _appid=io.github.Jombolio.Rekindle
 _instdir=/opt/rekindle
-pkgver=1.2.4
+pkgver=1.3.0
 pkgrel=1
 pkgdesc='Client for a self-hosted comic, manga and book server'
 arch=('x86_64')
