@@ -11,15 +11,30 @@ class SettingsState {
   final ThemeMode themeMode;
   final String downloadDirectory; // empty = use platform default
 
+  /// Require a second input to leave the current chapter.
+  final bool confirmChapterChange;
+
+  /// How long an armed chapter-change confirmation stays open.
+  final Duration chapterConfirmWindow;
+
   const SettingsState({
     required this.themeMode,
     required this.downloadDirectory,
+    required this.confirmChapterChange,
+    required this.chapterConfirmWindow,
   });
 
-  SettingsState copyWith({ThemeMode? themeMode, String? downloadDirectory}) =>
+  SettingsState copyWith({
+    ThemeMode? themeMode,
+    String? downloadDirectory,
+    bool? confirmChapterChange,
+    Duration? chapterConfirmWindow,
+  }) =>
       SettingsState(
         themeMode: themeMode ?? this.themeMode,
         downloadDirectory: downloadDirectory ?? this.downloadDirectory,
+        confirmChapterChange: confirmChapterChange ?? this.confirmChapterChange,
+        chapterConfirmWindow: chapterConfirmWindow ?? this.chapterConfirmWindow,
       );
 }
 
@@ -35,6 +50,10 @@ class SettingsNotifier extends Notifier<SettingsState> {
     return SettingsState(
       themeMode: mode,
       downloadDirectory: Prefs.instance.downloadDirectory,
+      confirmChapterChange: Prefs.instance.confirmChapterChange,
+      chapterConfirmWindow: Duration(
+        milliseconds: _clampConfirmMs(Prefs.instance.chapterConfirmMs),
+      ),
     );
   }
 
@@ -47,7 +66,21 @@ class SettingsNotifier extends Notifier<SettingsState> {
     await Prefs.instance.setDownloadDirectory(path.trim());
     state = state.copyWith(downloadDirectory: path.trim());
   }
+
+  Future<void> setConfirmChapterChange({required bool confirm}) async {
+    await Prefs.instance.setConfirmChapterChange(confirm: confirm);
+    state = state.copyWith(confirmChapterChange: confirm);
+  }
+
+  Future<void> setChapterConfirmWindow(Duration window) async {
+    final ms = _clampConfirmMs(window.inMilliseconds);
+    await Prefs.instance.setChapterConfirmMs(ms);
+    state = state.copyWith(chapterConfirmWindow: Duration(milliseconds: ms));
+  }
 }
+
+int _clampConfirmMs(int ms) =>
+    ms.clamp(kMinChapterConfirmMs, kMaxChapterConfirmMs);
 
 final settingsProvider = NotifierProvider<SettingsNotifier, SettingsState>(
   SettingsNotifier.new,

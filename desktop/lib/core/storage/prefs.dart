@@ -4,6 +4,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/server_source.dart';
 
+/// Bounds for the chapter-change confirmation window. The screen clamps the
+/// slider to these and the reader clamps whatever it reads back, so a value
+/// written by an older build can never produce an unusable window.
+const int kMinChapterConfirmMs = 250;
+const int kMaxChapterConfirmMs = 5000;
+const int kDefaultChapterConfirmMs = 2000;
+
 /// Thin wrapper around SharedPreferences for typed, named access.
 class Prefs {
   Prefs._(this._prefs);
@@ -83,6 +90,21 @@ class Prefs {
   bool isScrollMode(String key) => isScrollModeExplicit(key) ?? false;
   Future<void> setScrollMode(String key, {required bool scrollMode}) =>
       _prefs.setBool('scroll_mode_$key', scrollMode);
+
+  // Chapter-change confirmation (global).
+  // A chapter change sits one input past the last page, so a stray tap at the
+  // boundary jumps out of the archive. When on, the first attempt only arms;
+  // a second within the window commits it.
+  bool get confirmChapterChange =>
+      _prefs.getBool('confirm_chapter_change') ?? true;
+  Future<void> setConfirmChapterChange({required bool confirm}) =>
+      _prefs.setBool('confirm_chapter_change', confirm);
+
+  // How long the armed confirmation stays open, in milliseconds (global).
+  int get chapterConfirmMs =>
+      _prefs.getInt('chapter_confirm_ms') ?? kDefaultChapterConfirmMs;
+  Future<void> setChapterConfirmMs(int ms) =>
+      _prefs.setInt('chapter_confirm_ms', ms);
 
   // Double-page spine gap in logical pixels (global)
   double get doublePageGap => _prefs.getDouble('double_page_gap') ?? 0.0;
