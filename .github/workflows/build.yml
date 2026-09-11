@@ -99,7 +99,9 @@ jobs:
       # appimagetool pins.
       - uses: flathub-infra/flatpak-github-actions/flatpak-builder@933e9e8ca36e85046ebca8e211f0785c6becac40
         with:
-          bundle: Rekindle-x86_64.flatpak
+          # The action appends the architecture itself, so naming this
+          # Rekindle-x86_64 would produce Rekindle-x86_64-x86_64.flatpak.
+          bundle: Rekindle.flatpak
           manifest-path: desktop/linux/packaging/flatpak/io.github.Jombolio.Rekindle.yml
           cache-key: flatpak-builder-${{ github.sha }}
 
