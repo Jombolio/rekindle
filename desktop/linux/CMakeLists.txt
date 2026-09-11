@@ -7,7 +7,7 @@ project(runner LANGUAGES CXX)
 set(BINARY_NAME "rekindle")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
-set(APPLICATION_ID "com.example.rekindle")
+set(APPLICATION_ID "io.github.Jombolio.Rekindle")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -127,13 +127,20 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
     COMPONENT Runtime)
 endif()
 
-# Install application icon.
+# Install application icon. The runner builds "<exe dir>/data/icon.png" at
+# runtime, so this filename is load-bearing — see linux/runner/my_application.cc.
+# The AppImage build renames its own copy to APPLICATION_ID separately.
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/icon.png"
   DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)
 
-# Install the desktop entry and icon next to the app. The AppImage build reads
-# them from here, and they let zip users wire up a menu entry by hand.
-install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/rekindle.desktop"
+# Install the desktop entry and AppStream metainfo next to the app. The AppImage
+# build reads them from here, and they let zip users wire up a menu entry by
+# hand. Both are named after APPLICATION_ID, as AppStream requires.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/io.github.Jombolio.Rekindle.desktop"
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
+  COMPONENT Runtime)
+
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/io.github.Jombolio.Rekindle.metainfo.xml"
   DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)
