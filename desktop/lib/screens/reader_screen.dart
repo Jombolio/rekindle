@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -776,9 +777,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       child: ListView.builder(
           controller: _scrollCtrl,
           itemCount: totalPages,
-          // Pre-render 3 screens worth of content below (and above) the
+          // Pre-render 3 viewports worth of content below (and above) the
           // visible area so images are already decoded before they scroll in.
-          cacheExtent: MediaQuery.sizeOf(context).height * 3,
+          scrollCacheExtent: const ScrollCacheExtent.viewport(3),
           itemBuilder: (context, pageIndex) {
             return Image(
               key: _pageKeys[pageIndex],

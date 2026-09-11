@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -95,7 +96,7 @@ class ChapterIndexScreen extends ConsumerWidget {
           Widget list = ListView.builder(
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: totalItems,
-            cacheExtent: _kTileHeight * 6,
+            scrollCacheExtent: const ScrollCacheExtent.pixels(_kTileHeight * 6),
             itemExtentBuilder: (i, _) {
               if (hasSubfolders && i == 0) return _kHeaderHeight;
               return _kTileHeight;
