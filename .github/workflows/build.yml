@@ -94,7 +94,10 @@ jobs:
 
       # Builds from the released client zip named in the manifest, so this
       # verifies the manifest itself rather than a local build.
-      - uses: flathub-infra/flatpak-github-actions/flatpak-builder@v6
+      # The action publishes no tags or releases, so it is pinned to a commit
+      # rather than tracking master — same reasoning as the Flutter and
+      # appimagetool pins.
+      - uses: flathub-infra/flatpak-github-actions/flatpak-builder@933e9e8ca36e85046ebca8e211f0785c6becac40
         with:
           bundle: Rekindle-x86_64.flatpak
           manifest-path: desktop/linux/packaging/flatpak/io.github.Jombolio.Rekindle.yml
