@@ -40,6 +40,33 @@ renaming it later is fine. To update, replace the file with a newer one.
 offer to do this the first time you run any AppImage and will handle the icon
 and menu entry for you. Otherwise just run the file directly.
 
+> **On Wayland, the taskbar icon needs that menu entry.** Wayland has no
+> per-window icon: the compositor works out which icon to show by matching the
+> window's app ID to a desktop entry *of the same name*. With no entry
+> installed, Rekindle shows a generic icon or a window preview instead of its
+> logo. X11 sessions are unaffected.
+>
+> AppImageLauncher handles this. To do it by hand, run this once — it extracts
+> the entry and icon the AppImage already carries and points the entry at
+> wherever you keep the file:
+>
+> ```bash
+> APPIMAGE=$PWD/RekindleClient-linux-x86_64.AppImage
+> ID=io.github.Jombolio.Rekindle
+> "$APPIMAGE" --appimage-extract "$ID.desktop" >/dev/null
+> "$APPIMAGE" --appimage-extract "$ID.png" >/dev/null
+> mkdir -p ~/.local/share/applications ~/.local/share/icons/hicolor/256x256/apps
+> cp "squashfs-root/$ID.png" ~/.local/share/icons/hicolor/256x256/apps/
+> sed "s|^Exec=.*|Exec=\"$APPIMAGE\"|" "squashfs-root/$ID.desktop" \
+>   > ~/.local/share/applications/"$ID.desktop"
+> rm -rf squashfs-root
+> ```
+>
+> Re-run it if you move the AppImage. If you used the old `install.sh` from a
+> release before 1.3.0, delete the entry it left behind —
+> `~/.local/share/applications/rekindle.desktop` — as it points at a path that
+> may no longer exist and can never match the app ID.
+
 > **If it refuses to start** on a locked-down system without FUSE (some
 > containers and minimal installs), run it with
 > `./RekindleClient-linux-x86_64.AppImage --appimage-extract-and-run`.
