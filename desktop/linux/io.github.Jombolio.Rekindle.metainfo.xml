@@ -54,6 +54,20 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="1.3.0" date="2026-09-11">
+      <description>
+        <p>
+          Turning past the last or first page of a chapter now asks for a second
+          press before leaving it, so a stray tap or a held arrow key can no
+          longer skip chapters on its own. The confirmation window is
+          adjustable, and the whole thing can be switched off, under Settings.
+        </p>
+        <p>
+          On Linux the client is now also published as an AppImage, which needs
+          no install step and carries its own desktop entry and icon.
+        </p>
+      </description>
+    </release>
     <release version="1.2.3" date="2026-07-11"/>
   </releases>
 </component>
