@@ -132,34 +132,8 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/icon.png"
   DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)
 
-# Install desktop entry template.
+# Install the desktop entry and icon next to the app. The AppImage build reads
+# them from here, and they let zip users wire up a menu entry by hand.
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/rekindle.desktop"
   DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)
-
-# Generate install.sh helper script into the bundle root.
-install(CODE "
-  file(WRITE \"${BUILD_BUNDLE_DIR}/install.sh\"
-    \"#!/usr/bin/env bash\n\"
-    \"set -e\n\"
-    \"SCRIPT_DIR=\\\$(cd \\\$(dirname \\\"\\\$0\\\") && pwd)\n\"
-    \"ICON_DIR=\\\$HOME/.local/share/icons/hicolor/256x256/apps\n\"
-    \"APP_DIR=\\\$HOME/.local/share/applications\n\"
-    \"DESKTOP=\\\$APP_DIR/rekindle.desktop\n\"
-    \"UPDATE=false\n\"
-    \"[ -f \\\$DESKTOP ] && UPDATE=true\n\"
-    \"mkdir -p \\\$ICON_DIR \\\$APP_DIR\n\"
-    \"cp \\\$SCRIPT_DIR/data/icon.png \\\$ICON_DIR/rekindle.png\n\"
-    \"sed \\\"s|INSTALL_DIR|\\\$SCRIPT_DIR|g\\\" \\\$SCRIPT_DIR/data/rekindle.desktop > \\\$DESKTOP\n\"
-    \"gtk-update-icon-cache -f -t \\\$HOME/.local/share/icons/hicolor || true\n\"
-    \"if [ \\\$UPDATE = true ]; then\n\"
-    \"  echo 'Rekindle updated. The application menu entry now points to this version.'\n\"
-    \"else\n\"
-    \"  echo 'Rekindle installed. You can now launch it from your application menu.'\n\"
-    \"fi\n\"
-  )
-  file(CHMOD \"${BUILD_BUNDLE_DIR}/install.sh\" PERMISSIONS
-    OWNER_READ OWNER_WRITE OWNER_EXECUTE
-    GROUP_READ GROUP_EXECUTE
-    WORLD_READ WORLD_EXECUTE)
-  " COMPONENT Runtime)

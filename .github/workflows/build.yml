@@ -20,6 +20,10 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned so CI is reproducible and matches local dev. An unpinned
+          # channel silently follows whatever stable becomes, which is how a
+          # green build turns red without a commit touching it.
+          flutter-version: 3.47.3
 
       - name: Install Linux dependencies
         run: |
@@ -30,10 +34,21 @@ jobs:
         working-directory: desktop
         run: flutter build linux --release --obfuscate --split-debug-info=symbols/
 
+      - name: Package AppImage
+        run: |
+          bash desktop/linux/packaging/make-appimage.sh \
+            desktop/build/linux/x64/release/bundle \
+            RekindleClient-linux-x86_64.AppImage
+
       - uses: actions/upload-artifact@v4
         with:
           name: Rekindle-linux-x64
           path: desktop/build/linux/x64/release/bundle/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rekindle-linux-x86_64-AppImage
+          path: RekindleClient-linux-x86_64.AppImage
 
   build-windows:
     name: Client — Windows
@@ -48,6 +63,10 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned so CI is reproducible and matches local dev. An unpinned
+          # channel silently follows whatever stable becomes, which is how a
+          # green build turns red without a commit touching it.
+          flutter-version: 3.47.3
 
       - name: Build
         working-directory: desktop

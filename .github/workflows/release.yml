@@ -20,6 +20,10 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned so CI is reproducible and matches local dev. An unpinned
+          # channel silently follows whatever stable becomes, which is how a
+          # green build turns red without a commit touching it.
+          flutter-version: 3.47.3
 
       - name: Install Linux dependencies
         run: |
@@ -30,10 +34,16 @@ jobs:
         working-directory: desktop
         run: flutter build linux --release --obfuscate --split-debug-info=symbols/
 
-      - name: Copy desktop entry into bundle
-        run: cp desktop/linux/rekindle.desktop desktop/build/linux/x64/release/bundle/data/
+      # The desktop entry and icon are already inside the bundle's data/ dir --
+      # linux/CMakeLists.txt installs them there as part of `flutter build`.
 
-      - name: Package
+      - name: Package AppImage
+        run: |
+          bash desktop/linux/packaging/make-appimage.sh \
+            desktop/build/linux/x64/release/bundle \
+            RekindleClient-linux-x86_64.AppImage
+
+      - name: Package portable zip
         run: |
           cd desktop/build/linux/x64/release/bundle
           zip -r ../../../../../../RekindleClient-linux-x64.zip .
@@ -41,7 +51,9 @@ jobs:
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.ref_name }}" RekindleClient-linux-x64.zip --clobber
+        run: |
+          gh release upload "${{ github.ref_name }}" RekindleClient-linux-x86_64.AppImage --clobber
+          gh release upload "${{ github.ref_name }}" RekindleClient-linux-x64.zip --clobber
 
   release-windows:
     name: Client — Windows
@@ -56,6 +68,10 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned so CI is reproducible and matches local dev. An unpinned
+          # channel silently follows whatever stable becomes, which is how a
+          # green build turns red without a commit touching it.
+          flutter-version: 3.47.3
 
       - name: Build
         working-directory: desktop

@@ -4,28 +4,97 @@
 
 ## Linux
 
-### 1. Download
+Two options. The AppImage is recommended unless you have a reason to prefer the
+portable zip.
+
+### Option 1 | AppImage (recommended)
+
+One self-contained file. Nothing to install, nothing to extract.
+
+**1. Download**
+
+Grab the latest `RekindleClient-linux-x86_64.AppImage` from the [Releases page](https://github.com/Jombolio/rekindle/releases).
+
+**2. Make it executable**
+
+```bash
+chmod +x RekindleClient-linux-x86_64.AppImage
+```
+
+Most file managers can do this instead, via **Properties → Permissions → Allow
+executing file as program**.
+
+**3. Run**
+
+Double-click it, or:
+
+```bash
+./RekindleClient-linux-x86_64.AppImage
+```
+
+Keep it wherever you like — Downloads, `~/Applications`, a USB stick. Moving or
+renaming it later is fine. To update, replace the file with a newer one.
+
+**Adding it to your application menu** is optional. If you install
+[AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher), it will
+offer to do this the first time you run any AppImage and will handle the icon
+and menu entry for you. Otherwise just run the file directly.
+
+> **If it refuses to start** on a locked-down system without FUSE (some
+> containers and minimal installs), run it with
+> `./RekindleClient-linux-x86_64.AppImage --appimage-extract-and-run`.
+
+### Option 2 | Portable zip
+
+The plain application folder, if you would rather manage it yourself.
+
+**1. Download**
 
 Grab the latest `RekindleClient-linux-x64.zip` from the [Releases page](https://github.com/Jombolio/rekindle/releases).
 
-### 2. Extract
+**2. Extract**
 
 ```bash
 unzip RekindleClient-linux-x64.zip -d RekindleClient
 cd RekindleClient
 ```
 
-### 3. Make the binary executable
+**3. Make the binary executable**
 
 ```bash
 chmod +x rekindle
 ```
 
-### 4. Run
+**4. Run**
 
 ```bash
 ./rekindle
 ```
+
+<details>
+<summary><b>Optional:</b> add a menu entry for the portable zip</summary>
+
+Run this from inside the extracted folder:
+
+```bash
+mkdir -p ~/.local/share/applications ~/.local/share/icons/hicolor/256x256/apps
+cp data/icon.png ~/.local/share/icons/hicolor/256x256/apps/rekindle.png
+cat > ~/.local/share/applications/rekindle.desktop <<EOF
+[Desktop Entry]
+Name=Rekindle
+Comment=Self-hosted comic, manga, and book reader
+Exec="$PWD/rekindle"
+Icon=rekindle
+Type=Application
+Categories=Graphics;Viewer;
+StartupWMClass=rekindle
+EOF
+```
+
+The entry points at the folder's current location, so you will need to run this
+again if you ever move it. The AppImage has no such limitation.
+
+</details>
 
 ---
 
