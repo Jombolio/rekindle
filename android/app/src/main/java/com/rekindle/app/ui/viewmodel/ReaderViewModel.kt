@@ -3,6 +3,7 @@ package com.rekindle.app.ui.viewmodel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rekindle.app.core.prefs.DEFAULT_CHAPTER_CONFIRM_MS
 import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.data.repository.DownloadRepository
 import com.rekindle.app.data.repository.MediaRepository
@@ -37,6 +38,10 @@ data class ReaderState(
      *  (e.g. offline with an un-extracted CBR) — show an explicit message, not a spinner. */
     val pagesUnavailable: Boolean = false,
     val siblings: List<Media> = emptyList(),
+    /** Require a second input to leave the current chapter. */
+    val confirmChapterChange: Boolean = true,
+    /** How long an armed chapter-change confirmation stays open, in milliseconds. */
+    val chapterConfirmMs: Int = DEFAULT_CHAPTER_CONFIRM_MS,
     /** Non-null while the reader should navigate to a different chapter. */
     val navigateToChapterId: String? = null,
     val navigateToChapterInitialPage: Int = -1,
@@ -82,6 +87,10 @@ class ReaderViewModel @Inject constructor(
                     doublePage = prefs.isDoublePage(mediaId).first(),
                     scrollMode = prefs.isScrollMode(mediaId).first(),
                     spineGap = prefs.spineGap.first(),
+                    // Read once at open, like the other reader prefs: Settings is a
+                    // different screen, so these cannot change while reading.
+                    confirmChapterChange = prefs.confirmChapterChange.first(),
+                    chapterConfirmMs = prefs.chapterConfirmMs.first(),
                 )
             }
 
