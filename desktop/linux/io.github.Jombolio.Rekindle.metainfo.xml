@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.Jombolio.Rekindle</id>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+
+  <name>Rekindle</name>
+  <summary>Read a self-hosted comic, manga and book library</summary>
+
+  <description>
+    <p>
+      Rekindle is the desktop client for a self-hosted comic, manga and book
+      server. Run the server on whichever machine holds your archive files,
+      then connect from here to browse your libraries, read in a native
+      reader, and download issues for offline use.
+    </p>
+    <p>
+      Multiple users are supported, each with their own reading progress and
+      permission level, and a single client can be connected to several
+      servers at once.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Connect to multiple servers, each with its own libraries and progress</li>
+      <li>Paged and continuous-scroll reading, left-to-right or right-to-left</li>
+      <li>Double-page spreads detected automatically per page</li>
+      <li>Download issues to read while offline</li>
+      <li>Reading progress synced back to the server, and across devices</li>
+    </ul>
+    <p>Supported formats: CBZ, CBR, EPUB, MOBI and PDF.</p>
+  </description>
+
+  <launchable type="desktop-id">io.github.Jombolio.Rekindle.desktop</launchable>
+
+  <url type="homepage">https://github.com/Jombolio/rekindle</url>
+  <url type="bugtracker">https://github.com/Jombolio/rekindle/issues</url>
+  <url type="help">https://github.com/Jombolio/rekindle/wiki</url>
+  <url type="vcs-browser">https://github.com/Jombolio/rekindle</url>
+
+  <developer id="io.github.jombolio">
+    <name>Jombo</name>
+  </developer>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Browsing a library</caption>
+      <image>https://github.com/user-attachments/assets/0f389771-0a4d-4c71-897b-85dcdccb26d6</image>
+    </screenshot>
+  </screenshots>
+
+  <!-- Rekindle ships no content of its own; what it displays comes from the
+       user's own server. -->
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="1.2.3" date="2026-07-11"/>
+  </releases>
+</component>

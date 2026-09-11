@@ -77,17 +77,18 @@ chmod +x rekindle
 Run this from inside the extracted folder:
 
 ```bash
+ID=io.github.Jombolio.Rekindle
 mkdir -p ~/.local/share/applications ~/.local/share/icons/hicolor/256x256/apps
-cp data/icon.png ~/.local/share/icons/hicolor/256x256/apps/rekindle.png
-cat > ~/.local/share/applications/rekindle.desktop <<EOF
+cp data/icon.png ~/.local/share/icons/hicolor/256x256/apps/$ID.png
+cat > ~/.local/share/applications/$ID.desktop <<EOF
 [Desktop Entry]
 Name=Rekindle
 Comment=Self-hosted comic, manga, and book reader
 Exec="$PWD/rekindle"
-Icon=rekindle
+Icon=$ID
 Type=Application
 Categories=Graphics;Viewer;
-StartupWMClass=rekindle
+StartupWMClass=$ID
 EOF
 ```
 

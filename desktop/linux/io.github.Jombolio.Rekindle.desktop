@@ -2,7 +2,7 @@
 Name=Rekindle
 Comment=Self-hosted comic, manga, and book reader
 Exec=rekindle
-Icon=rekindle
+Icon=io.github.Jombolio.Rekindle
 Type=Application
 Categories=Graphics;Viewer;
-StartupWMClass=rekindle
+StartupWMClass=io.github.Jombolio.Rekindle
