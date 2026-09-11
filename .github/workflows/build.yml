@@ -30,10 +30,21 @@ jobs:
         working-directory: desktop
         run: flutter build linux --release --obfuscate --split-debug-info=symbols/
 
+      - name: Package AppImage
+        run: |
+          bash desktop/linux/packaging/make-appimage.sh \
+            desktop/build/linux/x64/release/bundle \
+            RekindleClient-linux-x86_64.AppImage
+
       - uses: actions/upload-artifact@v4
         with:
           name: Rekindle-linux-x64
           path: desktop/build/linux/x64/release/bundle/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rekindle-linux-x86_64-AppImage
+          path: RekindleClient-linux-x86_64.AppImage
 
   build-windows:
     name: Client — Windows

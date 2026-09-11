@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Rekindle
 Comment=Self-hosted comic, manga, and book reader
-Exec=INSTALL_DIR/rekindle
+Exec=rekindle
 Icon=rekindle
 Type=Application
 Categories=Graphics;Viewer;
