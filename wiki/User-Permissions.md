@@ -30,4 +30,4 @@ Admins can create, edit, and delete user accounts from **Admin Panel → Users**
 
 - The first account created during [First-time Setup](First-Connection-and-Setup) is always an admin (level 4).
 - A user cannot elevate their own permission level, only an admin can change another user's level.
-- There is no guest or anonymous access. Every user must log in with a username and password, this is to discourage piracy where possible.
+- There is no guest or anonymous access. Every user must log in with a username and password created by the Administrator/Level 4 account, this is to discourage piracy where possible since this is for families.
