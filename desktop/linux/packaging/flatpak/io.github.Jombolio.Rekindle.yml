@@ -1,0 +1,57 @@
+# Flatpak manifest for the Rekindle desktop client.
+#
+# Source of truth, not the published manifest — Flathub needs its own repo, so
+# releasing means copying this across. Kept here so it is reviewed and versioned
+# with the code it packages, and so CI can build it (see .github/workflows).
+#
+# Per release, only the source url and sha256 change.
+
+app-id: io.github.Jombolio.Rekindle
+
+# GNOME rather than freedesktop: the Flutter runner links GTK3, which
+# org.freedesktop.Platform does not carry.
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+
+command: rekindle
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Talking to your own Rekindle server is the entire point.
+  - --share=network
+  # Offline downloads land in the user's Downloads folder by default. A custom
+  # directory set in Settings will not be reachable from inside the sandbox —
+  # see the note in the wiki.
+  - --filesystem=xdg-download
+
+modules:
+  - name: rekindle
+    buildsystem: simple
+    build-commands:
+      # The tree stays together: the executable finds lib/ through an
+      # $ORIGIN/lib rpath and resolves data/ from the real path of
+      # /proc/self/exe, which is also why the symlink below works.
+      - install -dm755 /app/rekindle
+      - cp -a rekindle lib data /app/rekindle/
+      - chmod 755 /app/rekindle/rekindle
+      - install -dm755 /app/bin
+      - ln -s /app/rekindle/rekindle /app/bin/rekindle
+
+      # Desktop integration comes from what the build already ships in data/,
+      # so the entry, icon and metainfo have one source of truth.
+      - install -Dm644 data/io.github.Jombolio.Rekindle.desktop
+        /app/share/applications/io.github.Jombolio.Rekindle.desktop
+      - install -Dm644 data/io.github.Jombolio.Rekindle.metainfo.xml
+        /app/share/metainfo/io.github.Jombolio.Rekindle.metainfo.xml
+      - install -Dm644 data/icon.png
+        /app/share/icons/hicolor/256x256/apps/io.github.Jombolio.Rekindle.png
+    sources:
+      - type: archive
+        url: https://github.com/Jombolio/rekindle/releases/download/v1.3.0/RekindleClient-linux-x64.zip
+        sha256: 76cf98581a85dd4509e74ce483aca536e17bb66560742c04fd61394e65f33a76
+        # The zip has no top-level directory; its contents sit at the root.
+        strip-components: 0

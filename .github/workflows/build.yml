@@ -80,6 +80,31 @@ jobs:
           name: Rekindle-windows-x64Setup
           path: desktop/windows/output/Rekindle-windows-x64Setup.exe
 
+  build-flatpak:
+    name: Client — Flatpak
+    runs-on: ubuntu-latest
+    # The action needs flatpak, flatpak-builder and the GNOME SDK already
+    # present; this image carries them. Keep the tag in step with
+    # runtime-version in the manifest.
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      # Builds from the released client zip named in the manifest, so this
+      # verifies the manifest itself rather than a local build.
+      # The action publishes no tags or releases, so it is pinned to a commit
+      # rather than tracking master — same reasoning as the Flutter and
+      # appimagetool pins.
+      - uses: flathub-infra/flatpak-github-actions/flatpak-builder@933e9e8ca36e85046ebca8e211f0785c6becac40
+        with:
+          # The action appends the architecture itself, so naming this
+          # Rekindle-x86_64 would produce Rekindle-x86_64-x86_64.flatpak.
+          bundle: Rekindle.flatpak
+          manifest-path: desktop/linux/packaging/flatpak/io.github.Jombolio.Rekindle.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+
   build-android:
     name: Client — Android
     runs-on: ubuntu-latest
