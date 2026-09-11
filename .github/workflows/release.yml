@@ -20,6 +20,10 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned so CI is reproducible and matches local dev. An unpinned
+          # channel silently follows whatever stable becomes, which is how a
+          # green build turns red without a commit touching it.
+          flutter-version: 3.47.3
 
       - name: Install Linux dependencies
         run: |
@@ -64,6 +68,10 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned so CI is reproducible and matches local dev. An unpinned
+          # channel silently follows whatever stable becomes, which is how a
+          # green build turns red without a commit touching it.
+          flutter-version: 3.47.3
 
       - name: Build
         working-directory: desktop
