@@ -1,0 +1,53 @@
+# Maintainer: Jombo <CONTACT>
+#
+# Source of truth for the AUR `rekindle-bin` package. The AUR needs its own git
+# repo, so publishing is: copy this file across, run `updpkgsums` and
+# `makepkg --printsrcinfo > .SRCINFO`, commit, push.
+#
+# Per release, only pkgver and sha256sums change.
+
+pkgname=rekindle-bin
+_appid=io.github.Jombolio.Rekindle
+_instdir=/opt/rekindle
+pkgver=1.2.4
+pkgrel=1
+pkgdesc='Client for a self-hosted comic, manga and book server'
+arch=('x86_64')
+url='https://github.com/Jombolio/rekindle'
+license=('GPL-3.0-only')
+# gtk3 pulls in glib, cairo, pango, gdk-pixbuf and the X/Wayland libraries the
+# Flutter runner links against. sqlite backs the local reading-progress queue,
+# and url_launcher shells out to xdg-open. Everything else the bundle needs it
+# ships itself under lib/.
+depends=('gtk3' 'sqlite' 'xdg-utils')
+provides=('rekindle')
+conflicts=('rekindle')
+# The release binary is already built with --obfuscate --split-debug-info;
+# stripping it again gains nothing and risks breaking it.
+options=('!strip' '!debug')
+source=("$pkgname-$pkgver.zip::$url/releases/download/v$pkgver/RekindleClient-linux-x64.zip")
+# Replaced per release by `updpkgsums`.
+sha256sums=('SKIP')
+
+package() {
+  # The executable finds lib/ through an $ORIGIN/lib rpath and resolves data/
+  # from the real path of /proc/self/exe, so the three must stay together.
+  install -dm755 "$pkgdir$_instdir"
+  cp -a "$srcdir"/{rekindle,data,lib} "$pkgdir$_instdir/"
+  chmod 755 "$pkgdir$_instdir/rekindle"
+
+  # readlink() on /proc/self/exe resolves this symlink to the real path, so
+  # data/ and lib/ still resolve when launched as `rekindle`.
+  install -dm755 "$pkgdir/usr/bin"
+  ln -s "$_instdir/rekindle" "$pkgdir/usr/bin/rekindle"
+
+  # Desktop integration comes from what the build already ships in data/, so the
+  # entry, icon and AppStream metadata have one source of truth. The entry's
+  # Exec=rekindle resolves via the symlink above.
+  install -Dm644 "$srcdir/data/$_appid.desktop" \
+    "$pkgdir/usr/share/applications/$_appid.desktop"
+  install -Dm644 "$srcdir/data/$_appid.metainfo.xml" \
+    "$pkgdir/usr/share/metainfo/$_appid.metainfo.xml"
+  install -Dm644 "$srcdir/data/icon.png" \
+    "$pkgdir/usr/share/icons/hicolor/256x256/apps/$_appid.png"
+}
