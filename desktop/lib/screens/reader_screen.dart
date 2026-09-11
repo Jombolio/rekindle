@@ -12,6 +12,7 @@ import '../providers/auth_provider.dart';
 import '../providers/download_provider.dart';
 import '../providers/media_provider.dart';
 import '../providers/reader_provider.dart';
+import '../providers/settings_provider.dart';
 
 class ReaderScreen extends ConsumerStatefulWidget {
   final String mediaId;
@@ -71,6 +72,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   late final TransformationController _transformCtrl;
   bool _isZoomed = false;
 
+  // ── Chapter-change confirmation ───────────────────────────────────────────
+  // Leaving a chapter replaces the route, and the trigger sits one input past
+  // the last page — so a stray tap or a held arrow key at the boundary drops
+  // you into the next archive. When enabled, the first attempt only arms a
+  // confirmation; a second attempt the same way, inside the window, commits it.
+  Timer? _chapterConfirmTimer;
+  int? _armedChapterDir; // -1 previous, 1 next; null = nothing armed
+
   // ── HUD visibility ────────────────────────────────────────────────────────
   bool _hudVisible = true;
   Timer? _hideTimer;
@@ -92,6 +101,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   @override
   void dispose() {
     _hideTimer?.cancel();
+    _chapterConfirmTimer?.cancel();
     _pageCtrl.dispose();
     _scrollCtrl.dispose();
     _focusNode.dispose();
@@ -166,14 +176,59 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
   void _tryPrevChapter(BuildContext context, List<Media> siblings) {
     final idx = siblings.indexWhere((m) => m.id == widget.mediaId);
-    if (idx > 0) _openAdjacentChapter(context, siblings[idx - 1].id);
+    // Bounds first: never prompt for a chapter that isn't there.
+    if (idx <= 0) return;
+    if (!_passesChapterConfirm(context, -1, 'previous')) return;
+    _openAdjacentChapter(context, siblings[idx - 1].id);
   }
 
   void _tryNextChapter(BuildContext context, List<Media> siblings) {
     final idx = siblings.indexWhere((m) => m.id == widget.mediaId);
-    if (idx >= 0 && idx < siblings.length - 1) {
-      _openAdjacentChapter(context, siblings[idx + 1].id);
+    if (idx < 0 || idx >= siblings.length - 1) return;
+    if (!_passesChapterConfirm(context, 1, 'next')) return;
+    _openAdjacentChapter(context, siblings[idx + 1].id);
+  }
+
+  /// Whether a chapter change in [direction] may proceed right now.
+  ///
+  /// With confirmation off this is always true. With it on, the first call arms
+  /// and reports back; only a repeat in the same direction, before the window
+  /// closes, returns true. Arming per-direction means a confirmation for "next"
+  /// can never be spent by a press that went the other way.
+  bool _passesChapterConfirm(
+      BuildContext context, int direction, String label) {
+    final settings = ref.read(settingsProvider);
+    if (!settings.confirmChapterChange) return true;
+
+    if (_armedChapterDir == direction) {
+      _disarmChapterConfirm();
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      return true;
     }
+
+    final window = settings.chapterConfirmWindow;
+    _chapterConfirmTimer?.cancel();
+    _armedChapterDir = direction;
+    // Bare assignment, not setState: nothing in the tree renders this, and the
+    // reader rebuilds constantly on page changes as it is.
+    _chapterConfirmTimer = Timer(window, () => _armedChapterDir = null);
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text('Again to open the $label chapter'),
+        // Matching the window makes the prompt its own countdown: once it goes,
+        // the confirmation has expired too.
+        duration: window,
+        behavior: SnackBarBehavior.floating,
+      ));
+    return false;
+  }
+
+  void _disarmChapterConfirm() {
+    _chapterConfirmTimer?.cancel();
+    _chapterConfirmTimer = null;
+    _armedChapterDir = null;
   }
 
   /// Navigates to [targetId], carrying the current reading direction forward
@@ -285,6 +340,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         ? buildSlides(state.totalPages, state.spreads).length
         : state.totalPages;
     if (_pageCtrl.page != null && _pageCtrl.page!.round() < slideCount - 1) {
+      // Moved off the boundary — a confirmation armed there is stale.
+      _disarmChapterConfirm();
       _pageAnimating = true;
       _pageCtrl
           .nextPage(duration: const Duration(milliseconds: 200), curve: Curves.easeOut)
@@ -299,6 +356,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     if (_pageAnimating) return;
     if (!_pageCtrl.hasClients) return;
     if (_pageCtrl.page != null && _pageCtrl.page!.round() > 0) {
+      _disarmChapterConfirm();
       _pageAnimating = true;
       _pageCtrl
           .previousPage(duration: const Duration(milliseconds: 200), curve: Curves.easeOut)
@@ -353,6 +411,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       _tryNextChapter(context, siblings);
       return;
     }
+    _disarmChapterConfirm();
     _scrollCtrl.animateTo(
       (_scrollCtrl.offset + MediaQuery.sizeOf(context).height * 0.9)
           .clamp(0.0, _scrollCtrl.position.maxScrollExtent),
@@ -367,6 +426,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       _tryPrevChapter(context, siblings);
       return;
     }
+    _disarmChapterConfirm();
     _scrollCtrl.animateTo(
       (_scrollCtrl.offset - MediaQuery.sizeOf(context).height * 0.9)
           .clamp(0.0, _scrollCtrl.position.maxScrollExtent),

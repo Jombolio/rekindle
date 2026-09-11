@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/storage/prefs.dart';
 import '../core/update/update_service.dart';
 import '../providers/settings_provider.dart';
 import '../providers/update_provider.dart';
@@ -249,6 +250,88 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
 
+          const SizedBox(height: 24),
+
+          // ── Reader ──────────────────────────────────────────────────────
+          const _SectionHeader('Reader'),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Confirm chapter change',
+                                style: theme.textTheme.bodyLarge),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Turning past the last or first page needs a '
+                              'second press, so a stray input cannot leave the '
+                              'chapter by itself.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Switch(
+                        value: settings.confirmChapterChange,
+                        onChanged: (v) => ref
+                            .read(settingsProvider.notifier)
+                            .setConfirmChapterChange(confirm: v),
+                      ),
+                    ],
+                  ),
+                  if (settings.confirmChapterChange) ...[
+                    const Divider(height: 32),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text('Confirmation window',
+                              style: theme.textTheme.bodyLarge),
+                        ),
+                        Text(
+                          _formatConfirmWindow(settings.chapterConfirmWindow),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.primary),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'How long the second press stays accepted.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                    Slider(
+                      value: settings.chapterConfirmWindow.inMilliseconds
+                          .clamp(kMinChapterConfirmMs, kMaxChapterConfirmMs)
+                          .toDouble(),
+                      min: kMinChapterConfirmMs.toDouble(),
+                      max: kMaxChapterConfirmMs.toDouble(),
+                      // 250 ms steps across the range.
+                      divisions:
+                          (kMaxChapterConfirmMs - kMinChapterConfirmMs) ~/ 250,
+                      label: _formatConfirmWindow(
+                          Duration(milliseconds: settings
+                              .chapterConfirmWindow.inMilliseconds)),
+                      onChanged: (v) => ref
+                          .read(settingsProvider.notifier)
+                          .setChapterConfirmWindow(
+                              Duration(milliseconds: v.round())),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+
           if (!Platform.isAndroid) ...[
             const SizedBox(height: 24),
 
@@ -369,6 +452,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
   }
+}
+
+/// "750 ms" below a second, "1.5 s" above — the slider steps in 250 ms, so one
+/// decimal is always enough.
+String _formatConfirmWindow(Duration d) {
+  final ms = d.inMilliseconds;
+  if (ms < 1000) return '$ms ms';
+  final seconds = ms / 1000;
+  final text = seconds == seconds.roundToDouble()
+      ? seconds.toStringAsFixed(0)
+      : seconds.toStringAsFixed(1);
+  return '$text s';
 }
 
 class _SectionHeader extends StatelessWidget {
