@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/models/media.dart';
+import '../core/utils/slides.dart';
 import '../core/storage/prefs.dart';
 import '../providers/auth_provider.dart';
 import '../providers/download_provider.dart';
@@ -253,32 +254,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   }
 
   // ── Slide layout helpers ──────────────────────────────────────────────────
-
-  /// Groups pages into slides for double-page mode.
-  /// Landscape pages (spreads) occupy a slide alone; portrait pages are paired.
-  static List<List<int>> buildSlides(int totalPages, List<bool> spreads) {
-    final slides = <List<int>>[];
-    var i = 0;
-    while (i < totalPages) {
-      final isSpread = i < spreads.length && spreads[i];
-      // Page 0 (cover) always occupies its own slide so it isn't paired with
-      // the first interior page — matching the physical book convention.
-      if (isSpread || i == 0) {
-        slides.add([i]);
-        i++;
-      } else {
-        final nextIsSpread = (i + 1) < spreads.length && spreads[i + 1];
-        if (i + 1 < totalPages && !nextIsSpread) {
-          slides.add([i, i + 1]);
-          i += 2;
-        } else {
-          slides.add([i]);
-          i++;
-        }
-      }
-    }
-    return slides;
-  }
 
   static bool _slidesEqual(List<List<int>> a, List<List<int>> b) {
     if (a.length != b.length) return false;
