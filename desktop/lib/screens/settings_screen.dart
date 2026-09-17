@@ -3,8 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/discord/discord_activity.dart';
+import '../core/discord/discord_ipc.dart';
 import '../core/storage/prefs.dart';
 import '../core/update/update_service.dart';
+import '../providers/discord_presence_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/update_provider.dart';
 
@@ -403,6 +406,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
 
+            if (DiscordIpcClient.isSupported) ...[
+              const SizedBox(height: 24),
+
+              // ── Discord ───────────────────────────────────────────────────
+              const _SectionHeader('Discord'),
+              _DiscordPresenceCard(settings: settings.discord),
+            ],
+
             const SizedBox(height: 24),
 
             // ── Updates ───────────────────────────────────────────────────
@@ -464,6 +475,173 @@ String _formatConfirmWindow(Duration d) {
       ? seconds.toStringAsFixed(0)
       : seconds.toStringAsFixed(1);
   return '$text s';
+}
+
+class _DiscordPresenceCard extends ConsumerWidget {
+  final DiscordPresenceSettings settings;
+  const _DiscordPresenceCard({required this.settings});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodySmall
+        ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    final available = discordPresenceAvailable;
+    final active = available && settings.enabled;
+
+    void save(DiscordPresenceSettings next) =>
+        ref.read(settingsProvider.notifier).setDiscordPresence(next);
+
+    Widget option({
+      required String title,
+      required String subtitle,
+      required bool value,
+      required DiscordPresenceSettings Function(bool) apply,
+    }) =>
+        SwitchListTile(
+          title: Text(title),
+          subtitle: Text(subtitle),
+          value: value,
+          onChanged: active ? (v) => save(apply(v)) : null,
+        );
+
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SwitchListTile(
+            title: const Text('Share reading status'),
+            subtitle: Text(available
+                ? 'Show what you are reading on your Discord profile. '
+                    'Requires the Discord desktop app to be running.'
+                : 'Discord status is not configured in this build.'),
+            value: active,
+            onChanged: available
+                ? (v) => save(settings.copyWith(enabled: v))
+                : null,
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Title shown', style: theme.textTheme.bodyLarge),
+                const SizedBox(height: 4),
+                Text(
+                  'Which name to share for the item you have open.',
+                  style: muted,
+                ),
+                const SizedBox(height: 12),
+                SegmentedButton<DiscordTitleMode>(
+                  segments: const [
+                    ButtonSegment(
+                      value: DiscordTitleMode.folderAndFile,
+                      label: Text('Folder & file'),
+                    ),
+                    ButtonSegment(
+                      value: DiscordTitleMode.folder,
+                      label: Text('Folder'),
+                    ),
+                    ButtonSegment(
+                      value: DiscordTitleMode.file,
+                      label: Text('File'),
+                    ),
+                    ButtonSegment(
+                      value: DiscordTitleMode.hidden,
+                      icon: Icon(Icons.visibility_off_outlined),
+                      label: Text('Hidden'),
+                    ),
+                  ],
+                  selected: {settings.titleMode},
+                  onSelectionChanged: active
+                      ? (sel) => save(settings.copyWith(titleMode: sel.first))
+                      : null,
+                ),
+              ],
+            ),
+          ),
+          option(
+            title: 'Show page',
+            subtitle: 'e.g. "Page 12 of 200", or the chapter for books.',
+            value: settings.showPage,
+            apply: (v) => settings.copyWith(showPage: v),
+          ),
+          option(
+            title: 'Show time elapsed',
+            subtitle: 'How long you have been reading the current series.',
+            value: settings.showElapsed,
+            apply: (v) => settings.copyWith(showElapsed: v),
+          ),
+          option(
+            title: 'Show while browsing',
+            subtitle: 'Keep a "Browsing the library" status when no reader '
+                'is open.',
+            value: settings.showWhileBrowsing,
+            apply: (v) => settings.copyWith(showWhileBrowsing: v),
+          ),
+          if (active)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+              child: _DiscordPreview(settings: settings),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A sample of the status using the current options.
+class _DiscordPreview extends StatelessWidget {
+  final DiscordPresenceSettings settings;
+  const _DiscordPreview({required this.settings});
+
+  static const _sample = NowReading(
+    mediaId: 'preview',
+    kind: ReadingKind.comic,
+    folderName: 'Absolute Batman',
+    fileName: 'Absolute Batman 001',
+    position: 11,
+    total: 32,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final activity = buildDiscordActivity(
+      settings: settings,
+      reading: _sample,
+      startedAtMillis: settings.showElapsed ? 0 : null,
+    );
+    if (activity == null) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('PREVIEW',
+              style: theme.textTheme.labelSmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 6),
+          Text('Playing Rekindle',
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w600)),
+          Text(activity['details'] as String),
+          if (activity['state'] != null) Text(activity['state'] as String),
+          if (activity['timestamps'] != null)
+            Text('12:34 elapsed',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        ],
+      ),
+    );
+  }
 }
 
 class _SectionHeader extends StatelessWidget {

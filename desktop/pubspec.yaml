@@ -47,6 +47,9 @@ dependencies:
   package_info_plus: ^9.0.1
   url_launcher: ^6.3.2
 
+  # Discord Rich Presence — Windows named-pipe access via kernel32
+  ffi: ^2.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

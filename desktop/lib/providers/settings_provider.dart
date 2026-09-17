@@ -5,11 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../core/discord/discord_activity.dart';
 import '../core/storage/prefs.dart';
 
 class SettingsState {
   final ThemeMode themeMode;
   final String downloadDirectory; // empty = use platform default
+  final DiscordPresenceSettings discord;
 
   /// Require a second input to leave the current chapter.
   final bool confirmChapterChange;
@@ -22,6 +24,7 @@ class SettingsState {
     required this.downloadDirectory,
     required this.confirmChapterChange,
     required this.chapterConfirmWindow,
+    this.discord = const DiscordPresenceSettings(),
   });
 
   SettingsState copyWith({
@@ -29,12 +32,14 @@ class SettingsState {
     String? downloadDirectory,
     bool? confirmChapterChange,
     Duration? chapterConfirmWindow,
+    DiscordPresenceSettings? discord,
   }) =>
       SettingsState(
         themeMode: themeMode ?? this.themeMode,
         downloadDirectory: downloadDirectory ?? this.downloadDirectory,
         confirmChapterChange: confirmChapterChange ?? this.confirmChapterChange,
         chapterConfirmWindow: chapterConfirmWindow ?? this.chapterConfirmWindow,
+        discord: discord ?? this.discord,
       );
 }
 
@@ -47,12 +52,20 @@ class SettingsNotifier extends Notifier<SettingsState> {
       'dark' => ThemeMode.dark,
       _ => ThemeMode.system,
     };
+    final prefs = Prefs.instance;
     return SettingsState(
       themeMode: mode,
-      downloadDirectory: Prefs.instance.downloadDirectory,
-      confirmChapterChange: Prefs.instance.confirmChapterChange,
+      downloadDirectory: prefs.downloadDirectory,
+      confirmChapterChange: prefs.confirmChapterChange,
       chapterConfirmWindow: Duration(
-        milliseconds: _clampConfirmMs(Prefs.instance.chapterConfirmMs),
+        milliseconds: _clampConfirmMs(prefs.chapterConfirmMs),
+      ),
+      discord: DiscordPresenceSettings(
+        enabled: prefs.discordEnabled,
+        titleMode: DiscordTitleMode.parse(prefs.discordTitleMode),
+        showPage: prefs.discordShowPage,
+        showElapsed: prefs.discordShowElapsed,
+        showWhileBrowsing: prefs.discordShowWhileBrowsing,
       ),
     );
   }
@@ -76,6 +89,17 @@ class SettingsNotifier extends Notifier<SettingsState> {
     final ms = _clampConfirmMs(window.inMilliseconds);
     await Prefs.instance.setChapterConfirmMs(ms);
     state = state.copyWith(chapterConfirmWindow: Duration(milliseconds: ms));
+  }
+
+  Future<void> setDiscordPresence(DiscordPresenceSettings discord) async {
+    state = state.copyWith(discord: discord);
+    await Prefs.instance.setDiscordPresence(
+      enabled: discord.enabled,
+      titleMode: discord.titleMode.name,
+      showPage: discord.showPage,
+      showElapsed: discord.showElapsed,
+      showWhileBrowsing: discord.showWhileBrowsing,
+    );
   }
 }
 

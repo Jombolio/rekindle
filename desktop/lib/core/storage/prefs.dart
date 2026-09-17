@@ -111,6 +111,28 @@ class Prefs {
   Future<void> setDoublePageGap(double gap) =>
       _prefs.setDouble('double_page_gap', gap);
 
+  // Discord Rich Presence (global)
+  bool get discordEnabled => _prefs.getBool('discord_enabled') ?? false;
+  String? get discordTitleMode => _prefs.getString('discord_title_mode');
+  bool get discordShowPage => _prefs.getBool('discord_show_page') ?? true;
+  bool get discordShowElapsed => _prefs.getBool('discord_show_elapsed') ?? true;
+  bool get discordShowWhileBrowsing =>
+      _prefs.getBool('discord_show_browsing') ?? false;
+
+  Future<void> setDiscordPresence({
+    required bool enabled,
+    required String titleMode,
+    required bool showPage,
+    required bool showElapsed,
+    required bool showWhileBrowsing,
+  }) async {
+    await _prefs.setBool('discord_enabled', enabled);
+    await _prefs.setString('discord_title_mode', titleMode);
+    await _prefs.setBool('discord_show_page', showPage);
+    await _prefs.setBool('discord_show_elapsed', showElapsed);
+    await _prefs.setBool('discord_show_browsing', showWhileBrowsing);
+  }
+
   // Cached auth — used as a fallback when the server is unreachable on restart.
   ({String username, int permissionLevel})? cachedAuth(String sourceId) {
     final username = _prefs.getString('cached_username_$sourceId');
