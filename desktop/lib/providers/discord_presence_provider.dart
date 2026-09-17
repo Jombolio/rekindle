@@ -212,8 +212,12 @@ class DiscordPresenceController {
           await _client.close();
         }
       } else {
-        await _client.connect();
+        if (!_client.isConnected) {
+          await _client.connect();
+          debugPrint('Discord presence: connected');
+        }
         await _client.setActivity(desired);
+        debugPrint('Discord presence: set "${desired['details']}"');
       }
       _pushedJson = json;
       _pushedOnce = true;
