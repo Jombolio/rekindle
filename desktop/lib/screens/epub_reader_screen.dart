@@ -14,6 +14,7 @@ import '../core/download/download_manager.dart';
 import '../core/epub/epub_parser.dart';
 import '../core/models/reading_progress.dart';
 import '../providers/auth_provider.dart';
+import '../providers/discord_presence_provider.dart';
 import '../providers/reader_provider.dart';
 import '../providers/settings_provider.dart';
 
@@ -46,6 +47,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   @override
   void initState() {
     super.initState();
+    ref
+        .read(nowReadingProvider.notifier)
+        .open(widget.mediaId, libraryType: 'book', fallbackTitle: widget.title);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
       _loadEpub();
@@ -55,6 +59,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   @override
   void dispose() {
     _focusNode.dispose();
+    ref.read(nowReadingProvider.notifier).close(widget.mediaId);
     // Reset reader state so re-opening restarts a finished book at chapter 0.
     ref.invalidate(readerProvider((widget.mediaId, null)));
     // Refresh the chapter/grid badges: the list screen underneath stays mounted,
@@ -112,6 +117,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     ref
         .read(readerProvider((widget.mediaId, null)).notifier)
         .setTotalPages(book.chapters.length);
+    _reportChapter();
   }
 
   /// The saved chapter index. Unsynced local progress wins (it's newer than
@@ -168,6 +174,15 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     ref
         .read(readerProvider((widget.mediaId, null)).notifier)
         .goToPage(_chapterIndex, widget.mediaId);
+    _reportChapter();
+  }
+
+  void _reportChapter() {
+    final book = _book;
+    if (book == null) return;
+    ref
+        .read(nowReadingProvider.notifier)
+        .updatePosition(widget.mediaId, _chapterIndex, book.chapters.length);
   }
 
   Color get _bgColor => switch (_theme) {

@@ -27,6 +27,11 @@ finish-args:
   # directory set in Settings will not be reachable from inside the sandbox —
   # see the note in the wiki.
   - --filesystem=xdg-download
+  # Discord Rich Presence: the IPC socket of a native Discord install, and the
+  # directories where Flatpak builds of Discord and Vesktop place theirs.
+  - --filesystem=xdg-run/discord-ipc-0
+  - --filesystem=xdg-run/app/com.discordapp.Discord:create
+  - --filesystem=xdg-run/.flatpak/dev.vencord.Vesktop:create
 
 modules:
   - name: rekindle

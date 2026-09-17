@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'providers/auth_provider.dart';
 import 'providers/connectivity_provider.dart';
+import 'providers/discord_presence_provider.dart';
 import 'providers/reader_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/sources_provider.dart';
@@ -142,6 +143,8 @@ class _RekindleAppState extends ConsumerState<RekindleApp> {
   Widget build(BuildContext context) {
     final router = ref.watch(_routerProvider);
     final settings = ref.watch(settingsProvider);
+    // Keeps the Discord Rich Presence bridge alive for the app's lifetime.
+    ref.watch(discordPresenceProvider);
 
     ref.listen(isOnlineProvider, (prev, isOnline) {
       if (isOnline && prev == false) {

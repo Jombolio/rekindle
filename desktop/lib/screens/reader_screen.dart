@@ -11,6 +11,7 @@ import '../core/models/media.dart';
 import '../core/utils/slides.dart';
 import '../core/storage/prefs.dart';
 import '../providers/auth_provider.dart';
+import '../providers/discord_presence_provider.dart';
 import '../providers/download_provider.dart';
 import '../providers/media_provider.dart';
 import '../providers/reader_provider.dart';
@@ -94,6 +95,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     _pageCtrl = PageController();
     _transformCtrl = TransformationController();
     _transformCtrl.addListener(_onTransformChanged);
+    ref
+        .read(nowReadingProvider.notifier)
+        .open(widget.mediaId, libraryType: widget.libraryType);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
       _resetHideTimer();
@@ -108,6 +112,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     _scrollCtrl.dispose();
     _focusNode.dispose();
     _transformCtrl.dispose();
+    ref.read(nowReadingProvider.notifier).close(widget.mediaId);
     // Reset the reader state so re-opening this media rebuilds fresh: a finished
     // chapter must restart at 0 and cross-device progress must be re-fetched.
     // Order matters: invalidating readerProvider first schedules the dispose-time
@@ -520,6 +525,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   @override
   Widget build(BuildContext context) {
     final readerState = ref.watch(readerProvider((widget.mediaId, widget.libraryType)));
+    ref.listen(readerProvider((widget.mediaId, widget.libraryType)), (_, next) {
+      if (next.totalPages > 0) {
+        ref
+            .read(nowReadingProvider.notifier)
+            .updatePosition(widget.mediaId, next.currentPage, next.totalPages);
+      }
+    });
     final mediaAsync = ref.watch(mediaDetailProvider(widget.mediaId));
     final client = ref.watch(apiClientProvider);
     final extractedPages =
