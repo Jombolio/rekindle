@@ -50,11 +50,23 @@ void main() {
     expect(a.containsKey('timestamps'), isFalse);
   });
 
-  test('books report chapters', () {
+  test('the EPUB reader reports chapters', () {
     const book = NowReading(
-        mediaId: 'b', kind: ReadingKind.book, fileName: 'Dune', position: 2, total: 48);
+        mediaId: 'b',
+        kind: ReadingKind.book,
+        fileName: 'Dune',
+        position: 2,
+        total: 48,
+        countsChapters: true);
     expect(build(on.copyWith(titleMode: DiscordTitleMode.file), r: book)!['state'],
         'Chapter 3 of 48');
+  });
+
+  test('page-based items in a book library report pages', () {
+    const pdf = NowReading(
+        mediaId: 'p', kind: ReadingKind.book, fileName: 'Manual', position: 4, total: 523);
+    expect(build(on.copyWith(titleMode: DiscordTitleMode.file), r: pdf)!['state'],
+        'Page 5 of 523');
   });
 
   test('browsing only when opted in', () {

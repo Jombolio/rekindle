@@ -43,11 +43,17 @@ class NowReadingNotifier extends Notifier<NowReading?> {
   @override
   NowReading? build() => null;
 
-  void open(String mediaId, {String? libraryType, String? fallbackTitle}) {
+  void open(
+    String mediaId, {
+    String? libraryType,
+    String? fallbackTitle,
+    bool countsChapters = false,
+  }) {
     _openMediaId = mediaId;
     _pendingPosition = null;
     Future.microtask(() async {
-      final reading = await _resolve(mediaId, libraryType, fallbackTitle);
+      final reading = await _resolve(
+          mediaId, libraryType, fallbackTitle, countsChapters);
       if (_openMediaId != mediaId) return;
       final pos = _pendingPosition;
       state = pos == null ? reading : reading.withPosition(pos.$1, pos.$2);
@@ -76,8 +82,8 @@ class NowReadingNotifier extends Notifier<NowReading?> {
     });
   }
 
-  Future<NowReading> _resolve(
-      String mediaId, String? libraryType, String? fallbackTitle) async {
+  Future<NowReading> _resolve(String mediaId, String? libraryType,
+      String? fallbackTitle, bool countsChapters) async {
     try {
       final media = await ref.read(mediaDetailProvider(mediaId).future);
       final rel = media.relativePath;
@@ -97,6 +103,7 @@ class NowReadingNotifier extends Notifier<NowReading?> {
         kind: kind,
         fileName: rel.isEmpty ? media.title : p.basenameWithoutExtension(rel),
         folderName: folder.isEmpty || folder == '.' ? null : folder,
+        countsChapters: countsChapters,
       );
     } catch (_) {
       // Offline: the downloads table only knows the title and format.
@@ -111,6 +118,7 @@ class NowReadingNotifier extends Notifier<NowReading?> {
         mediaId: mediaId,
         kind: _kindFor(row?['format'] as String?, libraryType),
         fileName: row?['title'] as String? ?? fallbackTitle ?? 'Unknown title',
+        countsChapters: countsChapters,
       );
     }
   }

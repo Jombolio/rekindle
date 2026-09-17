@@ -563,7 +563,7 @@ class _DiscordPresenceCard extends ConsumerWidget {
           ),
           option(
             title: 'Show page',
-            subtitle: 'e.g. "Page 12 of 200", or the chapter for books.',
+            subtitle: 'e.g. "Page 12 of 200", or the chapter for EPUBs.',
             value: settings.showPage,
             apply: (v) => settings.copyWith(showPage: v),
           ),

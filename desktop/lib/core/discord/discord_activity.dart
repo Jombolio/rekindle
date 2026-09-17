@@ -67,9 +67,13 @@ class NowReading {
   /// File name without extension, e.g. "Chapter 1".
   final String fileName;
 
-  /// Zero-based page (or chapter, for books). Null until known.
+  /// Zero-based page, or chapter when [countsChapters]. Null until known.
   final int? position;
   final int? total;
+
+  /// True in the EPUB reader. Not derived from [kind]: a book library can hold
+  /// PDFs and CBZs, which open in the page reader.
+  final bool countsChapters;
 
   const NowReading({
     required this.mediaId,
@@ -78,6 +82,7 @@ class NowReading {
     this.folderName,
     this.position,
     this.total,
+    this.countsChapters = false,
   });
 
   NowReading withPosition(int position, int total) => NowReading(
@@ -87,6 +92,7 @@ class NowReading {
         folderName: folderName,
         position: position,
         total: total,
+        countsChapters: countsChapters,
       );
 
   /// Groups consecutive chapters of one series so the elapsed timer keeps
@@ -130,7 +136,7 @@ Map<String, dynamic>? buildDiscordActivity({
     final pos = reading.position;
     final total = reading.total;
     if (settings.showPage && pos != null && total != null && total > 0) {
-      final unit = reading.kind == ReadingKind.book ? 'Chapter' : 'Page';
+      final unit = reading.countsChapters ? 'Chapter' : 'Page';
       stateParts.add('$unit ${(pos + 1).clamp(1, total)} of $total');
     }
   }
