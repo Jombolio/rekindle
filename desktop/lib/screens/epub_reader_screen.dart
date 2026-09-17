@@ -47,9 +47,12 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   @override
   void initState() {
     super.initState();
-    ref
-        .read(nowReadingProvider.notifier)
-        .open(widget.mediaId, libraryType: 'book', fallbackTitle: widget.title);
+    ref.read(nowReadingProvider.notifier).open(
+          widget.mediaId,
+          libraryType: 'book',
+          fallbackTitle: widget.title,
+          countsChapters: true,
+        );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
       _loadEpub();
