@@ -56,7 +56,7 @@ modules:
         /app/share/icons/hicolor/256x256/apps/io.github.Jombolio.Rekindle.png
     sources:
       - type: archive
-        url: https://github.com/Jombolio/rekindle/releases/download/v1.4.0/RekindleClient-linux-x64.zip
-        sha256: 23ce2f427b44ccb00f75b0b09b9d7aebb8e0734dd97f0dd974eca1f7b44bc57a
+        url: https://github.com/Jombolio/rekindle/releases/download/v1.4.1/RekindleClient-linux-x64.zip
+        sha256: 2991407fb5a3eb4cba0a23a71ab78c59dc7499d907690003dddc555070280c0a
         # The zip has no top-level directory; its contents sit at the root.
         strip-components: 0
