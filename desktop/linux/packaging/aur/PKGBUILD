@@ -27,7 +27,7 @@ conflicts=('rekindle')
 options=('!strip' '!debug')
 source=("$pkgname-$pkgver.zip::$url/releases/download/v$pkgver/RekindleClient-linux-x64.zip")
 # Replaced per release by `updpkgsums`.
-sha256sums=('SKIP')
+sha256sums=('2991407fb5a3eb4cba0a23a71ab78c59dc7499d907690003dddc555070280c0a')
 
 package() {
   # The executable finds lib/ through an $ORIGIN/lib rpath and resolves data/
