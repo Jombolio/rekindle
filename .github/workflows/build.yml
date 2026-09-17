@@ -130,6 +130,10 @@ jobs:
       # Provisions Android cmdline-tools (puts sdkmanager on PATH) and accepts licenses;
       # the hosted runner doesn't expose sdkmanager on PATH by default.
       - uses: android-actions/setup-android@v3
+        with:
+          # The default also installs the legacy 'tools' package, which Google
+          # removed from the SDK repository — sdkmanager then fails the job.
+          packages: platform-tools
 
       # Native CBR/RAR decoder (libarchive) needs the pinned NDK + CMake; AGP won't
       # auto-install the NDK, so provision both explicitly.
