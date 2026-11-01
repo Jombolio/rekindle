@@ -121,22 +121,15 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y jq
 
-      # A release must be signed: fail clearly rather than ship nothing.
+      # A release must be signed. The script fails with a specific message
+      # if a signing secret is missing or wrong, rather than ship nothing.
       - name: Decode keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::KEYSTORE_BASE64 is not set; add the keystore secrets under Settings → Actions → Secrets."
-            exit 1
-          fi
-          echo "$KEYSTORE_BASE64" | base64 -d > android/rekindle.jks
-          cat <<EOF > android/keystore.properties
-          storeFile=rekindle.jks
-          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyAlias=${{ secrets.KEY_ALIAS }}
-          keyPassword=${{ secrets.KEY_PASSWORD }}
-          EOF
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: bash .gitea/scripts/write-android-keystore.sh
 
       - name: Build release APK
         working-directory: android

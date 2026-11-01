@@ -134,16 +134,14 @@ jobs:
       - name: Install Android NDK & CMake
         run: sdkmanager "ndk;27.3.13750724" "cmake;3.22.1"
 
+      # Checks the secrets with keytool and says which one is wrong.
       - name: Decode keystore
         if: env.KEYSTORE_BASE64 != ''
-        run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > android/rekindle.jks
-          cat <<EOF > android/keystore.properties
-          storeFile=rekindle.jks
-          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyAlias=${{ secrets.KEY_ALIAS }}
-          keyPassword=${{ secrets.KEY_PASSWORD }}
-          EOF
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: bash .gitea/scripts/write-android-keystore.sh
 
       - name: Build release APK
         if: env.KEYSTORE_BASE64 != ''
