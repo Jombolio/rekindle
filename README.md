@@ -24,7 +24,9 @@ Run the server on any machine that holds your archive files. Connect from any de
   </a>
 </p>
 
-<img width="1277" height="371" alt="Rekindle screenshot" src="https://github.com/user-attachments/assets/0f389771-0a4d-4c71-897b-85dcdccb26d6" />
+<p align="center">
+  <img width="100%" alt="Rekindle screenshot" src="https://github.com/user-attachments/assets/0f389771-0a4d-4c71-897b-85dcdccb26d6" />
+</p>
 
 ---
 
