@@ -3,8 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Rekindle.Core.Repositories;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Processing;
+using Rekindle.Core.Utilities;
 
 namespace Rekindle.Core.Services;
 
@@ -49,37 +48,39 @@ public sealed class CoverGenerationService(
         if (File.Exists(outputPath))
             return;
 
-        using var sourceStream = await archiveService.OpenCoverStreamAsync(job.FilePath);
-        if (sourceStream is null)
+        byte[] source;
+        await using (var sourceStream = await archiveService.OpenCoverStreamAsync(job.FilePath))
         {
-            logger.LogWarning("No cover image found in {FilePath}", job.FilePath);
-            return;
+            if (sourceStream is null)
+            {
+                logger.LogWarning("No cover image found in {FilePath}", job.FilePath);
+                return;
+            }
+
+            using var buffer = new MemoryStream();
+            await sourceStream.CopyToAsync(buffer);
+            source = buffer.ToArray();
         }
 
         // Guard against an image decompression bomb (a tiny file declaring huge
         // dimensions): inspect the header first and skip anything that would
         // allocate gigabytes on full decode.
-        if (sourceStream.CanSeek)
+        var size = ImageCodec.TryGetSize(source);
+        if (size is null)
         {
-            var info = await Image.IdentifyAsync(sourceStream);
-            if ((long)info.Width * info.Height > MaxCoverPixels)
-            {
-                logger.LogWarning(
-                    "Cover for {MediaId} is {Width}x{Height}, exceeding the {Max}px limit — skipped",
-                    job.MediaId, info.Width, info.Height, MaxCoverPixels);
-                return;
-            }
-            sourceStream.Position = 0;
+            logger.LogWarning("Cover image for {MediaId} is not a supported image format", job.MediaId);
+            return;
+        }
+        if ((long)size.Value.Width * size.Value.Height > MaxCoverPixels)
+        {
+            logger.LogWarning(
+                "Cover for {MediaId} is {Width}x{Height}, exceeding the {Max}px limit — skipped",
+                job.MediaId, size.Value.Width, size.Value.Height, MaxCoverPixels);
+            return;
         }
 
-        using var image = await Image.LoadAsync(sourceStream);
-        image.Mutate(x => x.Resize(new ResizeOptions
-        {
-            Size = new Size(300, 450),
-            Mode = ResizeMode.Max
-        }));
-
-        await image.SaveAsJpegAsync(outputPath);
+        var thumbnail = ImageCodec.CreateJpegThumbnail(source, maxWidth: 300, maxHeight: 450);
+        await File.WriteAllBytesAsync(outputPath, thumbnail);
         await mediaRepository.UpdateCoverAsync(job.MediaId, outputPath);
 
         logger.LogDebug("Cover generated for {MediaId}", job.MediaId);
