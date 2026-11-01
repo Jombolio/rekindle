@@ -8,13 +8,38 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Rekindle.Server;
 using Rekindle.Server.Authorization;
 using Rekindle.Core.Database;
 using Rekindle.Core.Repositories;
 using Rekindle.Core.Services;
 using Rekindle.Server.Controllers;
 
-var builder = WebApplication.CreateBuilder(args);
+// Self-update commands (--update, --dev-update, --check-update) run instead of
+// the server and exit; see UpdateCommand.
+string? updateCommand;
+string[] hostArgs;
+try
+{
+    updateCommand = UpdateCommand.Extract(args, out hostArgs);
+}
+catch (ArgumentException e)
+{
+    Console.Error.WriteLine(e.Message);
+    Environment.ExitCode = 2;
+    return;
+}
+if (updateCommand is not null)
+{
+    Environment.ExitCode = await UpdateCommand.RunAsync(updateCommand, hostArgs);
+    return;
+}
+
+// Remove backups a previous update couldn't delete while they were in use.
+try { Rekindle.Core.Update.UpdateInstaller.CleanupLeftovers(AppContext.BaseDirectory); }
+catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+
+var builder = WebApplication.CreateBuilder(hostArgs);
 
 // Configure large file uploads globally to prevent Kestrel connection resets
 builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>(options =>

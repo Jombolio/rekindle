@@ -1,0 +1,104 @@
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text.RegularExpressions;
+
+namespace Rekindle.Core.Update;
+
+public sealed record UpdateCheck(SemVersion Current, Release? Latest)
+{
+    public bool IsNewer => Latest?.Version is { } v && v > Current;
+}
+
+/// <summary>
+/// Finds, downloads, verifies and installs server releases from a Gitea
+/// repository. Each server zip must have a "&lt;zip&gt;.sha256" asset next to
+/// it; a release without one is refused rather than installed unverified.
+/// </summary>
+public sealed partial class ServerUpdater(HttpClient http, Uri repositoryUrl, SemVersion current, string assetName)
+{
+    private readonly ReleaseFeed _feed = new(http, repositoryUrl);
+
+    public string AssetName => assetName;
+    public Uri RepositoryUrl => repositoryUrl;
+
+    /// The release zip for this OS and CPU, or null if none is published for it.
+    public static string? PlatformAssetName()
+    {
+        if (RuntimeInformation.OSArchitecture != Architecture.X64) return null;
+        if (OperatingSystem.IsWindows()) return "RekindleServer-windows-x64.zip";
+        if (OperatingSystem.IsLinux()) return "RekindleServer-linux-x64.zip";
+        return null;
+    }
+
+    public async Task<UpdateCheck> CheckAsync(bool includePreReleases, CancellationToken ct = default)
+    {
+        var releases = await _feed.GetReleasesAsync(ct);
+        return new UpdateCheck(current, ReleaseFeed.SelectNewest(releases, includePreReleases));
+    }
+
+    public async Task<InstallResult> InstallAsync(
+        Release release,
+        string installDir,
+        IEnumerable<string> protectedDirs,
+        IProgress<(long Received, long? Total)>? progress = null,
+        CancellationToken ct = default)
+    {
+        var asset = release.FindAsset(assetName)
+            ?? throw new InvalidOperationException($"Release {release.TagName} has no '{assetName}'.");
+        var sumsAsset = release.FindAsset(assetName + ".sha256")
+            ?? throw new InvalidOperationException(
+                $"Release {release.TagName} has no '{assetName}.sha256', so the download can't be verified; not installing it.");
+
+        var expected = ParseChecksum(await http.GetStringAsync(sumsAsset.DownloadUrl, ct))
+            ?? throw new InvalidDataException($"'{sumsAsset.Name}' doesn't contain a SHA-256 checksum.");
+
+        var tempDir = Directory.CreateTempSubdirectory("rekindle-update-");
+        try
+        {
+            var zipPath = Path.Combine(tempDir.FullName, asset.Name);
+            var actual = await DownloadAsync(asset.DownloadUrl, zipPath, progress, ct);
+            if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException(
+                    $"Checksum mismatch for {asset.Name}: expected {expected}, got {actual}. Not installing it.");
+
+            return UpdateInstaller.Install(zipPath, installDir, protectedDirs);
+        }
+        finally
+        {
+            try { tempDir.Delete(recursive: true); } catch (IOException) { }
+        }
+    }
+
+    [GeneratedRegex(@"\b([0-9a-fA-F]{64})\b")]
+    private static partial Regex Sha256Pattern();
+
+    /// Accepts a bare hash or `sha256sum` output ("hash  filename").
+    public static string? ParseChecksum(string text) =>
+        Sha256Pattern().Match(text) is { Success: true } m ? m.Groups[1].Value.ToLowerInvariant() : null;
+
+    /// Streams the download to disk, hashing as it goes. Returns the SHA-256.
+    private async Task<string> DownloadAsync(
+        string url, string path, IProgress<(long, long?)>? progress, CancellationToken ct)
+    {
+        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+        response.EnsureSuccessStatusCode();
+        var total = response.Content.Headers.ContentLength;
+
+        await using var source = await response.Content.ReadAsStreamAsync(ct);
+        await using var file = File.Create(path);
+        using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+
+        var buffer = new byte[81920];
+        long received = 0;
+        int read;
+        while ((read = await source.ReadAsync(buffer, ct)) > 0)
+        {
+            await file.WriteAsync(buffer.AsMemory(0, read), ct);
+            sha.AppendData(buffer, 0, read);
+            received += read;
+            progress?.Report((received, total));
+        }
+
+        return Convert.ToHexStringLower(sha.GetHashAndReset());
+    }
+}
