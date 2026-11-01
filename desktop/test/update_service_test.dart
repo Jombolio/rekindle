@@ -162,15 +162,102 @@ void main() {
       expect(result.release!.version, '1.5.0-beta.1');
     });
 
-    test('an empty release list is reported, not treated as up to date',
-        () async {
+    test('a source with nothing eligible is an answer: up to date', () async {
+      // Gitea has only a beta; a stable-channel user is simply up to date.
       PackageInfo.setMockInitialValues(
-          appName: 'rekindle', packageName: 'rekindle', version: '1.4.1',
-          buildNumber: '20', buildSignature: '');
+          appName: 'rekindle', packageName: 'rekindle', version: '1.5.0-beta.1',
+          buildNumber: '21', buildSignature: '');
+      final adapter =
+          _FakeAdapter([_release('v1.5.0-beta.1', pre: true)]);
 
-      final result = await service(_FakeAdapter(<Object>[])).check();
+      final result = await service(adapter).check();
 
-      expect(result.status, UpdateStatus.error);
+      expect(result.status, UpdateStatus.upToDate);
+      expect(result.release, isNull);
+      expect(adapter.requested, hasLength(1), reason: 'no fallback to GitHub');
     });
   });
+
+  group('GitHub fallback', () {
+    setUp(() => PackageInfo.setMockInitialValues(
+        appName: 'rekindle', packageName: 'rekindle', version: '1.5.0-beta.1',
+        buildNumber: '21', buildSignature: ''));
+
+    final github = [_release('v1.5.0')];
+
+    UpdateService service(_HostAdapter adapter) =>
+        UpdateService(dio: Dio()..httpClientAdapter = adapter);
+
+    test('Gitea answering means GitHub is never asked', () async {
+      final adapter = _HostAdapter(
+          gitea: [_release('v1.5.0-beta.2', pre: true)], github: github);
+
+      final result = await service(adapter).check(includePreReleases: true);
+
+      expect(result.source, 'Gitea');
+      expect(result.usedFallback, isFalse);
+      expect(result.release!.version, '1.5.0-beta.2');
+      expect(adapter.hosts, isNot(contains('api.github.com')));
+    });
+
+    for (final (label, gitea) in [
+      ('unreachable', _Fail.connection),
+      ('HTTP 503', _Fail.http503),
+      ('not JSON', _Fail.junk),
+    ]) {
+      test('Gitea $label: falls back to GitHub', () async {
+        final adapter = _HostAdapter(gitea: gitea, github: github);
+
+        final result = await service(adapter).check();
+
+        expect(result.source, 'GitHub');
+        expect(result.usedFallback, isTrue);
+        expect(result.status, UpdateStatus.updateAvailable);
+        expect(result.release!.version, '1.5.0');
+      });
+    }
+
+    test('both unreachable: one error naming each source', () async {
+      final adapter =
+          _HostAdapter(gitea: _Fail.connection, github: _Fail.http503);
+
+      final result = await service(adapter).check();
+
+      expect(result.status, UpdateStatus.error);
+      expect(result.error, contains('Gitea: unreachable'));
+      expect(result.error, contains('GitHub: HTTP 503'));
+    });
+  });
+}
+
+enum _Fail { connection, http503, junk }
+
+/// Answers per host: a release list (any JSON) or a failure.
+class _HostAdapter implements HttpClientAdapter {
+  _HostAdapter({required this.gitea, required this.github});
+  final Object gitea;
+  final Object github;
+  final hosts = <String>[];
+
+  @override
+  Future<ResponseBody> fetch(RequestOptions options,
+      Stream<Uint8List>? requestStream, Future<void>? cancelFuture) async {
+    hosts.add(options.uri.host);
+    final answer = options.uri.host == 'api.github.com' ? github : gitea;
+    return switch (answer) {
+      _Fail.connection => throw DioException.connectionError(
+          requestOptions: options, reason: 'refused'),
+      _Fail.http503 => ResponseBody.fromString('down', 503),
+      _Fail.junk => ResponseBody.fromString('<html>maintenance</html>', 200,
+          headers: {
+            Headers.contentTypeHeader: ['text/html'],
+          }),
+      _ => ResponseBody.fromString(jsonEncode(answer), 200, headers: {
+          Headers.contentTypeHeader: ['application/json'],
+        }),
+    };
+  }
+
+  @override
+  void close({bool force = false}) {}
 }

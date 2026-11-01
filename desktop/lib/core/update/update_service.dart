@@ -6,24 +6,31 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'semver.dart';
 
-/// Checks the project's Gitea releases for a newer desktop client and applies
-/// the update.
+/// Checks the project's releases for a newer desktop client and applies the
+/// update.
 ///
-/// Detection reads the public release list (no auth, no manifest) and picks
-/// the highest version, optionally including pre-releases. Applying is
-/// platform-specific: Windows downloads and launches the Inno Setup installer;
-/// Linux opens the release download for the user to replace the bundle.
+/// Releases come from Gitea, with GitHub as a fallback used only when Gitea
+/// can't be reached, the same order as the server's --update. Detection reads
+/// the public release list (no auth, no manifest) and picks the highest
+/// version, optionally including pre-releases. Applying is platform-specific:
+/// Windows downloads and launches the Inno Setup installer; Linux opens the
+/// release download for the user to replace the bundle.
 class UpdateService {
-  /// The repository updates come from. The server's --update uses the same
-  /// one by default (Rekindle:UpdateSource).
-  static const repositoryUrl = 'https://git.jombo.uk/Jombo/rekindle';
-  static const _releasesApi =
-      'https://git.jombo.uk/api/v1/repos/Jombo/rekindle/releases?limit=50';
+  /// Release lists to try, in order. Gitea and GitHub return the fields
+  /// [ReleaseInfo] reads under the same names.
+  static const sources = <UpdateSource>[
+    UpdateSource('Gitea',
+        'https://git.jombo.uk/api/v1/repos/Jombo/rekindle/releases?limit=50'),
+    UpdateSource('GitHub',
+        'https://api.github.com/repos/Jombolio/rekindle/releases?per_page=50'),
+  ];
 
   final Dio _dio;
+  final List<UpdateSource> _sources;
 
-  UpdateService({Dio? dio})
-      : _dio = dio ??
+  UpdateService({Dio? dio, List<UpdateSource> sources = sources})
+      : _sources = sources,
+        _dio = dio ??
             Dio(BaseOptions(
               connectTimeout: const Duration(seconds: 15),
               receiveTimeout: const Duration(seconds: 30),
@@ -32,32 +39,45 @@ class UpdateService {
 
   /// Checks for a newer release. With [includePreReleases], betas and release
   /// candidates count too. Never throws; failures return an error result.
+  ///
+  /// The next source is tried only when one can't be reached or answers with
+  /// something unreadable; a source with nothing newer is an answer.
   Future<UpdateCheckResult> check({bool includePreReleases = false}) async {
     final current = await currentVersion();
-    try {
-      final resp = await _dio.get<List<dynamic>>(_releasesApi);
-      final releases = (resp.data ?? const [])
-          .whereType<Map<String, dynamic>>()
-          .map(ReleaseInfo.fromJson)
-          .toList();
+    final failures = <String>[];
+
+    for (final source in _sources) {
+      final List<ReleaseInfo> releases;
+      try {
+        final resp = await _dio.get<List<dynamic>>(source.releasesApi);
+        releases = (resp.data ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map(ReleaseInfo.fromJson)
+            .toList();
+      } on DioException catch (e) {
+        failures.add('${source.name}: ${_friendlyDioError(e)}');
+        continue;
+      } catch (e) {
+        // An unreadable answer (e.g. a maintenance page instead of JSON).
+        failures.add('${source.name}: unexpected response');
+        continue;
+      }
+
       final newest =
           selectNewest(releases, includePreReleases: includePreReleases);
-      if (newest == null) {
-        return UpdateCheckResult.error(
-            current, 'No published release was found.');
-      }
       return UpdateCheckResult(
-        status: isNewer(newest.version!, current)
+        status: newest != null && isNewer(newest.version!, current)
             ? UpdateStatus.updateAvailable
             : UpdateStatus.upToDate,
         currentVersion: current,
         release: newest,
+        source: source.name,
+        usedFallback: failures.isNotEmpty,
       );
-    } on DioException catch (e) {
-      return UpdateCheckResult.error(current, _friendlyDioError(e));
-    } catch (e) {
-      return UpdateCheckResult.error(current, e.toString());
     }
+
+    return UpdateCheckResult.error(current,
+        'Could not check for updates (${failures.join('; ')}). Check your internet connection.');
   }
 
   /// The highest-versioned published release, or null if there is none. Picks
@@ -140,15 +160,17 @@ class UpdateService {
     }
   }
 
-  static String _friendlyDioError(DioException e) {
-    if (e.type == DioExceptionType.connectionTimeout ||
-        e.type == DioExceptionType.connectionError) {
-      return 'Could not reach the update server. Check your internet connection.';
-    }
-    final code = e.response?.statusCode;
-    if (code == 404) return 'No published release was found.';
-    return 'Update check failed${code != null ? ' (HTTP $code)' : ''}.';
-  }
+  /// A short reason for one source's failure, e.g. "unreachable".
+  static String _friendlyDioError(DioException e) => switch (e.type) {
+        DioExceptionType.connectionTimeout ||
+        DioExceptionType.receiveTimeout ||
+        DioExceptionType.sendTimeout =>
+          'timed out',
+        DioExceptionType.connectionError => 'unreachable',
+        _ => e.response?.statusCode != null
+            ? 'HTTP ${e.response!.statusCode}'
+            : 'request failed',
+      };
 
   /// True when [candidate] is a strictly higher semver than [current], so a
   /// pre-release user is never "updated" back to an older stable release.
@@ -163,17 +185,35 @@ class UpdateService {
 
 enum UpdateStatus { upToDate, updateAvailable, error }
 
+/// A release list to check, e.g. Gitea's or GitHub's.
+class UpdateSource {
+  final String name;
+  final String releasesApi;
+
+  const UpdateSource(this.name, this.releasesApi);
+}
+
 class UpdateCheckResult {
   final UpdateStatus status;
   final String currentVersion;
+
+  /// The newest eligible release, or null when the source has none.
   final ReleaseInfo? release;
   final String? error;
+
+  /// Which source answered, e.g. "Gitea".
+  final String? source;
+
+  /// True when an earlier source couldn't be reached.
+  final bool usedFallback;
 
   const UpdateCheckResult({
     required this.status,
     required this.currentVersion,
     this.release,
     this.error,
+    this.source,
+    this.usedFallback = false,
   });
 
   factory UpdateCheckResult.error(String current, String message) =>

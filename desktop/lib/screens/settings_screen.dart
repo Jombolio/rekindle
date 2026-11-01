@@ -54,7 +54,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     switch (result.status) {
       case UpdateStatus.upToDate:
-        _snack('You are on the latest version (${result.currentVersion}).');
+        _snack('You are on the latest version (${result.currentVersion}).'
+            '${result.usedFallback ? ' Checked ${result.source}, as Gitea could not be reached.' : ''}');
       case UpdateStatus.error:
         _snack(result.error ?? 'Could not check for updates.');
       case UpdateStatus.updateAvailable:
