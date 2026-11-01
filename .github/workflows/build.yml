@@ -188,6 +188,11 @@ jobs:
       - name: Publish
         working-directory: server
         run: dotnet publish Rekindle.Server/Rekindle.Server.csproj /p:PublishProfile=linux-x64
+        env:
+          # ImageSharp 3.2+ refuses Release builds without a Six Labors
+          # license. The key lives in a repository secret, never in the repo;
+          # MSBuild reads environment variables as properties.
+          SixLaborsLicenseKey: ${{ secrets.SIXLABORS_LICENSE_KEY }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -207,6 +212,11 @@ jobs:
       - name: Publish
         working-directory: server
         run: dotnet publish Rekindle.Server/Rekindle.Server.csproj /p:PublishProfile=win-x64
+        env:
+          # ImageSharp 3.2+ refuses Release builds without a Six Labors
+          # license. The key lives in a repository secret, never in the repo;
+          # MSBuild reads environment variables as properties.
+          SixLaborsLicenseKey: ${{ secrets.SIXLABORS_LICENSE_KEY }}
 
       - uses: actions/upload-artifact@v4
         with:
