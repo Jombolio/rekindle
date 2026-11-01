@@ -86,7 +86,14 @@ jobs:
       # Builds from the released client zip named in the manifest, so this
       # verifies the manifest itself rather than a local build. Pinned to the
       # same commit as GitHub.
+      #
+      # NON-BLOCKING until the runner host is fixed: this runner drops the
+      # job's --privileged (bubblewrap can't start) and its Docker storage
+      # fails flatpak's runtime updates with "Invalid cross-device link".
+      # GitHub still builds the Flatpak. Remove continue-on-error once
+      # this step passes here.
       - uses: flathub-infra/flatpak-github-actions/flatpak-builder@933e9e8ca36e85046ebca8e211f0785c6becac40
+        continue-on-error: true
         with:
           bundle: Rekindle.flatpak
           manifest-path: desktop/linux/packaging/flatpak/io.github.Jombolio.Rekindle.yml
@@ -100,6 +107,8 @@ jobs:
         with:
           name: Rekindle-flatpak
           path: Rekindle.flatpak
+          # While the build above is non-blocking there may be no bundle.
+          if-no-files-found: ignore
 
   build-android:
     name: Client — Android
