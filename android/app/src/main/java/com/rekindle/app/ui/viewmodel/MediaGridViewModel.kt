@@ -10,6 +10,7 @@ import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.data.repository.DownloadRepository
 import com.rekindle.app.data.repository.MediaRepository
 import com.rekindle.app.domain.model.Media
+import com.rekindle.app.domain.model.ProgressSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -75,6 +76,10 @@ class MediaGridViewModel @Inject constructor(
     private val _searchLoading = MutableStateFlow(false)
     val searchLoading: StateFlow<Boolean> = _searchLoading.asStateFlow()
 
+    /** Cover reading state (progress ring, new-chapter count) by media id. */
+    private val _summaries = MutableStateFlow<Map<String, ProgressSummary>>(emptyMap())
+    val summaries: StateFlow<Map<String, ProgressSummary>> = _summaries.asStateFlow()
+
     var authHeader: String = ""
         private set
     private var baseUrl: String = ""
@@ -84,6 +89,19 @@ class MediaGridViewModel @Inject constructor(
             authHeader = "Bearer ${prefs.token.first() ?: ""}"
             baseUrl = prefs.serverUrl.first()
             load()
+        }
+        // This ViewModel survives opening the reader, so refresh the covers
+        // when it reports progress, not on screen resume.
+        viewModelScope.launch {
+            repo.coverProgressChanged.collect { loadSummaries(_state.value.items) }
+        }
+    }
+
+    private fun loadSummaries(items: List<Media>) {
+        if (items.isEmpty()) return
+        viewModelScope.launch {
+            val fetched = repo.getProgressSummaries(items)
+            _summaries.update { it + fetched }
         }
     }
 
@@ -100,6 +118,7 @@ class MediaGridViewModel @Inject constructor(
                             hasMore = page.page < page.totalPages,
                         )
                     }
+                    loadSummaries(page.items)
                     page.items.filter { !it.isFolder }.forEach {
                         downloadRepo.restoreIfNeeded(it.id)
                     }
@@ -124,6 +143,7 @@ class MediaGridViewModel @Inject constructor(
                             hasMore = page.page < page.totalPages,
                         )
                     }
+                    loadSummaries(page.items)
                     page.items.filter { !it.isFolder }.forEach {
                         downloadRepo.restoreIfNeeded(it.id)
                     }

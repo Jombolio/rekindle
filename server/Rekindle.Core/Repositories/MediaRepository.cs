@@ -2,6 +2,7 @@ using System.Data;
 using Dapper;
 using Rekindle.Core.Database;
 using Rekindle.Core.Models;
+using Rekindle.Core.Services;
 using Rekindle.Core.Utilities;
 
 namespace Rekindle.Core.Repositories;
@@ -75,6 +76,36 @@ public class MediaRepository(DbConnectionFactory factory)
     }
 
     /// Returns all chapter entries for a folder, natural-sorted by file path.
+    /// Every media row in the libraries that contain any of <paramref name="mediaIds"/>,
+    /// reduced to the fields a progress summary needs.
+    public async Task<IReadOnlyList<MediaNode>> GetNodesInLibrariesOfAsync(IEnumerable<string> mediaIds)
+    {
+        using var conn = factory.Create();
+        var rows = await conn.QueryAsync<MediaNodeRow>(
+            """
+            SELECT id, parent_id AS ParentId, media_type AS MediaType,
+                   page_count AS PageCount, added_at AS AddedAt
+            FROM media
+            WHERE library_id IN (SELECT DISTINCT library_id FROM media WHERE id IN @mediaIds);
+            """,
+            new { mediaIds });
+
+        return rows
+            .Select(r => new MediaNode(r.Id, r.ParentId, r.MediaType, r.PageCount, r.AddedAt))
+            .ToList();
+    }
+
+    // Dapper maps SQLite INTEGER columns as Int64 and refuses to bind them to a
+    // record constructor's int parameter, so rows land here first.
+    private sealed class MediaNodeRow
+    {
+        public string Id { get; set; } = string.Empty;
+        public string? ParentId { get; set; }
+        public string MediaType { get; set; } = "archive";
+        public int? PageCount { get; set; }
+        public DateTime AddedAt { get; set; }
+    }
+
     public async Task<IEnumerable<Media>> GetChaptersAsync(string parentId)
     {
         using var conn = factory.Create();

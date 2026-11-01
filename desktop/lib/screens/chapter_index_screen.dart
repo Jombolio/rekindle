@@ -8,12 +8,13 @@ import '../core/models/media.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chapter_provider.dart';
 import '../providers/download_provider.dart';
-import '../providers/reader_provider.dart';
+import '../providers/progress_summary_provider.dart';
 import 'widgets/cover_image.dart';
 import 'widgets/download_button.dart';
 import 'widgets/error_view.dart';
 import 'widgets/about_section.dart';
 import 'widgets/marquee_text.dart';
+import 'widgets/progress_badges.dart';
 
 // Fixed tile height — leading thumbnail is 68 px + 12 px vertical padding.
 // Keeping this constant lets ListView skip O(n) layout on large lists.
@@ -93,6 +94,14 @@ class ChapterIndexScreen extends ConsumerWidget {
           final totalItems =
               (hasSubfolders ? subfolders.length + 1 : 0) + archives.length;
 
+          // Summary chunks follow display order: subfolders, then chapters.
+          final ids = [
+            for (final m in subfolders) m.id,
+            for (final m in archives) m.id,
+          ];
+          String chunkKey(int position) =>
+              summaryChunkKey(ids, position, kListSummaryChunk);
+
           Widget list = ListView.builder(
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: totalItems,
@@ -110,6 +119,7 @@ class ChapterIndexScreen extends ConsumerWidget {
                   final folder = subfolders[i - 1];
                   return _SubfolderTile(
                     folder: folder,
+                    summaryKey: chunkKey(i - 1),
                     coverUrl: client.coverUrl(folder.id),
                     authHeaders: client.authHeaders,
                     libraryType: libraryType,
@@ -120,6 +130,7 @@ class ChapterIndexScreen extends ConsumerWidget {
                 final chapter = archives[archiveIndex];
                 return _ChapterTile(
                   chapter: chapter,
+                  summaryKey: chunkKey(subfolders.length + archiveIndex),
                   index: archiveIndex,
                   coverUrl: client.coverUrl(chapter.id),
                   authHeaders: client.authHeaders,
@@ -130,6 +141,7 @@ class ChapterIndexScreen extends ConsumerWidget {
               final chapter = archives[i];
               return _ChapterTile(
                 chapter: chapter,
+                summaryKey: chunkKey(i),
                 index: i,
                 coverUrl: client.coverUrl(chapter.id),
                 authHeaders: client.authHeaders,
@@ -176,8 +188,9 @@ class _SectionHeader extends StatelessWidget {
 
 // ── Subfolder tile ───────────────────────────────────────────────────────────
 
-class _SubfolderTile extends StatelessWidget {
+class _SubfolderTile extends ConsumerWidget {
   final Media folder;
+  final String summaryKey;
   final String coverUrl;
   final Map<String, String> authHeaders;
   final String? libraryType;
@@ -185,6 +198,7 @@ class _SubfolderTile extends StatelessWidget {
 
   const _SubfolderTile({
     required this.folder,
+    required this.summaryKey,
     required this.coverUrl,
     required this.authHeaders,
     required this.canDownload,
@@ -192,7 +206,18 @@ class _SubfolderTile extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final summary = watchProgressSummary(ref, folder, summaryKey);
+    final theme = Theme.of(context);
+    final newCount = summary?.newCount ?? 0;
+    final subtitleParts = [
+      if (summary != null && summary.isCompleted)
+        'Read'
+      else if (summary != null && summary.isStarted)
+        '${summary.percent}% read',
+      if (newCount > 0) '$newCount new',
+    ];
+
     return SizedBox(
       height: _kTileHeight,
       child: ListTile(
@@ -225,12 +250,23 @@ class _SubfolderTile extends StatelessWidget {
                     color: Theme.of(context).colorScheme.onPrimary),
               ),
             ),
+            ReadProgressRing(summary: summary, size: 18, inset: 2),
           ],
         ),
         title: MarqueeText(
           text: folder.displayTitle,
           style: Theme.of(context).textTheme.bodyMedium,
         ),
+        subtitle: subtitleParts.isNotEmpty
+            ? Text(
+                subtitleParts.join(' · '),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: newCount > 0
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+              )
+            : null,
         trailing: canDownload
             ? SizedBox(
                 width: 40,
@@ -254,6 +290,7 @@ class _SubfolderTile extends StatelessWidget {
 
 class _ChapterTile extends ConsumerWidget {
   final Media chapter;
+  final String summaryKey;
   final int index;
   final String coverUrl;
   final Map<String, String> authHeaders;
@@ -262,6 +299,7 @@ class _ChapterTile extends ConsumerWidget {
 
   const _ChapterTile({
     required this.chapter,
+    required this.summaryKey,
     required this.index,
     required this.coverUrl,
     required this.authHeaders,
@@ -282,16 +320,19 @@ class _ChapterTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final downloadState = ref.watch(downloadProvider(chapter.id));
     final isOffline = downloadState.status == DownloadStatus.complete;
-    final progress =
-        ref.watch(localProgressProvider(chapter.id)).valueOrNull;
+    final summary = watchProgressSummary(ref, chapter, summaryKey);
     final theme = Theme.of(context);
 
-    // Subtitle: show progress status first, then offline indicator.
-    final completed = progress?.isCompleted ?? false;
-    final inProgress = !(progress?.isCompleted ?? true) && (progress?.currentPage ?? 0) > 0;
+    // Subtitle: new first, then progress, then offline indicator.
+    final completed = summary?.isCompleted ?? false;
+    final inProgress = !completed && (summary?.isStarted ?? false);
+    final isNew = summary?.isNew ?? false;
     final subtitleParts = [
-      if (completed) 'Read'
-      else if (inProgress) 'In progress',
+      if (isNew) 'New',
+      if (completed)
+        'Read'
+      else if (inProgress)
+        '${summary!.percent}% read',
       if (isOffline) 'Downloaded',
     ];
 
@@ -325,7 +366,7 @@ class _ChapterTile extends ConsumerWidget {
                       size: 10, color: Colors.white),
                 ),
               ),
-            ReadProgressBadge(progress: progress),
+            ReadProgressRing(summary: summary, size: 18, inset: 2),
           ],
         ),
         title: MarqueeText(
@@ -340,11 +381,13 @@ class _ChapterTile extends ConsumerWidget {
             ? Text(
                 subtitleParts.join(' · '),
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: completed
-                      ? Colors.green.shade600
-                      : inProgress
-                          ? Colors.orange.shade700
-                          : theme.colorScheme.onSurfaceVariant,
+                  color: isNew
+                      ? theme.colorScheme.primary
+                      : completed
+                          ? Colors.green.shade600
+                          : inProgress
+                              ? Colors.orange.shade700
+                              : theme.colorScheme.onSurfaceVariant,
                 ),
               )
             : null,

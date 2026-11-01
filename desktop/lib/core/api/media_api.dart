@@ -1,5 +1,6 @@
 import '../models/media.dart';
 import '../models/paged_response.dart';
+import '../models/progress_summary.dart';
 import '../models/reading_progress.dart';
 import 'api_client.dart';
 
@@ -63,6 +64,18 @@ class MediaApi {
     return (resp.data as List<dynamic>)
         .map((e) => Media.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Reading state for each of [mediaIds], keyed by media id. Ids the server
+  /// doesn't know are absent from the result.
+  Future<Map<String, ProgressSummary>> getProgressSummaries(
+      List<String> mediaIds) async {
+    if (mediaIds.isEmpty) return const {};
+    final resp = await _client.dio
+        .post('api/media/progress-summary', data: {'ids': mediaIds});
+    final summaries = (resp.data as List<dynamic>)
+        .map((e) => ProgressSummary.fromJson(e as Map<String, dynamic>));
+    return {for (final s in summaries) s.mediaId: s};
   }
 
   Future<List<Media>> getChapters(String folderId) async {
