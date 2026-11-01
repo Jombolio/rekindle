@@ -10,6 +10,7 @@ import '../core/update/update_service.dart';
 import '../providers/discord_presence_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/update_provider.dart';
+import 'widgets/release_notes.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -95,9 +96,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const SizedBox(height: 12),
                 Flexible(
                   child: SingleChildScrollView(
-                    child: Text(
-                      release.notes.trim(),
-                      style: Theme.of(ctx).textTheme.bodySmall,
+                    child: ReleaseNotes(
+                      release.notes,
+                      textStyle: Theme.of(ctx).textTheme.bodySmall,
                     ),
                   ),
                 ),
