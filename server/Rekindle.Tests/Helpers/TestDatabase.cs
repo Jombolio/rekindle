@@ -11,7 +11,10 @@ public sealed class TestDatabase : IDisposable
 
     public TestDatabase()
     {
-        Factory = new DbConnectionFactory($"Data Source={_path};");
+        // No pooling: a pooled connection keeps the file open after the test
+        // disposes it, and Windows can't delete an open file (Linux can,
+        // which is why this only fails on Windows).
+        Factory = new DbConnectionFactory($"Data Source={_path};Pooling=False;");
         var initializer = new DbInitializer(Factory, NullLogger<DbInitializer>.Instance);
         initializer.InitializeAsync().GetAwaiter().GetResult();
     }

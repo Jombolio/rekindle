@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Rekindle.Core.Services;
@@ -54,6 +55,11 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
     public new async ValueTask DisposeAsync()
     {
         await base.DisposeAsync();
+
+        // The server's connections are pooled and keep the database file open
+        // after the host stops. Windows can't delete open files, so close
+        // them before removing the temp directory.
+        SqliteConnection.ClearAllPools();
         if (Directory.Exists(_tempDir))
             Directory.Delete(_tempDir, recursive: true);
     }
