@@ -47,7 +47,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _checkForUpdates() async {
     setState(() => _checking = true);
-    final result = await ref.read(updateServiceProvider).check();
+    final result = await ref.read(updateServiceProvider).check(
+        includePreReleases: ref.read(settingsProvider).receivePreReleases);
     if (!mounted) return;
     setState(() => _checking = false);
 
@@ -85,7 +86,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'You have $current. The latest is ${release.version}.',
+                'You have $current. The newest is ${release.version}'
+                '${release.semVersion?.isPreRelease == true ? ' (pre-release)' : ''}.',
                 style: Theme.of(ctx).textTheme.bodyMedium,
               ),
               if (release.notes.trim().isNotEmpty) ...[
@@ -109,7 +111,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           TextButton(
             onPressed: () => service.openInBrowser(release.htmlUrl),
-            child: const Text('View on GitHub'),
+            child: const Text('View release'),
           ),
           FilledButton(
             onPressed: () {
@@ -421,38 +423,70 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Row(
+                child: Column(
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Rekindle desktop',
-                              style: theme.textTheme.bodyLarge),
-                          const SizedBox(height: 4),
-                          Text(
-                            _appVersion != null
-                                ? 'Version $_appVersion'
-                                : 'Version …',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Rekindle desktop',
+                                  style: theme.textTheme.bodyLarge),
+                              const SizedBox(height: 4),
+                              Text(
+                                _appVersion != null
+                                    ? 'Version $_appVersion'
+                                    : 'Version …',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 12),
+                        FilledButton.tonalIcon(
+                          onPressed: _checking ? null : _checkForUpdates,
+                          icon: _checking
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.system_update_alt),
+                          label: Text(
+                              _checking ? 'Checking…' : 'Check for updates'),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    FilledButton.tonalIcon(
-                      onPressed: _checking ? null : _checkForUpdates,
-                      icon: _checking
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.system_update_alt),
-                      label: Text(
-                          _checking ? 'Checking…' : 'Check for updates'),
+                    const Divider(height: 32),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Receive pre-releases',
+                                  style: theme.textTheme.bodyLarge),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Also offer betas and release candidates when '
+                                'checking for updates. They may be less stable.',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Switch(
+                          value: settings.receivePreReleases,
+                          onChanged: (v) => ref
+                              .read(settingsProvider.notifier)
+                              .setReceivePreReleases(receive: v),
+                        ),
+                      ],
                     ),
                   ],
                 ),

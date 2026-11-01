@@ -4,16 +4,21 @@ import 'package:dio/dio.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Checks GitHub Releases for a newer desktop client and applies the update.
+import 'semver.dart';
+
+/// Checks the project's Gitea releases for a newer desktop client and applies
+/// the update.
 ///
-/// Detection reads the public Releases API directly (no auth, no manifest), so
-/// it tracks the repo's GitHub releases with nothing extra to host. Applying is
+/// Detection reads the public release list (no auth, no manifest) and picks
+/// the highest version, optionally including pre-releases. Applying is
 /// platform-specific: Windows downloads and launches the Inno Setup installer;
 /// Linux opens the release download for the user to replace the bundle.
 class UpdateService {
-  static const _repo = 'Jombolio/rekindle';
-  static const _latestApi =
-      'https://api.github.com/repos/$_repo/releases/latest';
+  /// The repository updates come from. The server's --update uses the same
+  /// one by default (Rekindle:UpdateSource).
+  static const repositoryUrl = 'https://git.jombo.uk/Jombo/rekindle';
+  static const _releasesApi =
+      'https://git.jombo.uk/api/v1/repos/Jombo/rekindle/releases?limit=50';
 
   final Dio _dio;
 
@@ -22,34 +27,53 @@ class UpdateService {
             Dio(BaseOptions(
               connectTimeout: const Duration(seconds: 15),
               receiveTimeout: const Duration(seconds: 30),
-              headers: {'Accept': 'application/vnd.github+json'},
+              headers: {'Accept': 'application/json'},
             ));
 
-  /// Checks for a newer release. Never throws; failures return an error result.
-  Future<UpdateCheckResult> check() async {
+  /// Checks for a newer release. With [includePreReleases], betas and release
+  /// candidates count too. Never throws; failures return an error result.
+  Future<UpdateCheckResult> check({bool includePreReleases = false}) async {
     final current = await currentVersion();
     try {
-      final resp = await _dio.get<Map<String, dynamic>>(_latestApi);
-      final data = resp.data;
-      if (data == null) {
-        return UpdateCheckResult.error(current, 'Empty response from GitHub.');
-      }
-      final release = ReleaseInfo.fromJson(data);
-      if (release.version == null) {
+      final resp = await _dio.get<List<dynamic>>(_releasesApi);
+      final releases = (resp.data ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(ReleaseInfo.fromJson)
+          .toList();
+      final newest =
+          selectNewest(releases, includePreReleases: includePreReleases);
+      if (newest == null) {
         return UpdateCheckResult.error(
-            current, 'Could not read the latest version.');
+            current, 'No published release was found.');
       }
-      final isNewer = _isNewer(release.version!, current);
       return UpdateCheckResult(
-        status: isNewer ? UpdateStatus.updateAvailable : UpdateStatus.upToDate,
+        status: isNewer(newest.version!, current)
+            ? UpdateStatus.updateAvailable
+            : UpdateStatus.upToDate,
         currentVersion: current,
-        release: release,
+        release: newest,
       );
     } on DioException catch (e) {
       return UpdateCheckResult.error(current, _friendlyDioError(e));
     } catch (e) {
       return UpdateCheckResult.error(current, e.toString());
     }
+  }
+
+  /// The highest-versioned published release, or null if there is none. Picks
+  /// by version rather than date, so a late patch to an old line can't hide a
+  /// newer release. Drafts and unversioned tags are always skipped; without
+  /// [includePreReleases], so are pre-releases, flagged or by version.
+  static ReleaseInfo? selectNewest(Iterable<ReleaseInfo> releases,
+      {required bool includePreReleases}) {
+    ReleaseInfo? best;
+    for (final r in releases) {
+      final v = r.semVersion;
+      if (r.isDraft || v == null) continue;
+      if (!includePreReleases && (r.isPreRelease || v.isPreRelease)) continue;
+      if (best == null || v > best.semVersion!) best = r;
+    }
+    return best;
   }
 
   /// Downloads [asset] to a temp file and returns its path.
@@ -119,33 +143,21 @@ class UpdateService {
   static String _friendlyDioError(DioException e) {
     if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.connectionError) {
-      return 'Could not reach GitHub. Check your internet connection.';
+      return 'Could not reach the update server. Check your internet connection.';
     }
     final code = e.response?.statusCode;
-    if (code == 403) return 'GitHub rate limit reached. Try again later.';
     if (code == 404) return 'No published release was found.';
     return 'Update check failed${code != null ? ' (HTTP $code)' : ''}.';
   }
 
-  /// Returns true when [candidate] is a strictly higher semver than [current].
-  /// Parsing is lenient; unparseable inputs compare as 0.0.0.
-  static bool _isNewer(String candidate, String current) {
-    final a = _parseVersion(candidate);
-    final b = _parseVersion(current);
-    for (var i = 0; i < 3; i++) {
-      if (a[i] != b[i]) return a[i] > b[i];
-    }
-    return false;
-  }
-
-  static List<int> _parseVersion(String raw) {
-    final match = RegExp(r'(\d+)\.(\d+)\.(\d+)').firstMatch(raw);
-    if (match == null) return [0, 0, 0];
-    return [
-      int.tryParse(match.group(1)!) ?? 0,
-      int.tryParse(match.group(2)!) ?? 0,
-      int.tryParse(match.group(3)!) ?? 0,
-    ];
+  /// True when [candidate] is a strictly higher semver than [current], so a
+  /// pre-release user is never "updated" back to an older stable release.
+  /// An unparseable [current] counts as 0.0.0, so any release is newer.
+  static bool isNewer(String candidate, String current) {
+    final a = SemVersion.tryParse(candidate);
+    if (a == null) return false;
+    final b = SemVersion.tryParse(current) ?? const SemVersion(0, 0, 0);
+    return a > b;
   }
 }
 
@@ -173,45 +185,54 @@ class UpdateCheckResult {
 }
 
 class ReleaseInfo {
-  /// Normalized "X.Y.Z", or null when no version could be parsed.
-  final String? version;
+  /// The parsed version, or null when neither tag nor name holds one.
+  final SemVersion? semVersion;
   final String tagName;
   final String name;
   final String notes;
   final String htmlUrl;
+  final bool isPreRelease;
+  final bool isDraft;
   final List<ReleaseAsset> assets;
 
   const ReleaseInfo({
-    required this.version,
+    required this.semVersion,
     required this.tagName,
     required this.name,
     required this.notes,
     required this.htmlUrl,
     required this.assets,
+    this.isPreRelease = false,
+    this.isDraft = false,
   });
+
+  /// Normalized "X.Y.Z" or "X.Y.Z-pre", or null when no version was found.
+  String? get version => semVersion?.toString();
 
   factory ReleaseInfo.fromJson(Map<String, dynamic> j) {
     final tag = (j['tag_name'] as String?) ?? '';
     final name = (j['name'] as String?) ?? '';
-    // Prefer the tag, fall back to the release name ("Rekindle vX.Y.Z").
-    final version = _extract(tag) ?? _extract(name);
     final assets = (j['assets'] as List<dynamic>? ?? [])
         .whereType<Map<String, dynamic>>()
         .map(ReleaseAsset.fromJson)
         .toList();
     return ReleaseInfo(
-      version: version,
+      // Prefer the tag ("v1.5.0-beta.1"), fall back to the release name.
+      semVersion: SemVersion.tryParse(tag) ?? _fromName(name),
       tagName: tag,
       name: name,
       notes: (j['body'] as String?) ?? '',
       htmlUrl: (j['html_url'] as String?) ?? '',
+      isPreRelease: (j['prerelease'] as bool?) ?? false,
+      isDraft: (j['draft'] as bool?) ?? false,
       assets: assets,
     );
   }
 
-  static String? _extract(String raw) {
-    final m = RegExp(r'(\d+\.\d+\.\d+)').firstMatch(raw);
-    return m?.group(1);
+  /// "Rekindle v1.5.0-beta.1" → 1.5.0-beta.1.
+  static SemVersion? _fromName(String name) {
+    final m = RegExp(r'v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?').firstMatch(name);
+    return SemVersion.tryParse(m?.group(0));
   }
 }
 

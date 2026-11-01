@@ -19,11 +19,15 @@ class SettingsState {
   /// How long an armed chapter-change confirmation stays open.
   final Duration chapterConfirmWindow;
 
+  /// Offer pre-releases (betas, release candidates) when checking for updates.
+  final bool receivePreReleases;
+
   const SettingsState({
     required this.themeMode,
     required this.downloadDirectory,
     required this.confirmChapterChange,
     required this.chapterConfirmWindow,
+    this.receivePreReleases = false,
     this.discord = const DiscordPresenceSettings(),
   });
 
@@ -32,6 +36,7 @@ class SettingsState {
     String? downloadDirectory,
     bool? confirmChapterChange,
     Duration? chapterConfirmWindow,
+    bool? receivePreReleases,
     DiscordPresenceSettings? discord,
   }) =>
       SettingsState(
@@ -39,6 +44,7 @@ class SettingsState {
         downloadDirectory: downloadDirectory ?? this.downloadDirectory,
         confirmChapterChange: confirmChapterChange ?? this.confirmChapterChange,
         chapterConfirmWindow: chapterConfirmWindow ?? this.chapterConfirmWindow,
+        receivePreReleases: receivePreReleases ?? this.receivePreReleases,
         discord: discord ?? this.discord,
       );
 }
@@ -60,6 +66,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
       chapterConfirmWindow: Duration(
         milliseconds: _clampConfirmMs(prefs.chapterConfirmMs),
       ),
+      receivePreReleases: prefs.receivePreReleases,
       discord: DiscordPresenceSettings(
         enabled: prefs.discordEnabled,
         titleMode: DiscordTitleMode.parse(prefs.discordTitleMode),
@@ -89,6 +96,11 @@ class SettingsNotifier extends Notifier<SettingsState> {
     final ms = _clampConfirmMs(window.inMilliseconds);
     await Prefs.instance.setChapterConfirmMs(ms);
     state = state.copyWith(chapterConfirmWindow: Duration(milliseconds: ms));
+  }
+
+  Future<void> setReceivePreReleases({required bool receive}) async {
+    await Prefs.instance.setReceivePreReleases(receive: receive);
+    state = state.copyWith(receivePreReleases: receive);
   }
 
   Future<void> setDiscordPresence(DiscordPresenceSettings discord) async {

@@ -106,6 +106,13 @@ class Prefs {
   Future<void> setChapterConfirmMs(int ms) =>
       _prefs.setInt('chapter_confirm_ms', ms);
 
+  // Whether "Check for updates" offers pre-releases (betas, release
+  // candidates) as well as stable releases. Off by default.
+  bool get receivePreReleases =>
+      _prefs.getBool('receive_pre_releases') ?? false;
+  Future<void> setReceivePreReleases({required bool receive}) =>
+      _prefs.setBool('receive_pre_releases', receive);
+
   // Double-page spine gap in logical pixels (global)
   double get doublePageGap => _prefs.getDouble('double_page_gap') ?? 0.0;
   Future<void> setDoublePageGap(double gap) =>
