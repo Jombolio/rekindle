@@ -276,7 +276,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
-      options: --privileged
+      # Keep SDK updates off Docker overlayfs (rename otherwise fails with EXDEV).
+      options: --privileged --volume rekindle-flatpak:/var/lib/flatpak
     outputs:
       built: ${{ steps.bundle.outcome == 'success' }}
     steps:
@@ -290,12 +291,8 @@ jobs:
           bash desktop/linux/packaging/flatpak/use-release-zip.sh
           "${{ github.server_url }}/${{ github.repository }}/releases/download/${{ needs.publish.outputs.tag }}/RekindleClient-linux-x64.zip"
 
-      # NON-BLOCKING until the runner host is fixed (see build.yml): the
-      # release still publishes without a Flatpak. Remove continue-on-error
-      # once this passes here.
       - id: bundle
         uses: flathub-infra/flatpak-github-actions/flatpak-builder@933e9e8ca36e85046ebca8e211f0785c6becac40
-        continue-on-error: true
         with:
           bundle: RekindleClient-linux-x86_64.flatpak
           manifest-path: desktop/linux/packaging/flatpak/io.github.Jombolio.Rekindle.yml
