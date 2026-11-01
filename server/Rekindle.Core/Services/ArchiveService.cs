@@ -222,12 +222,22 @@ public class ArchiveService
         var height = page.GetPageHeight();
         var rawBytes = page.GetImage(); // BGRA 8-bit per channel
 
-        using var image = Image.LoadPixelData<Bgra32>(rawBytes, width, height);
+        using var image = LoadPdfPage(rawBytes, width, height);
 
         var ms = new MemoryStream();
         image.SaveAsJpeg(ms);
         ms.Position = 0;
         return Task.FromResult<Stream?>(ms);
+    }
+
+    /// Wraps pdfium's BGRA output and composites it onto white. Pdfium leaves
+    /// any area a page doesn't paint fully transparent, and JPEG has no alpha,
+    /// so without this the background of most text PDFs renders black.
+    private static Image<Bgra32> LoadPdfPage(byte[] bgra, int width, int height)
+    {
+        var image = Image.LoadPixelData<Bgra32>(bgra, width, height);
+        image.Mutate(x => x.BackgroundColor(Color.White));
+        return image;
     }
 
     // ── Extraction ──────────────────────────────────────────────────────────
@@ -313,7 +323,7 @@ public class ArchiveService
                 var height = pageReader.GetPageHeight();
                 var rawBytes = pageReader.GetImage(); // BGRA 8-bit per channel
 
-                using var image = Image.LoadPixelData<Bgra32>(rawBytes, width, height);
+                using var image = LoadPdfPage(rawBytes, width, height);
                 var pageName = $"{i:D5}.jpg";
                 await using var fileStream = File.Create(Path.Combine(outDir, pageName));
                 await image.SaveAsJpegAsync(fileStream);
