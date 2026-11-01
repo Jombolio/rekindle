@@ -1,0 +1,50 @@
+name: Wiki
+
+# Gitea counterpart of .github/workflows/wiki.yml. The Gitea wiki is its own
+# git repository (<repo>.wiki.git) sharing no history with this one, so it
+# drifts unless something publishes to it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'wiki/**'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: Publish wiki/
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish wiki/ to the wiki repo
+        env:
+          TOKEN: ${{ github.token }}
+          WIKI_URL: ${{ github.server_url }}/${{ github.repository }}.wiki.git
+        run: |
+          set -euo pipefail
+
+          # Basic auth in a header keeps the token out of the URL, the remote
+          # config and the logs.
+          auth="Authorization: Basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+
+          git -c http.extraHeader="$auth" clone --quiet --depth 1 "$WIKI_URL" wiki-repo
+
+          # Copy rather than mirror: a page written in the web editor that has
+          # no counterpart here should not disappear the next time a doc
+          # changes. Removing a page is therefore still a manual step.
+          cp wiki/*.md wiki-repo/
+
+          cd wiki-repo
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "Wiki already matches wiki/ — nothing to publish."
+            exit 0
+          fi
+
+          git config user.name "gitea-actions[bot]"
+          git config user.email "gitea-actions[bot]@noreply.${GITHUB_SERVER_URL#*://}"
+          git add -A
+          git status --short
+          git commit -m "docs: publish from ${GITHUB_SHA:0:7}"
+          # The wiki's default branch (master here) is whatever was cloned.
+          git -c http.extraHeader="$auth" push origin HEAD
