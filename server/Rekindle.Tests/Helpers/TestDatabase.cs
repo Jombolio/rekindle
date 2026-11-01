@@ -21,7 +21,6 @@ public sealed class TestDatabase : IDisposable
 
     public void Dispose()
     {
-        if (File.Exists(_path))
-            File.Delete(_path);
+        TempCleanup.DeleteFile(_path);
     }
 }

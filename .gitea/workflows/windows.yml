@@ -60,7 +60,9 @@ jobs:
 
       - name: Test
         working-directory: server
-        run: dotnet test; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        # Normal verbosity prints the exception behind class-cleanup failures,
+        # which the default output hides.
+        run: dotnet test --logger "console;verbosity=normal"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Publish
         working-directory: server

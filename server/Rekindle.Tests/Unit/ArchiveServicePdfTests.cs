@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Rekindle.Core.Services;
+using Rekindle.Tests.Helpers;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
@@ -26,8 +27,7 @@ public class ArchiveServicePdfTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_root))
-            Directory.Delete(_root, recursive: true);
+        TempCleanup.DeleteDirectory(_root);
     }
 
     /// A minimal valid PDF with one blank page per MediaBox size given.

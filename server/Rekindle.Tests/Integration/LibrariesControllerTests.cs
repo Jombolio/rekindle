@@ -70,7 +70,7 @@ public class LibrariesControllerTests : IClassFixture<TestWebApplicationFactory>
         }
         finally
         {
-            File.Delete(file);
+            TempCleanup.DeleteFile(file);
         }
     }
 

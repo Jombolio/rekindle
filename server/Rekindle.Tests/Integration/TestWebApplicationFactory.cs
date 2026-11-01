@@ -5,6 +5,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Rekindle.Core.Services;
+using Rekindle.Tests.Helpers;
 using Xunit;
 
 namespace Rekindle.Tests.Integration;
@@ -60,8 +61,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
         // after the host stops. Windows can't delete open files, so close
         // them before removing the temp directory.
         SqliteConnection.ClearAllPools();
-        if (Directory.Exists(_tempDir))
-            Directory.Delete(_tempDir, recursive: true);
+        TempCleanup.DeleteDirectory(_tempDir);
     }
 
     private record TokenBody(string Token);
