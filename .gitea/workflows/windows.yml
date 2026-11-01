@@ -71,7 +71,17 @@ jobs:
           # license. Add SIXLABORS_LICENSE_KEY under the Gitea repository's
           # Settings → Actions → Secrets.
           SixLaborsLicenseKey: ${{ secrets.SIXLABORS_LICENSE_KEY }}
-        run: dotnet publish Rekindle.Server/Rekindle.Server.csproj /p:PublishProfile=win-x64; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        # Gitea withholds secrets from pull requests, including AGit ones.
+        # Without the key, publish a Debug build (ImageSharp only warns there)
+        # so the boot check below still runs; it is not uploaded.
+        run: |
+          if ($env:SixLaborsLicenseKey) {
+            dotnet publish Rekindle.Server/Rekindle.Server.csproj /p:PublishProfile=win-x64
+          } else {
+            Write-Host '::notice::No Six Labors license available; publishing a Debug build for the boot check only.'
+            dotnet publish Rekindle.Server/Rekindle.Server.csproj /p:PublishProfile=win-x64 /p:Configuration=Debug
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # GitHub CI only builds the Windows server. Start the published
       # executable to prove it runs, including loading its native libraries
@@ -108,7 +118,9 @@ jobs:
           if (-not $started) { throw 'Published server did not start within 60 seconds' }
 
       # v4 refuses to run on Gitea ("not supported on GHES"); v3 works.
+      # Pull requests get the Debug build above, which isn't worth keeping.
       - uses: actions/upload-artifact@v3
+        if: github.event_name != 'pull_request'
         with:
           name: RekindleServer-win-x64
           path: server/Rekindle.Server/bin/publish/win-x64/
