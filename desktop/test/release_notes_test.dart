@@ -29,7 +29,9 @@ void main() {
       final dir = Directory('../release-notes');
       if (!dir.existsSync()) return; // running outside the repository
       for (final f in dir.listSync().whereType<File>()) {
-        final html = ReleaseNotes.toHtml(f.readAsStringSync());
+        // Code spans may quote Markdown on purpose ("`**`"); ignore them.
+        final html = ReleaseNotes.toHtml(f.readAsStringSync())
+            .replaceAll(RegExp(r'<code>.*?</code>', dotAll: true), '');
         expect(html, isNot(contains('**')), reason: f.path);
         expect(RegExp(r'^#+ ', multiLine: true).hasMatch(html), isFalse,
             reason: f.path);
