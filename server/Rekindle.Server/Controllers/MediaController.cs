@@ -15,6 +15,7 @@ namespace Rekindle.Server.Controllers;
 public class MediaController(
     MediaRepository mediaRepository,
     ProgressRepository progressRepository,
+    ProgressSummaryService progressSummaryService,
     ArchiveService archiveService,
     IOptions<RekindleOptions> options) : ControllerBase
 {
@@ -233,6 +234,23 @@ public class MediaController(
         return Ok(stored ?? progress);
     }
 
+    /// Reading state for the covers a client is showing: progress fraction,
+    /// completion, and new-chapter counts. POST because a grid page or chapter
+    /// list can carry hundreds of ids.
+    [HttpPost("progress-summary")]
+    public async Task<IActionResult> GetProgressSummary([FromBody] ProgressSummaryRequest req)
+    {
+        var userId = GetUserId();
+        if (userId is null)
+            return Unauthorized();
+
+        var ids = (req.Ids ?? []).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList();
+        if (ids.Count > ProgressSummaryService.MaxIds)
+            return BadRequest(new { error = $"At most {ProgressSummaryService.MaxIds} ids per request." });
+
+        return Ok(await progressSummaryService.GetAsync(userId, ids));
+    }
+
     [HttpGet("{id}/progress")]
     public async Task<IActionResult> GetProgress(string id)
     {
@@ -269,4 +287,6 @@ public class MediaController(
     /// when present the server trusts it for ordering (see ProgressRepository).
     /// </param>
     public record UpdateProgressRequest(int CurrentPage, bool IsCompleted, DateTime? LastReadAt = null);
+
+    public record ProgressSummaryRequest(List<string>? Ids);
 }

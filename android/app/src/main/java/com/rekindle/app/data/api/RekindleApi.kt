@@ -15,6 +15,8 @@ import com.rekindle.app.data.model.LoginResponse
 import com.rekindle.app.data.model.MediaDto
 import com.rekindle.app.data.model.PageCountDto
 import com.rekindle.app.data.model.PagedResponseDto
+import com.rekindle.app.data.model.ProgressSummaryDto
+import com.rekindle.app.data.model.ProgressSummaryRequest
 import com.rekindle.app.data.model.ReadingProgressDto
 import com.rekindle.app.data.model.SaveProgressRequest
 import com.rekindle.app.data.model.ScanProgressDto
@@ -91,6 +93,10 @@ interface RekindleApi {
         @Path("id") id: String,
         @Body request: SaveProgressRequest,
     ): ReadingProgressDto
+
+    /** Cover reading state for up to 500 ids; unknown ids are left out. */
+    @POST("api/media/progress-summary")
+    suspend fun getProgressSummaries(@Body request: ProgressSummaryRequest): List<ProgressSummaryDto>
 
     @GET("api/media/{id}/page/{pageNum}")
     @Streaming

@@ -122,7 +122,9 @@ class EpubReaderViewModel @Inject constructor(
             val book = _state.value.book ?: return@launch
             val chapter = _state.value.chapterIndex
             mediaRepo.saveProgress(mediaId, chapter, chapter >= book.chapters.size - 1)
-            mediaRepo.syncProgress(mediaId)
+            // The EPUB reader saves per chapter rather than on exit, and chapter
+            // flips are rare enough to refresh covers on each.
+            mediaRepo.syncProgress(mediaId, notifyCovers = true)
         }
     }
 }

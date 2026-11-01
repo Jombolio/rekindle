@@ -12,6 +12,7 @@ import '../core/storage/prefs.dart';
 import 'auth_provider.dart';
 import 'connectivity_provider.dart';
 import 'download_provider.dart';
+import 'progress_summary_provider.dart';
 import 'settings_provider.dart';
 
 enum ReadingDirection { ltr, rtl }
@@ -104,7 +105,7 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
     final (mediaId, _) = arg;
     ref.onDispose(() {
       _syncTimer?.cancel();
-      _syncNow(mediaId);
+      _syncNow(mediaId, refreshCovers: true);
     });
 
     _init(arg);
@@ -317,7 +318,11 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
         Timer(const Duration(seconds: 3), () => _syncNow(mediaId));
   }
 
-  Future<void> _syncNow(String mediaId) async {
+  /// [refreshCovers] re-fetches the cover progress summaries once the server
+  /// has this write. Only the exit-time sync asks for it: the grid underneath
+  /// can't be seen while reading, and refetching it on every debounced page
+  /// sync would be wasted requests.
+  Future<void> _syncNow(String mediaId, {bool refreshCovers = false}) async {
     // _init hasn't resolved the saved position yet — state still holds the
     // default page 0, and flushing it (e.g. closing the reader while "Loading
     // pages…" is showing) would overwrite the stored progress. User navigation
@@ -348,6 +353,7 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
         lastReadAtMillis: lastReadAt,
       );
       await _markSynced(db, mediaId, page, isCompleted, lastReadAt);
+      if (refreshCovers) ref.invalidate(progressSummariesProvider);
     } catch (_) {
       // Will be picked up by the background sync on next online event
     }
@@ -496,4 +502,7 @@ Future<void> syncPendingProgress(WidgetRef ref) async {
       // Keep row as unsynced; will retry next time
     }
   }
+
+  // Covers show server-side summaries; refetch them now the server has caught up.
+  ref.invalidate(progressSummariesProvider);
 }

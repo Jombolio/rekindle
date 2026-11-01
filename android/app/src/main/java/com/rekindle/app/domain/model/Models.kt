@@ -1,5 +1,7 @@
 package com.rekindle.app.domain.model
 
+import kotlin.math.roundToInt
+
 data class ServerSource(
     val id: String,
     val name: String,
@@ -40,6 +42,48 @@ data class ReadingProgress(
     val isCompleted: Boolean,
     val lastReadAt: Long,
 )
+
+/**
+ * Per-user reading state for one media item, as shown on its cover. Mirrors
+ * the server's `ProgressSummary`.
+ *
+ * @param progress Fraction read, 0 to 1. For a series, the average over all its chapters.
+ * @param newCount Series only: chapters added since the user last read anything in it.
+ * @param isNew Chapters only: added since the user last read the series, not opened yet.
+ */
+data class ProgressSummary(
+    val mediaId: String,
+    val progress: Float,
+    val isCompleted: Boolean,
+    val newCount: Int = 0,
+    val isNew: Boolean = false,
+) {
+    /** Whether there is anything to draw: started reading, or finished. */
+    val isStarted: Boolean get() = isCompleted || progress > 0f
+    val percent: Int get() = (progress * 100).roundToInt()
+
+    companion object {
+        /**
+         * From this device's local progress, for when the server can't be
+         * reached. Only possible for a single archive: a series' progress spans
+         * chapters that may never have been opened here. Without a known
+         * [pageCount] the fraction can't be computed, so only completion shows.
+         */
+        fun fromLocal(
+            mediaId: String,
+            currentPage: Int,
+            isCompleted: Boolean,
+            pageCount: Int?,
+        ): ProgressSummary {
+            val fraction = when {
+                isCompleted -> 1f
+                pageCount != null && pageCount > 0 -> (currentPage.toFloat() / pageCount).coerceIn(0f, 1f)
+                else -> 0f
+            }
+            return ProgressSummary(mediaId, fraction, isCompleted)
+        }
+    }
+}
 
 data class PagedResponse<T>(
     val items: List<T>,

@@ -4,6 +4,7 @@ import com.google.gson.annotations.SerializedName
 import com.rekindle.app.domain.model.Library
 import com.rekindle.app.domain.model.Media
 import com.rekindle.app.domain.model.PagedResponse
+import com.rekindle.app.domain.model.ProgressSummary
 import com.rekindle.app.domain.model.ReadingProgress
 
 data class LibraryDto(
@@ -32,6 +33,16 @@ data class ReadingProgressDto(
     val currentPage: Int = 0,
     val isCompleted: Boolean = false,
     val lastReadAt: String? = null,
+)
+
+data class ProgressSummaryRequest(val ids: List<String>)
+
+data class ProgressSummaryDto(
+    val mediaId: String,
+    val progress: Double = 0.0,
+    val isCompleted: Boolean = false,
+    val newCount: Int = 0,
+    val isNew: Boolean = false,
 )
 
 data class PagedResponseDto<T>(
@@ -74,6 +85,13 @@ fun ReadingProgressDto.toDomain() = ReadingProgress(
     currentPage = currentPage,
     isCompleted = isCompleted,
     lastReadAt = 0L,
+)
+fun ProgressSummaryDto.toDomain() = ProgressSummary(
+    mediaId = mediaId,
+    progress = progress.toFloat().coerceIn(0f, 1f),
+    isCompleted = isCompleted,
+    newCount = newCount,
+    isNew = isNew,
 )
 fun <T, R> PagedResponseDto<T>.toDomain(mapper: (T) -> R) = PagedResponse(
     items = items.map(mapper),

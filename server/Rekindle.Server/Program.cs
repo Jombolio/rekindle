@@ -79,6 +79,7 @@ builder.Services.AddScoped<UserRepository>();
 builder.Services.AddScoped<LibraryRepository>();
 builder.Services.AddScoped<MediaRepository>();
 builder.Services.AddScoped<ProgressRepository>();
+builder.Services.AddScoped<ProgressSummaryService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddSingleton<SetupTokenService>();
 builder.Services.AddSingleton<ScanProgressTracker>();

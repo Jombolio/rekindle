@@ -30,6 +30,7 @@ import com.rekindle.app.core.download.DownloadStatus
 import com.rekindle.app.core.download.FolderDownloadState
 import com.rekindle.app.core.download.FolderDownloadStatus
 import com.rekindle.app.domain.model.Media
+import com.rekindle.app.domain.model.ProgressSummary
 
 private enum class DownloadBadge { ALL, MIXED }
 
@@ -41,6 +42,7 @@ fun MediaCard(
     downloadState: DownloadState,
     folderDownloadState: FolderDownloadState = FolderDownloadState(),
     modifier: Modifier = Modifier,
+    progressSummary: ProgressSummary? = null,
 ) {
     // Determine which badge (if any) to show:
     //  ALL  = green  → everything is available offline
@@ -77,6 +79,16 @@ fun MediaCard(
                 contentDescription = media.displayTitle,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.matchParentSize(),
+            )
+
+            // Read progress — top-left; new-chapter count — top-right
+            ReadProgressRing(
+                summary = progressSummary,
+                modifier = Modifier.align(Alignment.TopStart).padding(4.dp),
+            )
+            NewChaptersBadge(
+                count = progressSummary?.newCount ?: 0,
+                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
             )
 
             // Download status badge — bottom-right, non-interactive

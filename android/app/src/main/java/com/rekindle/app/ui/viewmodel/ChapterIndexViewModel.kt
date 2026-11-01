@@ -14,6 +14,7 @@ import com.rekindle.app.data.repository.MediaRepository
 import com.rekindle.app.data.repository.MetadataRepository
 import com.rekindle.app.domain.model.MangaMetadata
 import com.rekindle.app.domain.model.Media
+import com.rekindle.app.domain.model.ProgressSummary
 import com.rekindle.app.domain.model.ScrapeResult
 import com.rekindle.app.domain.model.ScrapeStatus
 import org.json.JSONObject
@@ -33,6 +34,8 @@ import javax.inject.Inject
 data class ChapterIndexState(
     val chapters: List<Media> = emptyList(),
     val readProgress: Map<String, ProgressQueueEntity> = emptyMap(),
+    /** Server reading state by media id: cross-device progress and "new" flags. */
+    val summaries: Map<String, ProgressSummary> = emptyMap(),
     val loading: Boolean = true,
     val error: String? = null,
     val metadata: MangaMetadata? = null,
@@ -103,6 +106,7 @@ class ChapterIndexViewModel @Inject constructor(
             runCatching { repo.getChapters(folderId) }
                 .onSuccess { chapters ->
                     _state.update { it.copy(chapters = chapters, loading = false) }
+                    loadSummaries()
                     chapters.forEach { downloadRepo.restoreIfNeeded(it.id) }
                     downloadRepo.restoreFolderIfNeeded(folderId)
                     // Observe (not one-shot read) so the badges refresh the moment
@@ -127,6 +131,33 @@ class ChapterIndexViewModel @Inject constructor(
                 _state.update { it.copy(metadata = meta, metadataLoading = false) }
             }
         }
+        // This ViewModel survives opening the reader; refresh the server
+        // summaries once it reports the exit-time sync.
+        viewModelScope.launch {
+            repo.coverProgressChanged.collect { loadSummaries() }
+        }
+    }
+
+    private fun loadSummaries() {
+        val chapters = _state.value.chapters
+        if (chapters.isEmpty()) return
+        viewModelScope.launch {
+            val fetched = repo.getProgressSummaries(chapters)
+            _state.update { it.copy(summaries = fetched) }
+        }
+    }
+
+    /**
+     * What to show for [media]: unsynced local progress first (it is newer than
+     * anything the server has), then the server's summary, then synced local
+     * progress (offline).
+     */
+    fun summaryFor(media: Media, state: ChapterIndexState): ProgressSummary? {
+        val local = state.readProgress[media.id]?.let {
+            ProgressSummary.fromLocal(media.id, it.currentPage, it.isCompleted, media.pageCount)
+        }
+        if (local != null && state.readProgress[media.id]?.synced == false) return local
+        return state.summaries[media.id] ?: local
     }
 
     fun scrapeMetadata() {

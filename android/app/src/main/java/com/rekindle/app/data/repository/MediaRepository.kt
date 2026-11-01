@@ -3,14 +3,21 @@ package com.rekindle.app.data.repository
 import com.rekindle.app.data.api.RekindleApi
 import com.rekindle.app.data.db.ProgressQueueDao
 import com.rekindle.app.data.db.ProgressQueueEntity
+import com.rekindle.app.data.model.ProgressSummaryRequest
 import com.rekindle.app.data.model.SaveProgressRequest
 import com.rekindle.app.data.model.toDomain
 import com.rekindle.app.domain.model.Library
 import com.rekindle.app.domain.model.Media
 import com.rekindle.app.domain.model.PagedResponse
+import com.rekindle.app.domain.model.ProgressSummary
 import com.rekindle.app.domain.model.ReadingProgress
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -98,7 +105,53 @@ class MediaRepository @Inject constructor(
         )
     }
 
-    suspend fun syncProgress(mediaId: String) {
+    private val _coverProgressChanged = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    /**
+     * Emits when the server has new reading progress that covers should show.
+     * Grid and chapter screens stay alive under the reader, so they refetch
+     * their [getProgressSummaries] on this rather than on screen resume, which
+     * would race the exit-time sync.
+     */
+    val coverProgressChanged: SharedFlow<Unit> = _coverProgressChanged.asSharedFlow()
+
+    /**
+     * Reading state for the covers of [items], keyed by media id. Falls back
+     * to this device's own progress (archives only) when the server can't be
+     * reached or predates the endpoint.
+     */
+    suspend fun getProgressSummaries(items: List<Media>): Map<String, ProgressSummary> {
+        if (items.isEmpty()) return emptyMap()
+        return try {
+            items.map { it.id }
+                .chunked(MAX_SUMMARY_IDS)
+                .flatMap { api.getProgressSummaries(ProgressSummaryRequest(it)) }
+                .associate { it.mediaId to it.toDomain() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            val archives = items.filter { !it.isFolder }
+            val local = archives.map { it.id }
+                .chunked(MAX_SUMMARY_IDS)
+                .flatMap { progressDao.getByMediaIds(it) }
+                .associateBy { it.mediaId }
+            archives.mapNotNull { media ->
+                local[media.id]?.let {
+                    ProgressSummary.fromLocal(media.id, it.currentPage, it.isCompleted, media.pageCount)
+                }
+            }.associateBy { it.mediaId }
+        }
+    }
+
+    /**
+     * @param notifyCovers emit [coverProgressChanged] once the server has the
+     * write. Only exit-time syncs ask for it: the grid can't be seen while
+     * reading, and refetching it on every debounced page sync is wasted work.
+     */
+    suspend fun syncProgress(mediaId: String, notifyCovers: Boolean = false) {
         val local = progressDao.getByMediaId(mediaId) ?: return
         try {
             api.saveProgress(
@@ -118,12 +171,15 @@ class MediaRepository @Inject constructor(
             progressDao.markSyncedIfUnchanged(
                 mediaId, local.currentPage, local.isCompleted, local.lastReadAt,
             )
+            if (notifyCovers) _coverProgressChanged.tryEmit(Unit)
         } catch (_: Exception) { /* retry later */ }
     }
 
     /** Syncs all queued progress; returns true only if nothing remains unsynced. */
     suspend fun syncAllPending(): Boolean {
-        progressDao.getUnsynced().forEach { syncProgress(it.mediaId) }
+        val pending = progressDao.getUnsynced()
+        pending.forEach { syncProgress(it.mediaId) }
+        if (pending.isNotEmpty()) _coverProgressChanged.tryEmit(Unit)
         return progressDao.getUnsynced().isEmpty()
     }
 
@@ -135,4 +191,9 @@ class MediaRepository @Inject constructor(
 
     fun coverUrl(baseUrl: String, mediaId: String): String =
         "${baseUrl.trimEnd('/')}/api/media/$mediaId/cover"
+
+    private companion object {
+        /** The server's per-request limit; also keeps Room's IN (...) lists small. */
+        const val MAX_SUMMARY_IDS = 500
+    }
 }
