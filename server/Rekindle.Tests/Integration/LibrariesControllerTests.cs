@@ -51,16 +51,27 @@ public class LibrariesControllerTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Create_WithNonExistentPath_Returns400()
+    public async Task Create_WithUncreatablePath_Returns400()
     {
-        var resp = await _client.PostAsJsonAsync("/api/libraries", new
+        // The controller creates a missing root directory, so the path must be
+        // one that can't be created even by root (CI runners often run as
+        // root): a directory beneath an existing regular file.
+        var file = Path.GetTempFileName();
+        try
         {
-            name = "Bad Library",
-            rootPath = "/this/path/does/not/exist",
-            type = "comic"
-        });
+            var resp = await _client.PostAsJsonAsync("/api/libraries", new
+            {
+                name = "Bad Library",
+                rootPath = Path.Combine(file, "library"),
+                type = "comic"
+            });
 
-        resp.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            resp.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
     }
 
     [Fact]
