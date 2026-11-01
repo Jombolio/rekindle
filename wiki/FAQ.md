@@ -149,6 +149,10 @@ Set `Rekindle.DataPath` and `Rekindle.CachePath` in `appsettings.json` to paths 
 
 ### How do I update the server?
 
+From version 1.5.0, stop the server, run it once with `--update`, and start it again. It installs the newest stable release and leaves your `appsettings.json` and `data/` alone; `--dev-update` does the same including pre-releases. See [Updating](Installing-the-Server#updating).
+
+On older versions, or to update by hand:
+
 1. Stop the running server.
 2. Replace the binary (and native libraries) with the new version from the release archive.
 3. Leave the `data/` folder in place, they are not overwritten by the updates, make sure to update `appsettings.json` though.

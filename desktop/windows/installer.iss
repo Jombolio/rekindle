@@ -1,7 +1,7 @@
 #define AppName "Rekindle"
-#define AppVersion "1.4.1"
+#define AppVersion "1.5.0-beta.1"
 #define AppExeName "rekindle.exe"
-#define AppURL "https://github.com/Jombolio/rekindle"
+#define AppURL "https://git.jombo.uk/Jombo/rekindle"
 
 [Setup]
 AppId={{A3F2C1D4-8B7E-4F2A-9C6D-1E5B3A7F8D2C}

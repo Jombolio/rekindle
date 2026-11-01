@@ -115,6 +115,30 @@ sc delete Rekindle
 
 ---
 
+## Updating
+
+From version 1.5.0 the server can update itself from the project's releases. Stop it first, run the binary with an update flag, then start it again:
+
+```bash
+sudo systemctl stop rekindle
+/opt/rekindle/Rekindle.Server --update
+sudo systemctl start rekindle
+```
+
+On Windows, use `sc stop Rekindle`, `C:\RekindleServer\Rekindle.Server.exe --update`, then `sc start Rekindle`.
+
+| Flag | What it does |
+|------|--------------|
+| `--check-update` | Shows the newest release and pre-release, and installs nothing |
+| `--update` | Installs the newest **stable** release, if it is newer than yours |
+| `--dev-update` | Installs the newest release **including pre-releases** (betas, release candidates), for testing |
+
+The update only replaces the files that ship in the release. It never touches `appsettings.json` (or any `appsettings.*.json`), your `data/` and cache folders, or anything else you keep in the server's folder. Each download is checked against the SHA-256 published with the release and refused if it doesn't match. If anything fails part-way, every file is put back as it was.
+
+An update never moves you to an older version: on a pre-release, `--update` waits until a stable release newer than yours exists. Releases come from `https://git.jombo.uk/Jombo/rekindle` by default; see `Rekindle.UpdateSource` in [Configuration](Configuration).
+
+---
+
 ## Next Steps
 
 - [Configuration](Configuration) | Change the port, data path, cache size, and more
