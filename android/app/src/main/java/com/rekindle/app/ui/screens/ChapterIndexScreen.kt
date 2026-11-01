@@ -79,6 +79,7 @@ import com.rekindle.app.domain.model.MangaMetadata
 import com.rekindle.app.domain.model.Media
 import com.rekindle.app.domain.model.ScrapeResult
 import com.rekindle.app.ui.components.DownloadButton
+import com.rekindle.app.ui.components.ReadProgressRing
 import com.rekindle.app.ui.viewmodel.ChapterIndexViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -241,33 +242,51 @@ fun ChapterIndexScreen(
                 items(state.chapters, key = { it.id }) { chapter ->
                     val dlState = downloadStates[chapter.id] ?: vm.downloadStateFor(chapter.id)
                     val progress = state.readProgress[chapter.id]
-                    val isCompleted = progress?.isCompleted == true
-                    val inProgress = progress != null && !progress.isCompleted && progress.currentPage > 0
-                    val readLabel = when {
+                    val summary = vm.summaryFor(chapter, state)
+                    val isCompleted = summary?.isCompleted == true
+                    val inProgress = !isCompleted && summary?.isStarted == true
+                    val isNew = summary?.isNew == true
+                    val newCount = summary?.newCount ?: 0
+                    val progressLabel = when {
                         isCompleted -> "Read"
-                        inProgress -> chapter.pageCount
-                            ?.let { "In progress · ${progress!!.currentPage + 1} / $it" }
-                            ?: "In progress"
+                        // This device knows the exact page; otherwise use the server's fraction.
+                        inProgress -> progress?.takeIf { !it.isCompleted && it.currentPage > 0 }
+                            ?.let { p -> chapter.pageCount?.let { "In progress · ${p.currentPage + 1} / $it" } }
+                            ?: "${summary!!.percent}% read"
+                        chapter.isFolder -> null
                         else -> chapter.pageCount?.let { "$it pages" }
                     }
+                    val readLabel = listOfNotNull(
+                        "New".takeIf { isNew },
+                        progressLabel,
+                        "$newCount new".takeIf { newCount > 0 },
+                    ).joinToString(" · ").ifEmpty { null }
                     val labelColor = when {
+                        isNew || newCount > 0 -> MaterialTheme.colorScheme.secondary
                         isCompleted -> MaterialTheme.colorScheme.primary
                         inProgress -> MaterialTheme.colorScheme.tertiary
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     }
                     ListItem(
                         leadingContent = {
-                            AsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current)
-                                    .data(vm.coverUrl(chapter.id))
-                                    .addHeader("Authorization", vm.authHeader)
-                                    .diskCacheKey(chapter.coverCachePath ?: chapter.id)
-                                    .crossfade(true)
-                                    .build(),
-                                contentDescription = null,
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier.size(width = 48.dp, height = 68.dp),
-                            )
+                            Box {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data(vm.coverUrl(chapter.id))
+                                        .addHeader("Authorization", vm.authHeader)
+                                        .diskCacheKey(chapter.coverCachePath ?: chapter.id)
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.size(width = 48.dp, height = 68.dp),
+                                )
+                                ReadProgressRing(
+                                    summary = summary,
+                                    size = 18.dp,
+                                    modifier = Modifier.align(Alignment.TopStart).padding(2.dp),
+                                )
+                            }
                         },
                         headlineContent = {
                             Text(

@@ -73,6 +73,7 @@ fun MediaGridScreen(
     val searchResults by vm.searchResults.collectAsState()
     val searchLoading by vm.searchLoading.collectAsState()
     val canDownload by vm.canDownload.collectAsState()
+    val summaries by vm.summaries.collectAsState()
     var seriesToDownload by remember { mutableStateOf<Media?>(null) }
     var seriesToCancel by remember { mutableStateOf<Media?>(null) }
     val gridCellSize = when (currentWindowWidthClass()) {
@@ -204,6 +205,7 @@ fun MediaGridScreen(
                                     downloadState = dlState,
                                     folderDownloadState = folderDlState
                                         ?: com.rekindle.app.core.download.FolderDownloadState(),
+                                    progressSummary = summaries[media.id],
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .aspectRatio(2f / 3f)

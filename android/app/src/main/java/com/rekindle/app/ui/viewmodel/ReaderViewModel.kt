@@ -237,7 +237,7 @@ class ReaderViewModel @Inject constructor(
         // launched on it never runs — the exit-time save needs its own scope.
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             repo.saveProgress(mediaId, s.currentPage, s.currentPage >= s.totalPages - 1)
-            repo.syncProgress(mediaId)
+            repo.syncProgress(mediaId, notifyCovers = true)
         }
     }
 }
