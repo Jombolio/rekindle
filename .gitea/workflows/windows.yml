@@ -1,0 +1,110 @@
+name: Windows
+
+# Windows builds on the self-hosted Windows runner (a dockur/windows VM with
+# act_runner in host mode, label `windows`). Mirrors the Windows jobs in
+# .github/workflows/build.yml, plus a check that the published server boots.
+#
+# Host mode means jobs run directly on the VM with its preinstalled toolchain
+# (Flutter 3.47.3, VS 2022 Build Tools, .NET 10, Inno Setup 6), not in a
+# container, so there are no setup-* actions here.
+#
+# Manual-only while the runner is being brought up: with no runner online,
+# push and PR runs would sit in "Waiting" forever. Once it works, enable:
+#   push:
+#     branches: [main]
+#   pull_request:
+#     branches: [main]
+
+on:
+  workflow_dispatch:
+
+defaults:
+  run:
+    # Windows PowerShell 5.1 is always present; PowerShell 7 may not be.
+    shell: powershell
+
+jobs:
+  client:
+    name: Client — Windows
+    runs-on: windows
+    steps:
+      - uses: actions/checkout@v4
+
+      # A host-mode runner keeps whatever Flutter the VM has installed, so
+      # fail loudly if it drifts from the version pinned for GitHub CI.
+      - name: Check Flutter version
+        run: |
+          $expected = '3.47.3'
+          $version = (flutter --version --machine | ConvertFrom-Json).frameworkVersion
+          Write-Host "Flutter $version"
+          if ($version -ne $expected) { throw "Expected Flutter $expected, found $version" }
+
+      - name: Build
+        working-directory: desktop
+        run: flutter build windows --release --obfuscate --split-debug-info=symbols/
+
+      - name: Build installer
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" desktop\windows\installer.iss; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rekindle-windows-x64Setup
+          path: desktop/windows/output/Rekindle-windows-x64Setup.exe
+
+  server:
+    name: Server — Windows
+    runs-on: windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test
+        working-directory: server
+        run: dotnet test; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Publish
+        working-directory: server
+        env:
+          # ImageSharp 3.2+ refuses Release builds without a Six Labors
+          # license. Add SIXLABORS_LICENSE_KEY under the Gitea repository's
+          # Settings → Actions → Secrets.
+          SixLaborsLicenseKey: ${{ secrets.SIXLABORS_LICENSE_KEY }}
+        run: dotnet publish Rekindle.Server/Rekindle.Server.csproj /p:PublishProfile=win-x64; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # GitHub CI only builds the Windows server. Start the published
+      # executable to prove it runs, including loading its native libraries
+      # (SQLite, pdfium, and libvips on the NetVips fallback branch).
+      - name: Boot check
+        run: |
+          $app = Join-Path $env:RUNNER_TEMP 'rekindle-boot'
+          if (Test-Path $app) { Remove-Item $app -Recurse -Force }
+          Copy-Item server\Rekindle.Server\bin\publish\win-x64 $app -Recurse
+          $log = Join-Path $app 'stdout.log'
+          $err = Join-Path $app 'stderr.log'
+
+          $proc = Start-Process -FilePath (Join-Path $app 'Rekindle.Server.exe') `
+            -WorkingDirectory $app -PassThru -NoNewWindow `
+            -RedirectStandardOutput $log -RedirectStandardError $err `
+            -ArgumentList '--urls', 'http://127.0.0.1:18080',
+                          "--Rekindle:DataPath=$app\data",
+                          "--Rekindle:CachePath=$app\data\cache"
+
+          $started = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            Start-Sleep -Seconds 1
+            if ($proc.HasExited) { break }
+            if ((Test-Path $log) -and (Select-String -Path $log -Pattern 'Application started' -Quiet)) {
+              $started = $true
+              break
+            }
+          }
+
+          if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
+          Write-Host '--- server output ---'
+          if (Test-Path $log) { Get-Content $log }
+          if (Test-Path $err) { Get-Content $err }
+          if (-not $started) { throw 'Published server did not start within 60 seconds' }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RekindleServer-win-x64
+          path: server/Rekindle.Server/bin/publish/win-x64/
