@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/storage/prefs.dart';
+import 'core/update/auto_update.dart';
+import 'core/update/update_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/connectivity_provider.dart';
 import 'providers/discord_presence_provider.dart';
 import 'providers/reader_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/sources_provider.dart';
+import 'providers/update_provider.dart';
 import 'screens/add_source_screen.dart';
 import 'screens/admin_panel_screen.dart';
 import 'screens/chapter_index_screen.dart';
@@ -17,6 +21,7 @@ import 'screens/library_screen.dart';
 import 'screens/media_grid_screen.dart';
 import 'screens/reader_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/widgets/update_flow.dart';
 
 final _routerProvider = Provider<GoRouter>((ref) {
   final refreshNotifier = ValueNotifier<int>(0);
@@ -136,7 +141,44 @@ class _RekindleAppState extends ConsumerState<RekindleApp> {
       if (mounted && ref.read(isOnlineProvider)) {
         syncPendingProgress(ref);
       }
+      _autoCheckForUpdates();
     });
+  }
+
+  /// Looks for a new version shortly after start, at most once a day, and
+  /// offers it unless the user skipped that version. Stays silent when
+  /// there's nothing new or the check fails.
+  Future<void> _autoCheckForUpdates() async {
+    // Let startup work (progress sync, first screen) settle first.
+    await Future<void>.delayed(const Duration(seconds: 5));
+    if (!mounted) return;
+
+    final settings = ref.read(settingsProvider);
+    final prefs = Prefs.instance;
+    if (!shouldAutoCheck(
+            enabled: settings.autoCheckUpdates,
+            lastCheck: prefs.lastUpdateCheck,
+            now: DateTime.now()) ||
+        !ref.read(isOnlineProvider)) {
+      return;
+    }
+
+    final result = await ref
+        .read(updateServiceProvider)
+        .check(includePreReleases: settings.receivePreReleases);
+    // A failed check is retried on the next start rather than a day later.
+    if (result.status != UpdateStatus.error) {
+      await prefs.setLastUpdateCheck(DateTime.now());
+    }
+    if (!mounted ||
+        !shouldOfferAutomatically(result, prefs.skippedUpdateVersion)) {
+      return;
+    }
+
+    final navContext =
+        ref.read(_routerProvider).routerDelegate.navigatorKey.currentContext;
+    if (navContext == null || !navContext.mounted) return;
+    await UpdateFlow.offer(navContext, ref, result, automatic: true);
   }
 
   @override

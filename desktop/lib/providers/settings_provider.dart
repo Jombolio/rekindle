@@ -22,12 +22,16 @@ class SettingsState {
   /// Offer pre-releases (betas, release candidates) when checking for updates.
   final bool receivePreReleases;
 
+  /// Check for updates when the app starts, at most once a day.
+  final bool autoCheckUpdates;
+
   const SettingsState({
     required this.themeMode,
     required this.downloadDirectory,
     required this.confirmChapterChange,
     required this.chapterConfirmWindow,
     this.receivePreReleases = false,
+    this.autoCheckUpdates = true,
     this.discord = const DiscordPresenceSettings(),
   });
 
@@ -37,6 +41,7 @@ class SettingsState {
     bool? confirmChapterChange,
     Duration? chapterConfirmWindow,
     bool? receivePreReleases,
+    bool? autoCheckUpdates,
     DiscordPresenceSettings? discord,
   }) =>
       SettingsState(
@@ -45,6 +50,7 @@ class SettingsState {
         confirmChapterChange: confirmChapterChange ?? this.confirmChapterChange,
         chapterConfirmWindow: chapterConfirmWindow ?? this.chapterConfirmWindow,
         receivePreReleases: receivePreReleases ?? this.receivePreReleases,
+        autoCheckUpdates: autoCheckUpdates ?? this.autoCheckUpdates,
         discord: discord ?? this.discord,
       );
 }
@@ -67,6 +73,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
         milliseconds: _clampConfirmMs(prefs.chapterConfirmMs),
       ),
       receivePreReleases: prefs.receivePreReleases,
+      autoCheckUpdates: prefs.autoCheckUpdates,
       discord: DiscordPresenceSettings(
         enabled: prefs.discordEnabled,
         titleMode: DiscordTitleMode.parse(prefs.discordTitleMode),
@@ -101,6 +108,11 @@ class SettingsNotifier extends Notifier<SettingsState> {
   Future<void> setReceivePreReleases({required bool receive}) async {
     await Prefs.instance.setReceivePreReleases(receive: receive);
     state = state.copyWith(receivePreReleases: receive);
+  }
+
+  Future<void> setAutoCheckUpdates({required bool enabled}) async {
+    await Prefs.instance.setAutoCheckUpdates(enabled: enabled);
+    state = state.copyWith(autoCheckUpdates: enabled);
   }
 
   Future<void> setDiscordPresence(DiscordPresenceSettings discord) async {

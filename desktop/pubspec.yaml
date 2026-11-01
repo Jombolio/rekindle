@@ -34,6 +34,8 @@ dependencies:
 
   # Offline: ZIP/CBZ extraction on-device
   archive: ^3.6.1
+  # SHA-256 of downloaded updates, checked against the release's .sha256.
+  crypto: ^3.0.7
 
   # Connectivity detection
   connectivity_plus: ^6.1.1

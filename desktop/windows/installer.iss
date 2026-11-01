@@ -40,3 +40,10 @@ Name: "{commondesktop}\{#AppName}";   Filename: "{app}\{#AppExeName}"; Tasks: de
 Filename: "{app}\{#AppExeName}"; \
   Description: "Launch {#AppName}"; \
   Flags: nowait postinstall skipifsilent
+; In-app updates run this installer with /SILENT, which skips the entry
+; above, so relaunch Rekindle here. runasoriginaluser: the installer is
+; elevated, and the app must run as the user (their settings live in their
+; profile), not as the admin account that approved the install.
+Filename: "{app}\{#AppExeName}"; \
+  Flags: nowait runasoriginaluser; \
+  Check: WizardSilent

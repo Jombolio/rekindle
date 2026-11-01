@@ -116,7 +116,10 @@ class UpdateService {
 
   /// Launches the downloaded Windows installer detached and returns. The caller
   /// should exit the app so the installer can replace files.
-  Future<void> launchInstaller(String path) async {
+  ///
+  /// With [silent], the installer shows only its progress window, then
+  /// relaunches Rekindle itself (see installer.iss).
+  Future<void> launchInstaller(String path, {bool silent = false}) async {
     if (Platform.isWindows) {
       // The installer's manifest requires elevation (PrivilegesRequired=admin),
       // so CreateProcess — what Process.start uses — fails with
@@ -124,7 +127,10 @@ class UpdateService {
       // which shows the UAC prompt instead.
       await Process.start(
         'cmd',
-        ['/c', 'start', '', path],
+        [
+          '/c', 'start', '', path,
+          if (silent) ...['/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART'],
+        ],
         mode: ProcessStartMode.detached,
       );
     } else {
@@ -139,6 +145,13 @@ class UpdateService {
     } catch (_) {
       // Nothing more we can do; the dialog also shows the URL.
     }
+  }
+
+  /// The text of a small asset, e.g. a .sha256 file.
+  Future<String> downloadText(ReleaseAsset asset) async {
+    final resp = await _dio.get<String>(asset.downloadUrl,
+        options: Options(responseType: ResponseType.plain));
+    return resp.data ?? '';
   }
 
   /// The Windows installer asset for this release, if present.
@@ -245,6 +258,14 @@ class ReleaseInfo {
     this.isPreRelease = false,
     this.isDraft = false,
   });
+
+  /// The asset with exactly this name, if the release has it.
+  ReleaseAsset? asset(String name) {
+    for (final a in assets) {
+      if (a.name == name) return a;
+    }
+    return null;
+  }
 
   /// Normalized "X.Y.Z" or "X.Y.Z-pre", or null when no version was found.
   String? get version => semVersion?.toString();

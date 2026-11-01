@@ -99,9 +99,12 @@ jobs:
 
       - name: Upload to release
         run: |
+          # In-app updates refuse a download they can't verify.
+          sha256sum RekindleClient-linux-x86_64.AppImage > RekindleClient-linux-x86_64.AppImage.sha256
+          sha256sum RekindleClient-linux-x64.zip > RekindleClient-linux-x64.zip.sha256
           bash .gitea/scripts/upload-release-asset.sh \
-            RekindleClient-linux-x86_64.AppImage \
-            RekindleClient-linux-x64.zip
+            RekindleClient-linux-x86_64.AppImage RekindleClient-linux-x86_64.AppImage.sha256 \
+            RekindleClient-linux-x64.zip RekindleClient-linux-x64.zip.sha256
 
   release-windows:
     name: Client — Windows
@@ -138,9 +141,15 @@ jobs:
 
       - name: Upload to release
         run: |
+          # In-app updates refuse a download they can't verify.
+          foreach ($f in 'desktop\windows\output\Rekindle-windows-x64Setup.exe', 'RekindleClient-windows-x64.zip') {
+            $name = Split-Path $f -Leaf
+            $hash = (Get-FileHash -Algorithm SHA256 $f).Hash.ToLower()
+            [IO.File]::WriteAllText("$PWD\$name.sha256", "$hash  $name`n")
+          }
           & .gitea\scripts\upload-release-asset.ps1 `
-            desktop\windows\output\Rekindle-windows-x64Setup.exe `
-            RekindleClient-windows-x64.zip
+            desktop\windows\output\Rekindle-windows-x64Setup.exe Rekindle-windows-x64Setup.exe.sha256 `
+            RekindleClient-windows-x64.zip RekindleClient-windows-x64.zip.sha256
 
   release-android:
     name: Client — Android
@@ -327,4 +336,5 @@ jobs:
       - name: Upload to release
         run: |
           command -v jq >/dev/null || { sudo apt-get update -y && sudo apt-get install -y jq; }
-          bash .gitea/scripts/upload-release-asset.sh RekindleClient-linux-x86_64.flatpak
+          sha256sum RekindleClient-linux-x86_64.flatpak > RekindleClient-linux-x86_64.flatpak.sha256
+          bash .gitea/scripts/upload-release-asset.sh RekindleClient-linux-x86_64.flatpak RekindleClient-linux-x86_64.flatpak.sha256

@@ -10,7 +10,7 @@ import '../core/update/update_service.dart';
 import '../providers/discord_presence_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/update_provider.dart';
-import 'widgets/release_notes.dart';
+import 'widgets/update_flow.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -60,140 +60,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       case UpdateStatus.error:
         _snack(result.error ?? 'Could not check for updates.');
       case UpdateStatus.updateAvailable:
-        await _showUpdateDialog(result.release!, result.currentVersion);
+        await UpdateFlow.offer(context, ref, result);
     }
   }
 
   void _snack(String message) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Future<void> _showUpdateDialog(ReleaseInfo release, String current) async {
-    final service = ref.read(updateServiceProvider);
-    final installer =
-        Platform.isWindows ? service.windowsInstaller(release) : null;
-    final canInstall = installer != null;
-    final title = release.name.isNotEmpty
-        ? release.name
-        : 'Version ${release.version}';
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Update available: $title'),
-        content: SizedBox(
-          width: 480,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'You have $current. The newest is ${release.version}'
-                '${release.semVersion?.isPreRelease == true ? ' (pre-release)' : ''}.',
-                style: Theme.of(ctx).textTheme.bodyMedium,
-              ),
-              if (release.notes.trim().isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: ReleaseNotes(
-                      release.notes,
-                      textStyle: Theme.of(ctx).textTheme.bodySmall,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Later'),
-          ),
-          TextButton(
-            onPressed: () => service.openInBrowser(release.htmlUrl),
-            child: const Text('View release'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              if (canInstall) {
-                _downloadAndInstall(installer);
-              } else {
-                // Linux (or Windows with no installer asset): let the user grab
-                // the download from the release page.
-                service.openInBrowser(release.htmlUrl);
-              }
-            },
-            child: Text(canInstall ? 'Download and install' : 'Open download'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _downloadAndInstall(ReleaseAsset installer) async {
-    final service = ref.read(updateServiceProvider);
-    final progress = ValueNotifier<double>(0);
-
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Downloading update'),
-        content: SizedBox(
-          width: 360,
-          child: ValueListenableBuilder<double>(
-            valueListenable: progress,
-            builder: (_, v, __) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                LinearProgressIndicator(value: v > 0 ? v : null),
-                const SizedBox(height: 12),
-                Text('${(v * 100).toStringAsFixed(0)}%'),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-
-    // Capture the root navigator up front so the progress dialog can be closed
-    // even if the screen unmounts mid-download.
-    final rootNav = Navigator.of(context, rootNavigator: true);
-
-    String? path;
-    Object? downloadError;
-    try {
-      path = await service.downloadAsset(
-        installer,
-        onProgress: (p) => progress.value = p,
-      );
-    } catch (e) {
-      downloadError = e;
-    }
-
-    // Close the progress dialog exactly once, mounted or not.
-    rootNav.pop();
-    progress.dispose();
-    if (!mounted) return;
-
-    if (path == null) {
-      _snack('Download failed: $downloadError');
-      return;
-    }
-
-    // Launch the installer and quit so it can replace the running files (the
-    // Inno Setup installer closes and relaunches the app itself). Kept out of
-    // the dialog-pop path so a launch failure cannot double-pop the navigator.
-    try {
-      await service.launchInstaller(path);
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-      exit(0);
-    } catch (e) {
-      if (mounted) _snack('Could not start the installer: $e');
-    }
   }
 
   @override
@@ -487,6 +359,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           onChanged: (v) => ref
                               .read(settingsProvider.notifier)
                               .setReceivePreReleases(receive: v),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 32),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Check for updates automatically',
+                                  style: theme.textTheme.bodyLarge),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Look for a new version when Rekindle starts, '
+                                'at most once a day, and ask before installing.',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Switch(
+                          value: settings.autoCheckUpdates,
+                          onChanged: (v) => ref
+                              .read(settingsProvider.notifier)
+                              .setAutoCheckUpdates(enabled: v),
                         ),
                       ],
                     ),

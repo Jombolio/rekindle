@@ -113,6 +113,26 @@ class Prefs {
   Future<void> setReceivePreReleases({required bool receive}) =>
       _prefs.setBool('receive_pre_releases', receive);
 
+  // Check for updates when the app starts (at most once a day). On by default.
+  bool get autoCheckUpdates => _prefs.getBool('auto_check_updates') ?? true;
+  Future<void> setAutoCheckUpdates({required bool enabled}) =>
+      _prefs.setBool('auto_check_updates', enabled);
+
+  // When the last automatic check ran, so it runs at most once a day.
+  DateTime? get lastUpdateCheck {
+    final ms = _prefs.getInt('last_update_check');
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  Future<void> setLastUpdateCheck(DateTime when) =>
+      _prefs.setInt('last_update_check', when.millisecondsSinceEpoch);
+
+  // A version the user chose to skip: the automatic check won't offer it
+  // again (a manual check still does).
+  String? get skippedUpdateVersion => _prefs.getString('skipped_update_version');
+  Future<void> setSkippedUpdateVersion(String version) =>
+      _prefs.setString('skipped_update_version', version);
+
   // Double-page spine gap in logical pixels (global)
   double get doublePageGap => _prefs.getDouble('double_page_gap') ?? 0.0;
   Future<void> setDoublePageGap(double gap) =>
