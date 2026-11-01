@@ -199,3 +199,48 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.ref_name }}" RekindleServer-windows-x64.zip RekindleServer-windows-x64.zip.sha256 --clobber
+
+  release-flatpak:
+    name: Client — Flatpak
+    # Packages the Linux client zip this release has just published, rather
+    # than the older release the manifest is pinned to.
+    needs: release-linux
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use this release's client zip
+        run: >
+          bash desktop/linux/packaging/flatpak/use-release-zip.sh
+          "${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/RekindleClient-linux-x64.zip"
+
+      - uses: flathub-infra/flatpak-github-actions/flatpak-builder@933e9e8ca36e85046ebca8e211f0785c6becac40
+        with:
+          bundle: RekindleClient-linux-x86_64.flatpak
+          manifest-path: desktop/linux/packaging/flatpak/io.github.Jombolio.Rekindle.yml
+          cache-key: flatpak-builder-release-${{ github.sha }}
+          upload-artifact: false
+
+      # The build container has no gh, so a second job uploads it.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-bundle
+          path: RekindleClient-linux-x86_64.flatpak
+          if-no-files-found: error
+
+  upload-flatpak:
+    name: Client — Flatpak (upload)
+    needs: release-flatpak
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: flatpak-bundle
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" RekindleClient-linux-x86_64.flatpak --clobber --repo "${{ github.repository }}"

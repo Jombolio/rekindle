@@ -267,3 +267,67 @@ jobs:
 
       - name: Upload to release
         run: bash .gitea/scripts/upload-release-asset.sh RekindleServer-windows-x64.zip RekindleServer-windows-x64.zip.sha256
+
+  release-flatpak:
+    name: Client — Flatpak
+    # Packages the Linux client zip this release has just published, rather
+    # than the older release the manifest is pinned to.
+    needs: [publish, release-linux]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
+    outputs:
+      built: ${{ steps.bundle.outcome == 'success' }}
+    steps:
+      # The workflow's own commit, like the publish job: "Run workflow" on a
+      # tag older than this job still finds the script. On a tag push it is
+      # the tagged commit anyway.
+      - uses: actions/checkout@v4
+
+      - name: Use this release's client zip
+        run: >
+          bash desktop/linux/packaging/flatpak/use-release-zip.sh
+          "${{ github.server_url }}/${{ github.repository }}/releases/download/${{ needs.publish.outputs.tag }}/RekindleClient-linux-x64.zip"
+
+      # NON-BLOCKING until the runner host is fixed (see build.yml): the
+      # release still publishes without a Flatpak. Remove continue-on-error
+      # once this passes here.
+      - id: bundle
+        uses: flathub-infra/flatpak-github-actions/flatpak-builder@933e9e8ca36e85046ebca8e211f0785c6becac40
+        continue-on-error: true
+        with:
+          bundle: RekindleClient-linux-x86_64.flatpak
+          manifest-path: desktop/linux/packaging/flatpak/io.github.Jombolio.Rekindle.yml
+          # The action's own upload and cache need the v4 toolkit, which
+          # Gitea rejects.
+          upload-artifact: false
+          cache: false
+          restore-cache: false
+
+      # The build container has no jq for the upload script, so a second job
+      # uploads it.
+      - uses: actions/upload-artifact@v3
+        if: steps.bundle.outcome == 'success'
+        with:
+          name: flatpak-bundle
+          path: RekindleClient-linux-x86_64.flatpak
+
+  upload-flatpak:
+    name: Client — Flatpak (upload)
+    needs: [publish, release-flatpak]
+    if: needs.release-flatpak.outputs.built == 'true'
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_ID: ${{ needs.publish.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v3
+        with:
+          name: flatpak-bundle
+
+      - name: Upload to release
+        run: |
+          command -v jq >/dev/null || { sudo apt-get update -y && sudo apt-get install -y jq; }
+          bash .gitea/scripts/upload-release-asset.sh RekindleClient-linux-x86_64.flatpak
