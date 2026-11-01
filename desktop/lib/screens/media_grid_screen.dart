@@ -7,11 +7,12 @@ import 'package:go_router/go_router.dart';
 import '../core/models/media.dart';
 import '../providers/auth_provider.dart';
 import '../providers/media_provider.dart';
-import '../providers/reader_provider.dart';
+import '../providers/progress_summary_provider.dart';
 import 'widgets/cover_image.dart';
 import 'widgets/download_button.dart';
 import 'widgets/error_view.dart';
 import 'widgets/marquee_text.dart';
+import 'widgets/progress_badges.dart';
 
 class MediaGridScreen extends ConsumerStatefulWidget {
   final String libraryId;
@@ -287,6 +288,8 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
       );
     }
 
+    final ids = [for (final m in items) m.id];
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final columns = (constraints.maxWidth / 180).floor().clamp(2, 8);
@@ -305,8 +308,8 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
               itemCount: items.length,
               itemBuilder: (_, i) {
             final item = items[i];
-            final progress =
-                ref.watch(localProgressProvider(item.id)).valueOrNull;
+            final summary = watchProgressSummary(
+                ref, item, summaryChunkKey(ids, i, kGridSummaryChunk));
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -324,7 +327,8 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
                         ),
                       ),
                       if (item.isFolder) const FolderBadge(),
-                      ReadProgressBadge(progress: progress),
+                      ReadProgressRing(summary: summary),
+                      NewChaptersBadge(count: summary?.newCount ?? 0),
                       DownloadStatusBadge(
                         mediaId: item.id,
                         isFolder: item.isFolder,

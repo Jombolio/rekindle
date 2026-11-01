@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/download/download_state.dart';
 import '../../core/models/media.dart';
-import '../../core/models/reading_progress.dart';
 import '../../providers/download_provider.dart';
 
 /// Download button for folder/series items — downloads all contained archives
@@ -238,41 +237,6 @@ class FolderBadge extends StatelessWidget {
             Text('Series',
                 style: TextStyle(color: Colors.white, fontSize: 10)),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Progress badge overlaid on a cover — ✓ for completed, … for in-progress.
-/// Returns an empty box when there is no progress or the item was never opened.
-class ReadProgressBadge extends StatelessWidget {
-  final ReadingProgress? progress;
-  const ReadProgressBadge({super.key, required this.progress});
-
-  @override
-  Widget build(BuildContext context) {
-    final p = progress;
-    if (p == null) return const SizedBox.shrink();
-
-    final completed = p.isCompleted;
-    final inProgress = !completed && p.currentPage > 0;
-    if (!completed && !inProgress) return const SizedBox.shrink();
-
-    return Positioned(
-      top: 4,
-      left: 4,
-      child: Container(
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: (completed ? Colors.green : Colors.orange)
-              .withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Icon(
-          completed ? Icons.check : Icons.more_horiz,
-          size: 14,
-          color: Colors.white,
         ),
       ),
     );
