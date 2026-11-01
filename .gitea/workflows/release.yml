@@ -167,9 +167,12 @@ jobs:
         run: |
           cd server/Rekindle.Server/bin/publish/linux-x64
           zip -r ../../../../../RekindleServer-linux-x64.zip .
+          cd ../../../../..
+          # The server's --update refuses a download it can't verify.
+          sha256sum RekindleServer-linux-x64.zip > RekindleServer-linux-x64.zip.sha256
 
       - name: Upload to release
-        run: bash .gitea/scripts/upload-release-asset.sh RekindleServer-linux-x64.zip
+        run: bash .gitea/scripts/upload-release-asset.sh RekindleServer-linux-x64.zip RekindleServer-linux-x64.zip.sha256
 
   release-server-windows:
     name: Server — Windows
@@ -197,6 +200,9 @@ jobs:
         run: |
           cd server/Rekindle.Server/bin/publish/win-x64
           zip -r ../../../../../RekindleServer-windows-x64.zip .
+          cd ../../../../..
+          # The server's --update refuses a download it can't verify.
+          sha256sum RekindleServer-windows-x64.zip > RekindleServer-windows-x64.zip.sha256
 
       - name: Upload to release
-        run: bash .gitea/scripts/upload-release-asset.sh RekindleServer-windows-x64.zip
+        run: bash .gitea/scripts/upload-release-asset.sh RekindleServer-windows-x64.zip RekindleServer-windows-x64.zip.sha256
