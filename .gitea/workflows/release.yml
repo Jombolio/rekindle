@@ -1,31 +1,72 @@
 name: Release
 
-# Gitea counterpart of .github/workflows/release.yml: when a release is
-# published on Gitea, build every client and server artifact and attach it to
-# that release. GitHub's `gh release upload --clobber` has no Gitea equivalent,
-# so .gitea/scripts/upload-release-asset.{sh,ps1} call the release API instead.
+# Publishes a Gitea release and attaches every client and server artifact.
 #
-# The tagged commit must contain those scripts (anything released from main
-# after they were added does).
+# To release, bump the version, add release-notes/<tag>.md (optional; without
+# it the notes are the commits since the previous tag), then push the tag:
+#
+#   git tag -a v1.5.0 -m "Rekindle v1.5.0" && git push gitea v1.5.0
+#
+# A tag with a suffix (v1.5.0-beta.1) becomes a pre-release. "Run workflow"
+# with a tag publishes one that already exists, e.g. a tag pushed before this
+# workflow could see it. Re-running reuses the release and replaces its files.
+#
+# The build jobs check out the tag, so the tagged commit must contain
+# .gitea/scripts/upload-release-asset.* and write-android-keystore.sh
+# (anything tagged from main after November 2026 does).
 
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish, e.g. v1.5.0-beta.1
+        required: true
 
 env:
-  # Read by the upload scripts. The automatic token can write this
+  # Read by the release scripts. The automatic token can write this
   # repository's releases.
   GITEA_TOKEN: ${{ github.token }}
   GITEA_SERVER_URL: ${{ github.server_url }}
   GITEA_REPOSITORY: ${{ github.repository }}
-  RELEASE_ID: ${{ github.event.release.id }}
 
 jobs:
+  publish:
+    name: Publish release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      release_id: ${{ steps.release.outputs.id }}
+    steps:
+      # The workflow's own commit: it has the scripts and the notes, even when
+      # publishing an older tag through "Run workflow".
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install tools
+        run: |
+          command -v jq >/dev/null || { sudo apt-get update -y && sudo apt-get install -y jq; }
+
+      - name: Create or reuse the release
+        id: release
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          git fetch --force --tags origin
+          bash .gitea/scripts/create-release.sh
+
   release-linux:
     name: Client — Linux
+    needs: publish
+    env:
+      RELEASE_ID: ${{ needs.publish.outputs.release_id }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish.outputs.tag }}
 
       - uses: subosito/flutter-action@v2
         with:
@@ -64,6 +105,9 @@ jobs:
 
   release-windows:
     name: Client — Windows
+    needs: publish
+    env:
+      RELEASE_ID: ${{ needs.publish.outputs.release_id }}
     # The self-hosted Windows runner (host mode, preinstalled toolchain); see
     # windows.yml.
     runs-on: windows
@@ -72,6 +116,8 @@ jobs:
         shell: powershell
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish.outputs.tag }}
 
       - name: Check Flutter version
         run: |
@@ -98,9 +144,14 @@ jobs:
 
   release-android:
     name: Client — Android
+    needs: publish
+    env:
+      RELEASE_ID: ${{ needs.publish.outputs.release_id }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish.outputs.tag }}
 
       - uses: actions/setup-java@v5
         with:
@@ -143,9 +194,14 @@ jobs:
 
   release-server-linux:
     name: Server — Linux
+    needs: publish
+    env:
+      RELEASE_ID: ${{ needs.publish.outputs.release_id }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish.outputs.tag }}
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -176,10 +232,15 @@ jobs:
 
   release-server-windows:
     name: Server — Windows
+    needs: publish
+    env:
+      RELEASE_ID: ${{ needs.publish.outputs.release_id }}
     # Cross-published from Linux, as on GitHub; windows.yml boot-tests it.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish.outputs.tag }}
 
       - uses: actions/setup-dotnet@v4
         with:
