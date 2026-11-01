@@ -46,7 +46,8 @@ jobs:
       - name: Build installer
         run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" desktop\windows\installer.iss; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
 
-      - uses: actions/upload-artifact@v4
+      # v4 refuses to run on Gitea ("not supported on GHES"); v3 works.
+      - uses: actions/upload-artifact@v3
         with:
           name: Rekindle-windows-x64Setup
           path: desktop/windows/output/Rekindle-windows-x64Setup.exe
@@ -104,7 +105,8 @@ jobs:
           if (Test-Path $err) { Get-Content $err }
           if (-not $started) { throw 'Published server did not start within 60 seconds' }
 
-      - uses: actions/upload-artifact@v4
+      # v4 refuses to run on Gitea ("not supported on GHES"); v3 works.
+      - uses: actions/upload-artifact@v3
         with:
           name: RekindleServer-win-x64
           path: server/Rekindle.Server/bin/publish/win-x64/
