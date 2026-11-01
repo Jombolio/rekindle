@@ -12,6 +12,11 @@ desktop.ini
 # AI assistant memory (local only)
 .claude/
 
+# Six Labors (ImageSharp) license: put it at server/Rekindle.Core/sixlabors.lic
+# for local Release builds. CI reads it from the SIXLABORS_LICENSE_KEY secret.
+# It must never be committed: the repository is public.
+sixlabors.lic
+
 # Build artifacts
 *.zip
 *.tar.gz
