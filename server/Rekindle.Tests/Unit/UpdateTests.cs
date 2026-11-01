@@ -117,6 +117,7 @@ public class ReleaseFeedTests
     [InlineData("https://git.jombo.uk/Jombo/rekindle", "https://git.jombo.uk/api/v1/repos/Jombo/rekindle/releases?limit=50")]
     [InlineData("https://git.jombo.uk/Jombo/rekindle/", "https://git.jombo.uk/api/v1/repos/Jombo/rekindle/releases?limit=50")]
     [InlineData("https://example.com/gitea/Jombo/rekindle", "https://example.com/gitea/api/v1/repos/Jombo/rekindle/releases?limit=50")]
+    [InlineData("https://github.com/Jombolio/rekindle", "https://api.github.com/repos/Jombolio/rekindle/releases?per_page=50")]
     public void ReleasesApiUrl_KeepsAnySubPath(string repo, string expected)
     {
         ReleaseFeed.ReleasesApiUrl(new Uri(repo)).ToString().Should().Be(expected);

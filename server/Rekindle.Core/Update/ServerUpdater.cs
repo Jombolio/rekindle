@@ -4,22 +4,34 @@ using System.Text.RegularExpressions;
 
 namespace Rekindle.Core.Update;
 
-public sealed record UpdateCheck(SemVersion Current, Release? Latest)
+/// <param name="Source">The repository that answered.</param>
+/// <param name="SkippedSources">Earlier sources that couldn't be reached, with why.</param>
+public sealed record UpdateCheck(
+    SemVersion Current,
+    Release? Latest,
+    Uri Source,
+    IReadOnlyList<(Uri Source, string Reason)> SkippedSources)
 {
     public bool IsNewer => Latest?.Version is { } v && v > Current;
+    public bool UsedFallback => SkippedSources.Count > 0;
 }
 
 /// <summary>
-/// Finds, downloads, verifies and installs server releases from a Gitea
-/// repository. Each server zip must have a "&lt;zip&gt;.sha256" asset next to
-/// it; a release without one is refused rather than installed unverified.
+/// Finds, downloads, verifies and installs server releases. Sources are tried
+/// in order (Gitea first, GitHub as a fallback): the next one is used only when
+/// a source can't be reached or answers with something unreadable, not when it
+/// simply has nothing newer. Each server zip must have a "&lt;zip&gt;.sha256"
+/// asset next to it; a release without one is refused rather than installed
+/// unverified.
 /// </summary>
-public sealed partial class ServerUpdater(HttpClient http, Uri repositoryUrl, SemVersion current, string assetName)
+public sealed partial class ServerUpdater(
+    HttpClient http, IReadOnlyList<Uri> sources, SemVersion current, string assetName)
 {
-    private readonly ReleaseFeed _feed = new(http, repositoryUrl);
-
     public string AssetName => assetName;
-    public Uri RepositoryUrl => repositoryUrl;
+    public IReadOnlyList<Uri> Sources => sources;
+
+    public ServerUpdater(HttpClient http, Uri repositoryUrl, SemVersion current, string assetName)
+        : this(http, [repositoryUrl], current, assetName) { }
 
     /// The release zip for this OS and CPU, or null if none is published for it.
     public static string? PlatformAssetName()
@@ -32,9 +44,36 @@ public sealed partial class ServerUpdater(HttpClient http, Uri repositoryUrl, Se
 
     public async Task<UpdateCheck> CheckAsync(bool includePreReleases, CancellationToken ct = default)
     {
-        var releases = await _feed.GetReleasesAsync(ct);
-        return new UpdateCheck(current, ReleaseFeed.SelectNewest(releases, includePreReleases));
+        if (sources.Count == 0) throw new InvalidOperationException("No update source is configured.");
+
+        var skipped = new List<(Uri, string)>();
+        foreach (var source in sources)
+        {
+            try
+            {
+                var releases = await new ReleaseFeed(http, source).GetReleasesAsync(ct);
+                return new UpdateCheck(current, ReleaseFeed.SelectNewest(releases, includePreReleases), source, skipped);
+            }
+            catch (Exception e) when (IsUnreachable(e, ct))
+            {
+                skipped.Add((source, e.Message));
+            }
+        }
+
+        throw new HttpRequestException(
+            "No update source could be reached: " +
+            string.Join("; ", skipped.Select(s => $"{s.Item1.Host}: {s.Item2}")));
     }
+
+    /// Failures that mean "try the next source". A cancellation the caller
+    /// asked for is not one of them.
+    private static bool IsUnreachable(Exception e, CancellationToken ct) => e switch
+    {
+        HttpRequestException => true,
+        System.Text.Json.JsonException => true,
+        TaskCanceledException when !ct.IsCancellationRequested => true, // timeout
+        _ => false,
+    };
 
     public async Task<InstallResult> InstallAsync(
         Release release,

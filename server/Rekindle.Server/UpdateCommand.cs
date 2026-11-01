@@ -10,13 +10,16 @@ namespace Rekindle.Server;
 /// <item><c>--update</c>: install the newest stable release if it is newer;</item>
 /// <item><c>--dev-update</c>: the same, including pre-releases.</item>
 /// </list>
-/// Releases come from the Gitea repository in <c>Rekindle:UpdateSource</c>.
+/// Releases come from the Gitea repository in <c>Rekindle:UpdateSource</c>, or,
+/// if it can't be reached, from <c>Rekindle:UpdateFallbackSource</c> (GitHub by
+/// default; set it to "" to turn the fallback off).
 /// Only files shipped in the release zip are replaced; appsettings*.json and
 /// the data and cache directories are left as they are.
 /// </summary>
 internal static class UpdateCommand
 {
     public const string DefaultSource = "https://git.jombo.uk/Jombo/rekindle";
+    public const string DefaultFallbackSource = "https://github.com/Jombolio/rekindle";
 
     private const string Check = "--check-update";
     private const string Stable = "--update";
@@ -67,16 +70,38 @@ internal static class UpdateCommand
             return 1;
         }
 
-        var sourceText = config["Rekindle:UpdateSource"] is { Length: > 0 } s ? s : DefaultSource;
-        if (!Uri.TryCreate(sourceText, UriKind.Absolute, out var source))
+        var sources = new List<Uri>();
+        foreach (var (key, fallback) in new[]
+                 {
+                     ("Rekindle:UpdateSource", DefaultSource),
+                     ("Rekindle:UpdateFallbackSource", DefaultFallbackSource),
+                 })
         {
-            Console.Error.WriteLine($"Rekindle:UpdateSource '{sourceText}' is not a valid URL.");
+            // A missing key takes the default; an empty one turns that source off.
+            var text = config[key] ?? fallback;
+            if (text.Length == 0) continue;
+            if (!Uri.TryCreate(text, UriKind.Absolute, out var uri))
+            {
+                Console.Error.WriteLine($"{key} '{text}' is not a valid URL.");
+                return 1;
+            }
+            sources.Add(uri);
+        }
+        if (sources.Count == 0)
+        {
+            Console.Error.WriteLine("Both Rekindle:UpdateSource and Rekindle:UpdateFallbackSource are empty.");
             return 1;
         }
 
-        using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+        // The long overall timeout is for the download. A source that can't be
+        // reached fails fast instead: connecting is limited here, and listing
+        // releases has its own short limit (ReleaseFeed.ListTimeout).
+        using var http = new HttpClient(new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(15) })
+        {
+            Timeout = TimeSpan.FromMinutes(30),
+        };
         http.DefaultRequestHeaders.UserAgent.ParseAdd($"Rekindle-Server/{current}");
-        var updater = new ServerUpdater(http, source, current, assetName);
+        var updater = new ServerUpdater(http, sources, current, assetName);
 
         try
         {
@@ -84,10 +109,11 @@ internal static class UpdateCommand
 
             var includePre = command == Dev;
             var check = await updater.CheckAsync(includePre);
+            ReportFallback(check);
             if (!check.IsNewer)
             {
                 var channel = includePre ? "including pre-releases" : "stable";
-                Console.WriteLine($"Rekindle Server {current} is up to date ({channel}, from {source}).");
+                Console.WriteLine($"Rekindle Server {current} is up to date ({channel}, from {check.Source}).");
                 return 0;
             }
 
@@ -122,12 +148,19 @@ internal static class UpdateCommand
         var stable = await updater.CheckAsync(includePreReleases: false);
         var any = await updater.CheckAsync(includePreReleases: true);
 
-        Console.WriteLine($"Rekindle Server {current}, updates from {updater.RepositoryUrl}");
+        ReportFallback(any);
+        Console.WriteLine($"Rekindle Server {current}, updates from {any.Source}");
         Console.WriteLine($"  Newest release:     {Describe(stable)}");
         Console.WriteLine($"  Newest pre-release: {(any.Latest?.Version?.IsPreRelease == true ? Describe(any) : "none newer than the release")}");
         if (stable.IsNewer) Console.WriteLine($"Run with {Stable} to install it.");
         else if (any.IsNewer) Console.WriteLine($"Run with {Dev} to install the pre-release.");
         return 0;
+    }
+
+    private static void ReportFallback(UpdateCheck check)
+    {
+        foreach (var (source, reason) in check.SkippedSources)
+            Console.WriteLine($"Couldn't reach {source} ({reason}); using {check.Source} instead.");
     }
 
     private static string Describe(UpdateCheck check) => check.Latest is null

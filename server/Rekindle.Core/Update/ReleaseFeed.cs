@@ -36,13 +36,24 @@ public sealed class ReleaseFeed(HttpClient http, Uri repositoryUrl)
 
     public Uri RepositoryUrl { get; } = repositoryUrl;
 
+    /// How long listing releases may take before the source counts as
+    /// unreachable, so a hung server doesn't hold up the fallback.
+    public static TimeSpan ListTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
     public async Task<IReadOnlyList<Release>> GetReleasesAsync(CancellationToken ct = default)
     {
-        return await http.GetFromJsonAsync<List<Release>>(ReleasesApiUrl(RepositoryUrl), ct) ?? [];
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(ListTimeout);
+        return await http.GetFromJsonAsync<List<Release>>(ReleasesApiUrl(RepositoryUrl), timeout.Token) ?? [];
     }
 
-    /// https://host[/prefix]/owner/repo → https://host[/prefix]/api/v1/repos/owner/repo/releases,
-    /// keeping any sub-path Gitea is served under.
+    /// The release-list API for a repository URL:
+    /// <list type="bullet">
+    /// <item>https://github.com/owner/repo → https://api.github.com/repos/owner/repo/releases</item>
+    /// <item>https://host[/prefix]/owner/repo → https://host[/prefix]/api/v1/repos/owner/repo/releases
+    /// (Gitea, keeping any sub-path it is served under)</item>
+    /// </list>
+    /// Both return the fields <see cref="Release"/> reads under the same names.
     public static Uri ReleasesApiUrl(Uri repositoryUrl)
     {
         var segments = repositoryUrl.AbsolutePath.Trim('/').Split('/');
@@ -50,12 +61,20 @@ public sealed class ReleaseFeed(HttpClient http, Uri repositoryUrl)
             throw new InvalidOperationException(
                 $"Update source '{repositoryUrl}' must be a repository URL like https://host/owner/repo.");
 
-        var prefix = string.Join('/', segments[..^2]);
         var owner = segments[^2];
         var repo = segments[^1];
+
+        if (IsGitHub(repositoryUrl))
+            return new Uri($"https://api.github.com/repos/{owner}/{repo}/releases?per_page={PageSize}");
+
+        var prefix = string.Join('/', segments[..^2]);
         var path = (prefix.Length > 0 ? $"/{prefix}" : "") + $"/api/v1/repos/{owner}/{repo}/releases";
         return new UriBuilder(repositoryUrl) { Path = path, Query = $"limit={PageSize}" }.Uri;
     }
+
+    public static bool IsGitHub(Uri repositoryUrl) =>
+        repositoryUrl.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase)
+        || repositoryUrl.Host.Equals("www.github.com", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// The highest-versioned published release, or null if there is none.

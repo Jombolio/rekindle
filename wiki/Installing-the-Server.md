@@ -135,7 +135,9 @@ On Windows, use `sc stop Rekindle`, `C:\RekindleServer\Rekindle.Server.exe --upd
 
 The update only replaces the files that ship in the release. It never touches `appsettings.json` (or any `appsettings.*.json`), your `data/` and cache folders, or anything else you keep in the server's folder. Each download is checked against the SHA-256 published with the release and refused if it doesn't match. If anything fails part-way, every file is put back as it was.
 
-An update never moves you to an older version: on a pre-release, `--update` waits until a stable release newer than yours exists. Releases come from `https://git.jombo.uk/Jombo/rekindle` by default; see `Rekindle.UpdateSource` in [Configuration](Configuration).
+An update never moves you to an older version: on a pre-release, `--update` waits until a stable release newer than yours exists.
+
+Releases come from `https://git.jombo.uk/Jombo/rekindle`. If it can't be reached, the update falls back to the same releases on GitHub (`https://github.com/Jombolio/rekindle`) and says so. See `Rekindle.UpdateSource` and `Rekindle.UpdateFallbackSource` in [Configuration](Configuration).
 
 ---
 

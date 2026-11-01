@@ -12,6 +12,7 @@ The server is configured by editing `appsettings.json` in the same directory as 
 | `Rekindle.CachePath` | `data/cache` | Where extracted page images are cached. Can be on a separate drive from the database |
 | `Rekindle.CacheMaxSizeBytes` | `10737418240` | Maximum page cache size in bytes (default 10 GB). Oldest entries are evicted when the limit is reached |
 | `Rekindle.UpdateSource` | `https://git.jombo.uk/Jombo/rekindle` | The Gitea repository `--update` and `--dev-update` install releases from. See [Updating](Installing-the-Server#updating) |
+| `Rekindle.UpdateFallbackSource` | `https://github.com/Jombolio/rekindle` | Used only when `UpdateSource` can't be reached. Gitea and GitHub repositories both work. Set it to `""` to turn the fallback off |
 | `Jwt.Secret` | *(auto-generated)* | JWT signing secret. Auto-generated and written to `data/jwt_secret.key` on first run. Set this manually if you run multiple server instances behind a load balancer |
 | `Urls` | `http://0.0.0.0:8080` | The address and port Kestrel binds to. Accepts multiple values separated by semicolons |
 
