@@ -7,9 +7,6 @@ using Microsoft.Extensions.Options;
 using Rekindle.Core.Utilities;
 using SharpCompress.Archives;
 using SharpCompress.Common;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
 
 namespace Rekindle.Core.Services;
 
@@ -172,45 +169,35 @@ public class ArchiveService
 
             if (custom is not null)
             {
-                var ms = new MemoryStream();
-                using (var s = custom.OpenEntryStream())
-                    await s.CopyToAsync(ms);
-                ms.Position = 0;
-                try
-                {
-                    await Image.IdentifyAsync(ms);
-                    ms.Position = 0;
-                    return ms;
-                }
-                catch (UnknownImageFormatException)
-                {
-                    await ms.DisposeAsync();
-                }
+                var cover = await ReadDecodableEntryAsync(custom);
+                if (cover is not null)
+                    return cover;
             }
         }
 
         foreach (var entry in candidates)
         {
-            var ms = new MemoryStream();
-            using (var entryStream = entry.OpenEntryStream())
-                await entryStream.CopyToAsync(ms);
-            ms.Position = 0;
-
             // Skip entries that have an image extension but aren't actually
-            // decodable (e.g. macOS .__MACOSX artifacts, corrupt entries).
-            try
-            {
-                await Image.IdentifyAsync(ms);
-                ms.Position = 0;
-                return ms;
-            }
-            catch (UnknownImageFormatException)
-            {
-                await ms.DisposeAsync();
-            }
+            // decodable (e.g. macOS .__MACOSX artifacts, corrupt entries, or
+            // BMP, which libvips can't decode for a thumbnail).
+            var cover = await ReadDecodableEntryAsync(entry);
+            if (cover is not null)
+                return cover;
         }
 
         return null;
+    }
+
+    /// Reads an archive entry into memory and returns it as a stream if its
+    /// header is a supported image format, or null otherwise.
+    private static async Task<Stream?> ReadDecodableEntryAsync(IArchiveEntry entry)
+    {
+        using var buffer = new MemoryStream();
+        using (var entryStream = entry.OpenEntryStream())
+            await entryStream.CopyToAsync(buffer);
+
+        var bytes = buffer.ToArray();
+        return ImageCodec.TryGetSize(bytes) is null ? null : new MemoryStream(bytes, writable: false);
     }
 
     private static Task<Stream?> RenderPdfCoverAsync(string filePath)
@@ -222,22 +209,8 @@ public class ArchiveService
         var height = page.GetPageHeight();
         var rawBytes = page.GetImage(); // BGRA 8-bit per channel
 
-        using var image = LoadPdfPage(rawBytes, width, height);
-
-        var ms = new MemoryStream();
-        image.SaveAsJpeg(ms);
-        ms.Position = 0;
-        return Task.FromResult<Stream?>(ms);
-    }
-
-    /// Wraps pdfium's BGRA output and composites it onto white. Pdfium leaves
-    /// any area a page doesn't paint fully transparent, and JPEG has no alpha,
-    /// so without this the background of most text PDFs renders black.
-    private static Image<Bgra32> LoadPdfPage(byte[] bgra, int width, int height)
-    {
-        var image = Image.LoadPixelData<Bgra32>(bgra, width, height);
-        image.Mutate(x => x.BackgroundColor(Color.White));
-        return image;
+        var jpeg = ImageCodec.EncodeBgraAsJpeg(rawBytes, width, height);
+        return Task.FromResult<Stream?>(new MemoryStream(jpeg, writable: false));
     }
 
     // ── Extraction ──────────────────────────────────────────────────────────
@@ -323,10 +296,9 @@ public class ArchiveService
                 var height = pageReader.GetPageHeight();
                 var rawBytes = pageReader.GetImage(); // BGRA 8-bit per channel
 
-                using var image = LoadPdfPage(rawBytes, width, height);
                 var pageName = $"{i:D5}.jpg";
-                await using var fileStream = File.Create(Path.Combine(outDir, pageName));
-                await image.SaveAsJpegAsync(fileStream);
+                var jpeg = ImageCodec.EncodeBgraAsJpeg(rawBytes, width, height);
+                await File.WriteAllBytesAsync(Path.Combine(outDir, pageName), jpeg);
                 pages.Add(pageName);
                 spreads.Add(width > height);
             }
@@ -408,7 +380,7 @@ public class ArchiveService
             var fullPath = Path.Combine(targetDir, pageName);
 
             // Write the entry to disk first, fully closing the stream so the
-            // file is flushed before ImageSharp reads the header below.
+            // file is flushed before libvips reads the header below.
             // A bounded copy caps a decompression bomb: a hostile archive whose
             // entries expand to hundreds of GB is aborted before it fills the disk.
             using (var entryStream = entry.OpenEntryStream())
@@ -422,17 +394,11 @@ public class ArchiveService
             }
 
             // Detect spread: landscape images are double-page spreads.
-            // Image.IdentifyAsync only reads the header — no full decode needed.
-            try
-            {
-                var info = await Image.IdentifyAsync(fullPath);
-                spreads.Add(info.Width > info.Height);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Could not identify image dimensions for page {Index} in {Archive}", i, archivePath);
-                spreads.Add(false);
-            }
+            // Only the header is read — no full decode needed.
+            var size = ImageCodec.TryGetPageSize(fullPath);
+            if (size is null)
+                logger.LogWarning("Could not identify image dimensions for page {Index} in {Archive}", i, archivePath);
+            spreads.Add(size is { } s && s.Width > s.Height);
 
             pages.Add($"{prefix}{pageName}");
         }
@@ -471,11 +437,12 @@ public class ArchiveService
             {
                 try
                 {
-                    var info = await Image.IdentifyAsync(Path.Combine(baseDir, page));
-                    spreads.Add(info.Width > info.Height);
+                    var size = ImageCodec.TryGetPageSize(Path.Combine(baseDir, page));
+                    spreads.Add(size is { } s && s.Width > s.Height);
                 }
-                catch
+                catch (IOException)
                 {
+                    // Page file missing or unreadable (e.g. evicted mid-scan).
                     spreads.Add(false);
                 }
             }

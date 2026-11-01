@@ -12,6 +12,7 @@ using Rekindle.Server.Authorization;
 using Rekindle.Core.Database;
 using Rekindle.Core.Repositories;
 using Rekindle.Core.Services;
+using Rekindle.Core.Utilities;
 using Rekindle.Server.Controllers;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -139,6 +140,10 @@ builder.Services.AddRateLimiter(options =>
 // App
 // ------------------------------------------------------------------
 var app = builder.Build();
+
+// Load libvips now so a missing or broken native library fails startup with a
+// clear error, rather than surfacing later as failed covers and lost spreads.
+app.Logger.LogInformation("Image processing: libvips {Version}", ImageCodec.Initialize());
 
 // Trigger DB factory creation (resolves secret, creates dirs) then init schema
 using (var scope = app.Services.CreateScope())
