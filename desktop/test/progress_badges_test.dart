@@ -47,6 +47,16 @@ void main() {
       expect(ring.value, greaterThan(0.005));
     });
 
+    testWidgets('sits in the bottom-left corner', (tester) async {
+      await tester.pumpWidget(_cover(ReadProgressRing(summary: _summary(progress: 0.4))));
+
+      final pos = tester.widget<Positioned>(find.byType(Positioned));
+      expect(pos.bottom, isNotNull);
+      expect(pos.left, isNotNull);
+      expect(pos.top, isNull);
+      expect(pos.right, isNull);
+    });
+
     testWidgets('a completed item shows a full ring and a check', (tester) async {
       await tester.pumpWidget(
           _cover(ReadProgressRing(summary: _summary(progress: 1, completed: true))));

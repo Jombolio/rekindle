@@ -284,7 +284,7 @@ fun ChapterIndexScreen(
                                 ReadProgressRing(
                                     summary = summary,
                                     size = 18.dp,
-                                    modifier = Modifier.align(Alignment.TopStart).padding(2.dp),
+                                    modifier = Modifier.align(Alignment.BottomStart).padding(2.dp),
                                 )
                             }
                         },

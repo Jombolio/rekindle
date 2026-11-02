@@ -20,7 +20,7 @@ ProgressSummary? watchProgressSummary(
   return local == null ? null : ProgressSummary.fromLocal(local, media.pageCount);
 }
 
-/// Circular read-progress indicator for the top-left corner of a cover.
+/// Circular read-progress indicator for the bottom-left corner of a cover.
 ///
 /// A partial orange ring while reading, a full green ring with a check once
 /// finished, and nothing for items never started.
@@ -49,7 +49,7 @@ class ReadProgressRing extends StatelessWidget {
     final label = completed ? 'Read' : '${s.percent}% read';
 
     return Positioned(
-      top: inset,
+      bottom: inset,
       left: inset,
       child: Tooltip(
         message: label,

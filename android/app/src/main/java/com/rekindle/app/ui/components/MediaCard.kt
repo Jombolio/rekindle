@@ -4,13 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.filled.OfflineBolt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -81,10 +79,10 @@ fun MediaCard(
                 modifier = Modifier.matchParentSize(),
             )
 
-            // Read progress — top-left; new-chapter count — top-right
+            // Read progress — bottom-left; new-chapter count — top-right
             ReadProgressRing(
                 summary = progressSummary,
-                modifier = Modifier.align(Alignment.TopStart).padding(4.dp),
+                modifier = Modifier.align(Alignment.BottomStart).padding(4.dp),
             )
             NewChaptersBadge(
                 count = progressSummary?.newCount ?: 0,
@@ -119,27 +117,6 @@ fun MediaCard(
                 }
             }
 
-            // Folder badge — bottom-left
-            if (media.isFolder) {
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(4.dp)
-                        .background(
-                            color = Color.Black.copy(alpha = 0.65f),
-                            shape = RoundedCornerShape(4.dp),
-                        )
-                        .padding(horizontal = 4.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.LibraryBooks,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(12.dp),
-                    )
-                }
-            }
         }
 
         Text(
