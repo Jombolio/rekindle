@@ -214,35 +214,6 @@ class DownloadButton extends ConsumerWidget {
   }
 }
 
-/// Stacked-pages icon overlaid on folder-type media covers.
-class FolderBadge extends StatelessWidget {
-  const FolderBadge({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      bottom: 4,
-      left: 4,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.65),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.library_books, size: 12, color: Colors.white),
-            SizedBox(width: 3),
-            Text('Series',
-                style: TextStyle(color: Colors.white, fontSize: 10)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// Small offline-available badge overlaid on a cover image.
 class OfflineBadge extends StatelessWidget {
   const OfflineBadge({super.key});

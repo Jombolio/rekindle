@@ -326,7 +326,6 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
                           cacheKey: item.coverCachePath ?? item.id,
                         ),
                       ),
-                      if (item.isFolder) const FolderBadge(),
                       ReadProgressRing(summary: summary),
                       NewChaptersBadge(count: summary?.newCount ?? 0),
                       DownloadStatusBadge(
