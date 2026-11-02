@@ -9,7 +9,7 @@
 pkgname=rekindle-bin
 _appid=io.github.Jombolio.Rekindle
 _instdir=/opt/rekindle
-pkgver=1.4.1
+pkgver=1.5.0
 pkgrel=1
 pkgdesc='Client for a self-hosted comic, manga and book server'
 arch=('x86_64')
@@ -27,7 +27,7 @@ conflicts=('rekindle')
 options=('!strip' '!debug')
 source=("$pkgname-$pkgver.zip::$url/releases/download/v$pkgver/RekindleClient-linux-x64.zip")
 # Replaced per release by `updpkgsums`.
-sha256sums=('2991407fb5a3eb4cba0a23a71ab78c59dc7499d907690003dddc555070280c0a')
+sha256sums=('458558eac79ca0d9ec7c105cf6e9f0f4807c8a9dfa285c183f4dd4a710a92e43')
 
 package() {
   # The executable finds lib/ through an $ORIGIN/lib rpath and resolves data/
