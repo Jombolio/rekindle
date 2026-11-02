@@ -15,6 +15,8 @@ Builds:
       - yes
 
 AutoUpdateMode: Version v%v
-UpdateCheckMode: Tags
+# Only plain version tags: v1.5.0-beta.1 and other pre-release tags are
+# skipped, so the F-Droid repository stays on stable releases.
+UpdateCheckMode: Tags ^v[0-9]+\.[0-9]+\.[0-9]+$
 CurrentVersion: 1.0.0
 CurrentVersionCode: 1
