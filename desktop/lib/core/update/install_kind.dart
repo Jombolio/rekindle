@@ -23,6 +23,10 @@ enum InstallKind {
   /// or anywhere this user can't write: the package manager updates it.
   packageManaged,
 
+  /// Windows, a portable copy in a folder this user can't write to: nothing can
+  /// replace its files until it's moved.
+  readOnlyFolder,
+
   /// A development build, or a platform without a published build.
   unsupported;
 
@@ -39,6 +43,7 @@ enum InstallKind {
         windowsPortable => 'RekindleClient-windows-x64.zip',
         appImage => 'RekindleClient-linux-x86_64.AppImage',
         linuxPortable || packageManaged => 'RekindleClient-linux-x64.zip',
+        readOnlyFolder => 'RekindleClient-windows-x64.zip',
         flatpak => 'RekindleClient-linux-x86_64.flatpak',
         unsupported => null,
       };
@@ -81,11 +86,14 @@ InstallTarget detectInstall({
   if (!releaseBuild) return InstallTarget(InstallKind.unsupported, dir, exe);
 
   if (windows) {
-    if (!writable(dir)) return InstallTarget(InstallKind.unsupported, dir, exe);
-    // Inno Setup leaves its uninstaller next to the app.
-    final kind = exists(p.join(dir, 'unins000.exe'))
-        ? InstallKind.windowsInstaller
-        : InstallKind.windowsPortable;
+    // Inno Setup leaves its uninstaller next to the app. Checked before the
+    // folder is: Program Files isn't writable, and doesn't need to be, because
+    // the installer asks for elevation itself.
+    if (exists(p.join(dir, 'unins000.exe'))) {
+      return InstallTarget(InstallKind.windowsInstaller, dir, exe);
+    }
+    final kind =
+        writable(dir) ? InstallKind.windowsPortable : InstallKind.readOnlyFolder;
     return InstallTarget(kind, dir, exe);
   }
 
