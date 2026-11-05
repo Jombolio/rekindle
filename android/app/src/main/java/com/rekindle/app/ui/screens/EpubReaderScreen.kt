@@ -1,5 +1,16 @@
 package com.rekindle.app.ui.screens
 
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -31,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.rekindle.app.core.prefs.BookFont
+import com.rekindle.app.ui.viewmodel.BookDefinition
 import com.rekindle.app.ui.viewmodel.EpubReaderViewModel
 import com.rekindle.app.ui.viewmodel.EpubTheme
 
@@ -76,6 +88,8 @@ fun EpubReaderScreen(
                             onTap = vm::toggleControls,
                             onLinkToChapter = vm::goToChapter,
                             onPositionChanged = vm::onPositionChanged,
+                            onDefine = vm::define,
+                            onTouchedPage = vm::dismissDefinition,
                         )
                     },
                     update = { wv ->
@@ -90,6 +104,17 @@ fun EpubReaderScreen(
                     // theme's body padding keeps the chapter's ends clear of them.
                     modifier = Modifier.fillMaxSize(),
                 )
+
+                state.definition?.let { definition ->
+                    DefinitionCard(
+                        definition = definition,
+                        background = bgColor,
+                        foreground = fgColor,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(start = 12.dp, end = 12.dp, bottom = if (state.showControls) 64.dp else 16.dp),
+                    )
+                }
 
                 if (state.showControls) {
                     // Top bar
@@ -154,6 +179,48 @@ fun EpubReaderScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * A small card with a word's meanings. It floats over the page without taking focus or
+ * moving anything, so the reader's place and flow are untouched.
+ */
+@Composable
+private fun DefinitionCard(
+    definition: BookDefinition,
+    background: Color,
+    foreground: Color,
+    modifier: Modifier = Modifier,
+) {
+    val muted = foreground.copy(alpha = 0.7f)
+    Surface(
+        modifier = modifier.fillMaxWidth().heightIn(max = 240.dp),
+        color = background,
+        contentColor = foreground,
+        shape = RoundedCornerShape(12.dp),
+        shadowElevation = 6.dp,
+    ) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(14.dp)) {
+            if (definition.entries.isEmpty()) {
+                Text("No definition found for \"${definition.word}\".", color = muted)
+            }
+            definition.entries.forEach { entry ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(entry.word, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.width(8.dp))
+                    Text(entry.partOfSpeech, color = muted, fontStyle = FontStyle.Italic, fontSize = 13.sp)
+                }
+                entry.senses.forEachIndexed { i, sense ->
+                    Text("${i + 1}. ${sense.definition}", fontSize = 14.sp, modifier = Modifier.padding(top = 2.dp))
+                    sense.example?.let {
+                        Text("\"$it\"", color = muted, fontStyle = FontStyle.Italic, fontSize = 13.sp)
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+            Text("WordNet", color = muted, fontSize = 11.sp)
         }
     }
 }

@@ -24,6 +24,9 @@ class SettingsState {
   final BookFont bookFont;
   final double bookFontSize;
 
+  /// Show a word's definition when it's selected in a book.
+  final bool defineOnSelect;
+
   /// Offer pre-releases (betas, release candidates) when checking for updates.
   final bool receivePreReleases;
 
@@ -37,6 +40,7 @@ class SettingsState {
     required this.chapterConfirmWindow,
     this.bookFont = BookFont.standard,
     this.bookFontSize = kDefaultBookFontSize,
+    this.defineOnSelect = true,
     this.receivePreReleases = false,
     this.autoCheckUpdates = true,
     this.discord = const DiscordPresenceSettings(),
@@ -49,6 +53,7 @@ class SettingsState {
     Duration? chapterConfirmWindow,
     BookFont? bookFont,
     double? bookFontSize,
+    bool? defineOnSelect,
     bool? receivePreReleases,
     bool? autoCheckUpdates,
     DiscordPresenceSettings? discord,
@@ -60,6 +65,7 @@ class SettingsState {
         chapterConfirmWindow: chapterConfirmWindow ?? this.chapterConfirmWindow,
         bookFont: bookFont ?? this.bookFont,
         bookFontSize: bookFontSize ?? this.bookFontSize,
+        defineOnSelect: defineOnSelect ?? this.defineOnSelect,
         receivePreReleases: receivePreReleases ?? this.receivePreReleases,
         autoCheckUpdates: autoCheckUpdates ?? this.autoCheckUpdates,
         discord: discord ?? this.discord,
@@ -86,6 +92,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
       bookFont: BookFont.parse(prefs.bookFont),
       bookFontSize: (prefs.bookFontSize ?? kDefaultBookFontSize)
           .clamp(kMinBookFontSize, kMaxBookFontSize),
+      defineOnSelect: prefs.defineOnSelect,
       receivePreReleases: prefs.receivePreReleases,
       autoCheckUpdates: prefs.autoCheckUpdates,
       discord: DiscordPresenceSettings(
@@ -128,6 +135,11 @@ class SettingsNotifier extends Notifier<SettingsState> {
     final clamped = size.clamp(kMinBookFontSize, kMaxBookFontSize);
     await Prefs.instance.setBookFontSize(clamped);
     state = state.copyWith(bookFontSize: clamped);
+  }
+
+  Future<void> setDefineOnSelect({required bool enabled}) async {
+    await Prefs.instance.setDefineOnSelect(enabled: enabled);
+    state = state.copyWith(defineOnSelect: enabled);
   }
 
   Future<void> setReceivePreReleases({required bool receive}) async {

@@ -55,6 +55,19 @@ The default is set automatically based on the library type when you open an arch
 
 ---
 
+## Dictionary
+
+Text books have a built-in English dictionary that works offline.
+
+- **Desktop:** select a word and its meaning appears beside it. Double-clicking is the quickest way to select one. Click anywhere or press Esc to close it. You can turn this off in **Settings → Books**.
+- **Android:** long-press a word, then tap **Define**. Tap the page to close it.
+
+The pop-up floats over the page, so your place doesn't move. It's English only, and PDFs and comics don't have selectable text.
+
+Definitions come from [WordNet](https://wordnet.princeton.edu/), © Princeton University. See `desktop/assets/dictionary/LICENSE-WordNet.txt`.
+
+---
+
 ## How settings are remembered
 
 | Setting | Remembered per-archive | Session inheritance |

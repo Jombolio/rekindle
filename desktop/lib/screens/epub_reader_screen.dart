@@ -4,6 +4,7 @@ import 'dart:isolate';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SelectedContent;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
@@ -14,6 +15,8 @@ import '../core/api/api_client.dart';
 import '../core/api/media_api.dart';
 import '../core/db/local_db_provider.dart';
 import '../core/download/download_manager.dart';
+import '../core/dictionary/word_forms.dart';
+import '../core/dictionary/wordnet_dictionary.dart';
 import '../core/epub/epub_parser.dart';
 import '../core/epub/reader_book.dart';
 import '../core/epub/remote_book.dart';
@@ -22,6 +25,8 @@ import '../providers/auth_provider.dart';
 import '../providers/discord_presence_provider.dart';
 import '../providers/reader_provider.dart';
 import '../providers/settings_provider.dart';
+import 'widgets/definition_popup.dart';
+import 'widgets/page_tap_detector.dart';
 
 enum _Theme { light, dark, sepia }
 
@@ -30,6 +35,9 @@ const _bookScheme = 'rekindle-book';
 
 /// How long a restored position keeps being re-applied while a chapter lays out.
 const _restoreWindow = Duration(seconds: 2);
+
+/// How long a selection has to settle before its definition appears.
+const _defineDelay = Duration(milliseconds: 350);
 
 /// How long a chapter gets to lay out before "nothing to scroll" means it's
 /// short. Large chapters build asynchronously, so this errs on the long side.
@@ -76,6 +84,16 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   int _chapterRequest = 0;
   double _wantedFraction = 0;
 
+  // The dictionary pop-up. It appears once a selection has settled and the pointer
+  // is up, so dragging across a passage doesn't flash definitions along the way.
+  String? _selectedText;
+  Timer? _defineTimer;
+  bool _pointerDown = false;
+  Offset _pointerAt = Offset.zero;
+  int _defineRequest = 0;
+  ({String word, List<DictionaryEntry> entries, Offset at})? _definition;
+  bool _ignoreNextTap = false;
+
   @override
   void initState() {
     super.initState();
@@ -95,6 +113,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   void dispose() {
     _focusNode.dispose();
     _shortChapterTimer?.cancel();
+    _defineTimer?.cancel();
     // A last save for scrolling still under way as the reader closes.
     // Not while a chapter is still loading: there's no position to read yet, and
     // saving one would overwrite the saved place.
@@ -362,7 +381,71 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     _restorePosition(fraction);
   }
 
+  // ── Dictionary ───────────────────────────────────────────────────────────
+
+  void _onSelectionChanged(SelectedContent? content) {
+    _selectedText = content?.plainText;
+    _defineRequest++;
+    _defineTimer?.cancel();
+    if (_selectedText == null || _selectedText!.trim().isEmpty) {
+      _dismissDefinition();
+      return;
+    }
+    if (!_pointerDown) _scheduleDefine();
+  }
+
+  void _scheduleDefine() {
+    _defineTimer?.cancel();
+    _defineTimer = Timer(_defineDelay, _define);
+  }
+
+  Future<void> _define() async {
+    final text = _selectedText;
+    if (text == null || !mounted || !ref.read(settingsProvider).defineOnSelect) {
+      return;
+    }
+    // A sentence selected to copy isn't a word to look up.
+    final word = WordForms.normalize(text);
+    if (word == null) return;
+
+    final request = ++_defineRequest;
+    final at = _pointerAt;
+    final List<DictionaryEntry> entries;
+    try {
+      entries = await (await WordNetDictionary.open()).lookup(text);
+    } catch (_) {
+      return; // A missing definition should never interrupt reading.
+    }
+    if (!mounted || request != _defineRequest) return;
+    setState(() => _definition = (word: word, entries: entries, at: at));
+  }
+
+  void _dismissDefinition() {
+    if (_definition != null) setState(() => _definition = null);
+  }
+
+  /// Beside the selection, flipping above it near the bottom of the window, and
+  /// never off the side. Nothing else on the page moves.
+  Widget _positionedDefinition(BoxConstraints area) {
+    final definition = _definition!;
+    final left = (definition.at.dx - DefinitionPopup.width / 2)
+        .clamp(8.0, (area.maxWidth - DefinitionPopup.width - 8).clamp(8.0, double.infinity));
+    final below = definition.at.dy + DefinitionPopup.maxHeight + 32 < area.maxHeight;
+    return Positioned(
+      left: left,
+      top: below ? definition.at.dy + 20 : null,
+      bottom: below ? null : area.maxHeight - definition.at.dy + 20,
+      child: DefinitionPopup(
+        word: definition.word,
+        entries: definition.entries,
+        background: _bgColor,
+        foreground: _fgColor,
+      ),
+    );
+  }
+
   void _onTapLink(String url) {
+    _ignoreNextTap = true;
     final uri = Uri.tryParse(url);
     if (uri == null) return;
     if (uri.scheme == 'http' || uri.scheme == 'https') {
@@ -411,7 +494,12 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
           if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
               event.logicalKey == LogicalKeyboardKey.keyA) { _prevChapter(); }
           if (event.logicalKey == LogicalKeyboardKey.escape) {
-            Navigator.of(context).pop();
+            // The pop-up goes first, so closing it can't also close the book.
+            if (_definition != null) {
+              _dismissDefinition();
+            } else {
+              Navigator.of(context).pop();
+            }
           }
         }
       },
@@ -425,14 +513,39 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                     : const Center(child: CircularProgressIndicator()))
             : Stack(
                 children: [
-                  GestureDetector(
-                    onTap: () =>
-                        setState(() => _showControls = !_showControls),
+                  PageTapDetector(
+                    onTap: () {
+                      // A tap that closes the pop-up, clears a selection or follows
+                      // a link shouldn't also toggle the HUD.
+                      if (_ignoreNextTap) return;
+                      setState(() => _showControls = !_showControls);
+                    },
                     // Any direct input means the reader has taken over from a
                     // pending restore.
                     child: Listener(
-                      onPointerDown: (_) => _cancelRestore(),
-                      onPointerSignal: (_) => _cancelRestore(),
+                      onPointerDown: (event) {
+                        _cancelRestore();
+                        _pointerDown = true;
+                        _pointerAt = event.position;
+                        _defineTimer?.cancel();
+                        _defineRequest++;
+                        _ignoreNextTap = _definition != null ||
+                            (_selectedText?.trim().isNotEmpty ?? false);
+                        _dismissDefinition();
+                      },
+                      onPointerMove: (event) => _pointerAt = event.position,
+                      onPointerUp: (event) {
+                        _pointerDown = false;
+                        _pointerAt = event.position;
+                        if (_selectedText?.trim().isNotEmpty ?? false) {
+                          _scheduleDefine();
+                        }
+                      },
+                      onPointerCancel: (_) => _pointerDown = false,
+                      onPointerSignal: (_) {
+                        _cancelRestore();
+                        _dismissDefinition();
+                      },
                       child: NotificationListener<Notification>(
                         onNotification: _onScrollNotification,
                         child: SingleChildScrollView(
@@ -446,7 +559,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                                   onRetry: () =>
                                       _showChapter(_chapterIndex, _wantedFraction),
                                 )
-                              : BookChapterView(
+                              : SelectionArea(
+                                  onSelectionChanged: _onSelectionChanged,
+                                  child: BookChapterView(
                                   book: book,
                                   chapter: _chapter!,
                                   textStyle: reading.bookFont.applyTo(TextStyle(
@@ -456,10 +571,20 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                                   )),
                                   onTapLink: _onTapLink,
                                 ),
+                                ),
                         ),
                       ),
                     ),
                   ),
+
+                  if (_definition != null)
+                    Positioned.fill(
+                      child: LayoutBuilder(
+                        builder: (_, area) => Stack(
+                          children: [_positionedDefinition(area)],
+                        ),
+                      ),
+                    ),
 
                   if (_showControls) ...[
                     // Top bar

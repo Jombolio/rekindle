@@ -5,6 +5,9 @@ import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rekindle.app.core.dictionary.DictionaryEntry
+import com.rekindle.app.core.dictionary.WordForms
+import com.rekindle.app.core.dictionary.WordNetDictionary
 import com.rekindle.app.core.epub.EpubParser
 import com.rekindle.app.core.epub.ReaderBook
 import com.rekindle.app.core.prefs.BookFont
@@ -44,10 +47,14 @@ data class EpubReaderState(
     val font: BookFont = BookFont.ORIGINAL,
     val theme: EpubTheme = EpubTheme.LIGHT,
     val showControls: Boolean = true,
+    /** The dictionary pop-up, when one is open. */
+    val definition: BookDefinition? = null,
     val error: String? = null,
 )
 
 enum class EpubTheme { LIGHT, DARK, SEPIA }
+
+data class BookDefinition(val word: String, val entries: List<DictionaryEntry>)
 
 /**
  * A book is finished once the reader is at the end of its last chapter. Merely
@@ -64,6 +71,7 @@ class EpubReaderViewModel @Inject constructor(
     private val downloadRepo: DownloadRepository,
     private val mediaRepo: MediaRepository,
     private val prefs: PrefsStore,
+    private val dictionary: WordNetDictionary,
 ) : ViewModel() {
 
     private val mediaId: String = checkNotNull(savedStateHandle["mediaId"])
@@ -227,6 +235,25 @@ class EpubReaderViewModel @Inject constructor(
     }
 
     fun toggleControls() = _state.update { it.copy(showControls = !it.showControls) }
+
+    private var defineJob: Job? = null
+
+    fun define(selection: String) {
+        val word = WordForms.normalize(selection) ?: return
+        defineJob?.cancel()
+        defineJob = viewModelScope.launch {
+            // A missing definition should never interrupt reading.
+            val entries = runCatching { dictionary.lookup(selection) }
+                .onFailure { if (it is CancellationException) throw it }
+                .getOrDefault(emptyList())
+            _state.update { it.copy(definition = BookDefinition(word, entries)) }
+        }
+    }
+
+    fun dismissDefinition() {
+        defineJob?.cancel()
+        _state.update { if (it.definition == null) it else it.copy(definition = null) }
+    }
 
     override fun onCleared() {
         super.onCleared()

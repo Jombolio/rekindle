@@ -4,12 +4,17 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.view.ActionMode
 import android.view.GestureDetector
+import android.view.Menu
+import android.view.MenuItem
 import android.view.MotionEvent
+import android.view.View
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.google.gson.JsonParser
 import com.rekindle.app.core.epub.EpubParser
 import com.rekindle.app.core.epub.ReaderBook
 import java.io.ByteArrayInputStream
@@ -17,8 +22,9 @@ import java.io.ByteArrayInputStream
 /**
  * Shows one chapter of a book at a time. Chapters and their images and stylesheets
  * are served from inside the EPUB under a private host, so relative links resolve
- * as the book's author intended. Nothing else loads: JavaScript stays off and every
- * other request is refused, so opening a book can't reach the network.
+ * as the book's author intended. Nothing else loads: every other request is refused,
+ * so opening a book can't reach the network. JavaScript is on only so the app can read
+ * the selected text; books can't run any (see EpubParser.CONTENT_SECURITY_POLICY).
  */
 @SuppressLint("ViewConstructor", "SetJavaScriptEnabled", "ClickableViewAccessibility")
 class BookWebView(
@@ -26,6 +32,8 @@ class BookWebView(
     private val onTap: () -> Unit,
     private val onLinkToChapter: (Int) -> Unit,
     private val onPositionChanged: (Float) -> Unit,
+    private val onDefine: (String) -> Unit,
+    private val onTouchedPage: () -> Unit,
 ) : WebView(context) {
 
     var book: ReaderBook? = null
@@ -55,7 +63,7 @@ class BookWebView(
     }
 
     init {
-        settings.javaScriptEnabled = false
+        settings.javaScriptEnabled = true
         settings.allowFileAccess = false
         settings.allowContentAccess = false
         webViewClient = BookClient()
@@ -72,7 +80,10 @@ class BookWebView(
         })
         setOnTouchListener { v, ev ->
             detector.onTouchEvent(ev)
-            if (ev.actionMasked == MotionEvent.ACTION_DOWN) pendingFraction = null
+            if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+                pendingFraction = null
+                onTouchedPage()
+            }
             if (ev.actionMasked == MotionEvent.ACTION_UP) v.performClick()
             false
         }
@@ -123,6 +134,54 @@ class BookWebView(
         if (pendingFraction == null) onPositionChanged(currentFraction())
     }
 
+    // ── Dictionary ───────────────────────────────────────────────────────────
+
+    /** Adds "Define" to the toolbar Android shows for selected text. */
+    override fun startActionMode(callback: ActionMode.Callback, type: Int): ActionMode? =
+        super.startActionMode(DefineCallback(callback), type)
+
+    private fun defineSelection(mode: ActionMode) {
+        evaluateJavascript("window.getSelection().toString()") { result ->
+            // The result is a JSON string, including its quotes.
+            val text = runCatching { JsonParser.parseString(result).asString }.getOrNull()
+            if (!text.isNullOrBlank()) onDefine(text)
+        }
+        mode.finish()
+    }
+
+    private inner class DefineCallback(private val inner: ActionMode.Callback) : ActionMode.Callback2() {
+
+        /** The WebView rebuilds its menu as the selection changes, so check each time. */
+        private fun addDefine(menu: Menu) {
+            if (menu.findItem(DEFINE_ITEM) == null) {
+                menu.add(Menu.NONE, DEFINE_ITEM, Menu.FIRST, "Define")
+                    .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            }
+        }
+
+        override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean =
+            inner.onCreateActionMode(mode, menu).also { addDefine(menu) }
+
+        override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
+            val changed = inner.onPrepareActionMode(mode, menu)
+            addDefine(menu)
+            return changed
+        }
+
+        override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+            if (item.itemId != DEFINE_ITEM) return inner.onActionItemClicked(mode, item)
+            defineSelection(mode)
+            return true
+        }
+
+        override fun onDestroyActionMode(mode: ActionMode) = inner.onDestroyActionMode(mode)
+
+        override fun onGetContentRect(mode: ActionMode, view: View, outRect: android.graphics.Rect) {
+            if (inner is ActionMode.Callback2) inner.onGetContentRect(mode, view, outRect)
+            else super.onGetContentRect(mode, view, outRect)
+        }
+    }
+
     override fun onDetachedFromWindow() {
         removeCallbacks(restoreTick)
         super.onDetachedFromWindow()
@@ -142,7 +201,14 @@ class BookWebView(
                 val bytes = runCatching { book.read(path) }.getOrNull()
                     ?: CHAPTER_FAILED.toByteArray()
                 val html = EpubParser.renderChapter(EpubParser.decodeText(bytes), themeCss)
-                return WebResourceResponse("text/html", "utf-8", ByteArrayInputStream(html.toByteArray()))
+                return WebResourceResponse(
+                    "text/html",
+                    "utf-8",
+                    200,
+                    "OK",
+                    mapOf("Content-Security-Policy" to EpubParser.CONTENT_SECURITY_POLICY),
+                    ByteArrayInputStream(html.toByteArray()),
+                )
             }
             val stream = runCatching { book.open(path) }.getOrNull() ?: return refused()
             return WebResourceResponse(mimeTypeOf(path), null, stream)
@@ -193,6 +259,7 @@ class BookWebView(
                 "go to another chapter and back to try again.</p></body></html>"
         const val BOOK_HOST = "book.rekindle.invalid"
         const val DEFAULT_FONT_SIZE = 16f
+        const val DEFINE_ITEM = 0x52454B44
         const val RESTORE_WINDOW_MS = 2000L
         const val RESTORE_TICK_MS = 100L
     }

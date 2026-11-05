@@ -266,6 +266,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         .read(settingsProvider.notifier)
                         .setBookFontSize(v.roundToDouble()),
                   ),
+                  const Divider(height: 32),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Define selected words',
+                                style: theme.textTheme.bodyLarge),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Selecting a word shows its meaning. English only, '
+                              'and works offline.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Switch(
+                        value: settings.defineOnSelect,
+                        onChanged: (v) => ref
+                            .read(settingsProvider.notifier)
+                            .setDefineOnSelect(enabled: v),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),

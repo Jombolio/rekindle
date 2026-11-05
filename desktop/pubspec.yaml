@@ -61,3 +61,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/dictionary/wordnet.db.gz
+    - assets/dictionary/LICENSE-WordNet.txt

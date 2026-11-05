@@ -2,11 +2,14 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rekindle/core/epub/book_styles.dart';
 import 'package:rekindle/core/epub/epub_parser.dart';
 import 'package:rekindle/screens/epub_reader_screen.dart';
+import 'package:rekindle/screens/widgets/page_tap_detector.dart';
 
 // A 1x1 transparent PNG.
 final _png = base64Decode(
@@ -215,6 +218,103 @@ void main() {
     expect(find.textContaining('Hello', findRichText: true), findsOneWidget);
     final images = tester.widgetList<Image>(find.byType(Image));
     expect(images.map((i) => i.image).whereType<MemoryImage>(), hasLength(1));
+  });
+
+  group('inside a selectable page', () {
+    Future<EpubBook> pumpPage(
+      WidgetTester tester, {
+      void Function()? onPageTap,
+      void Function(String)? onTapLink,
+      void Function(String?)? onSelected,
+    }) async {
+      final book = EpubParser.parse(_epub({
+        'OPS/book.opf': _opf(['a.xhtml', 'b.xhtml']),
+        'OPS/a.xhtml':
+            '<html><body><p>Hello wonderful world</p><a href="b.xhtml">note</a></body></html>',
+        'OPS/b.xhtml': '<html><body><p>x</p></body></html>',
+      }));
+      // Wired the way the reader wires it.
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: PageTapDetector(
+            onTap: onPageTap ?? () {},
+            child: SelectionArea(
+              onSelectionChanged: (c) => onSelected?.call(c?.plainText),
+              child: BookChapterView(
+                book: book,
+                chapter: book.chapters[0],
+                textStyle: const TextStyle(fontSize: 16),
+                onTapLink: onTapLink ?? (_) {},
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      return book;
+    }
+
+    testWidgets('a tap on the text still reaches the page', (tester) async {
+      var taps = 0;
+      await pumpPage(tester, onPageTap: () => taps++);
+      await tester.tap(find.textContaining('Hello', findRichText: true));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(taps, 1);
+    });
+
+    testWidgets('a double-click selects, and is not a tap', (tester) async {
+      var taps = 0;
+      await pumpPage(tester, onPageTap: () => taps++);
+      final at = tester.getTopLeft(find.textContaining('Hello', findRichText: true)) +
+          const Offset(12, 10);
+      final gesture = await tester.startGesture(at, kind: PointerDeviceKind.mouse);
+      await tester.pump();
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.down(at);
+      await tester.pump();
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(taps, 0);
+    });
+
+    testWidgets('dragging across text is not a tap', (tester) async {
+      var taps = 0;
+      await pumpPage(tester, onPageTap: () => taps++);
+      final at = tester.getTopLeft(find.textContaining('Hello', findRichText: true)) +
+          const Offset(4, 10);
+      final gesture = await tester.startGesture(at, kind: PointerDeviceKind.mouse);
+      await tester.pump();
+      await gesture.moveBy(const Offset(120, 0));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(taps, 0);
+    });
+
+    testWidgets('links still work', (tester) async {
+      String? tapped;
+      await pumpPage(tester, onTapLink: (url) => tapped = url);
+      await tester.tap(find.textContaining('note', findRichText: true));
+      await tester.pumpAndSettle(const Duration(milliseconds: 400));
+      expect(tapped, isNotNull);
+    });
+
+    testWidgets('double-clicking selects a word', (tester) async {
+      String? selected;
+      await pumpPage(tester, onSelected: (text) => selected = text);
+      final at = tester.getTopLeft(find.textContaining('Hello', findRichText: true)) +
+          const Offset(12, 10);
+      final gesture = await tester.startGesture(at, kind: PointerDeviceKind.mouse);
+      await tester.pump();
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.down(at);
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle(const Duration(milliseconds: 400));
+      expect(selected?.trim(), 'Hello');
+    });
   });
 
   testWidgets('tapping a link reports its address in the book', (tester) async {

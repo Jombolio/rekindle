@@ -101,6 +101,18 @@ class EpubParserTest {
     }
 
     @Test
+    fun `books can't run scripts`() {
+        val html = EpubParser.renderChapter(
+            "<html><body><p>x</p><script>steal()</script><SCRIPT src=\"a.js\"></SCRIPT><script>open(</body></html>",
+            "T",
+        )
+        assertFalse("steal" in html)
+        assertFalse("a.js" in html)
+        assertTrue("script-src 'none'" in html)
+        assertTrue(html.indexOf("Content-Security-Policy") < html.indexOf("<body"))
+    }
+
+    @Test
     fun `decodes text by BOM and declared encoding`() {
         assertEquals("é", EpubParser.decodeText(byteArrayOf(0xFF.toByte(), 0xFE.toByte(), 0xE9.toByte(), 0)))
         assertEquals(

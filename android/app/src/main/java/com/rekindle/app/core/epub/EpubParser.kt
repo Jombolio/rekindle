@@ -189,9 +189,10 @@ object EpubParser {
         val links = LINK.findAll(head).map { it.value }.filter { "stylesheet" in it.lowercase() }
         val styles = STYLE.findAll(head).map { it.value }
         val bodyAttributes = body?.groupValues?.get(1).orEmpty()
-        val content = expandSelfClosingTags(body?.groupValues?.get(2) ?: html)
+        val content = expandSelfClosingTags(body?.groupValues?.get(2) ?: html).replace(SCRIPT, "")
         return buildString {
             append("<!DOCTYPE html><html><head><meta charset=\"utf-8\">")
+            append("<meta http-equiv=\"Content-Security-Policy\" content=\"").append(CONTENT_SECURITY_POLICY).append("\">")
             append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">")
             links.forEach { append(it) }
             styles.forEach { append(expandSelfClosingStyle(it)) }
@@ -211,6 +212,13 @@ object EpubParser {
         else "<$tag${m.groupValues[2]}></$tag>"
     }
 
+    /**
+     * The WebView has JavaScript on only so the app can read the selected text. Books
+     * never get to run any: scripts in a book are removed and refused by this policy.
+     */
+    const val CONTENT_SECURITY_POLICY = "script-src 'none'; object-src 'none'; base-uri 'none'"
+
+    private val SCRIPT = Regex("<script\\b.*?(?:</script\\s*>|\\z)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     private val TAG = Regex("<[^>]+>")
     private val HEADING = Regex("<h[1-3]\\b[^>]*>(.*?)</h[1-3]\\s*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     private val TITLE = Regex("<title[^>]*>(.*?)</title>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
