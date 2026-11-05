@@ -48,6 +48,10 @@ public partial class BookService(IOptions<RekindleOptions> options, ILogger<Book
         [".webp"] = "image/webp",
         [".bmp"] = "image/bmp",
         [".svg"] = "image/svg+xml",
+        [".ttf"] = "font/ttf",
+        [".otf"] = "font/otf",
+        [".woff"] = "font/woff",
+        [".woff2"] = "font/woff2",
     };
 
     private readonly string _cacheDir = Path.Combine(options.Value.CachePath, "books");

@@ -7,6 +7,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rekindle.app.core.epub.EpubParser
 import com.rekindle.app.core.epub.ReaderBook
+import com.rekindle.app.core.prefs.BookFont
+import com.rekindle.app.core.prefs.DEFAULT_BOOK_FONT_SIZE
+import com.rekindle.app.core.prefs.MAX_BOOK_FONT_SIZE
+import com.rekindle.app.core.prefs.MIN_BOOK_FONT_SIZE
+import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.data.repository.DownloadRepository
 import com.rekindle.app.data.repository.MediaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,6 +24,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -34,7 +40,8 @@ data class EpubReaderState(
     val chapterIndex: Int = 0,
     /** Where to place the view on entering [chapterIndex]. Doesn't follow scrolling. */
     val startFraction: Float = 0f,
-    val fontSize: Float = 16f,
+    val fontSize: Float = DEFAULT_BOOK_FONT_SIZE,
+    val font: BookFont = BookFont.ORIGINAL,
     val theme: EpubTheme = EpubTheme.LIGHT,
     val showControls: Boolean = true,
     val error: String? = null,
@@ -56,6 +63,7 @@ class EpubReaderViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val downloadRepo: DownloadRepository,
     private val mediaRepo: MediaRepository,
+    private val prefs: PrefsStore,
 ) : ViewModel() {
 
     private val mediaId: String = checkNotNull(savedStateHandle["mediaId"])
@@ -76,6 +84,9 @@ class EpubReaderViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            val font = prefs.bookFont.first()
+            val size = prefs.bookFontSize.first()
+            _state.update { it.copy(font = font, fontSize = size) }
             loadProgress()
             loadEpub()
         }
@@ -196,8 +207,19 @@ class EpubReaderViewModel @Inject constructor(
         )
     }
 
-    fun increaseFontSize() = _state.update { it.copy(fontSize = (it.fontSize + 1f).coerceAtMost(32f)) }
-    fun decreaseFontSize() = _state.update { it.copy(fontSize = (it.fontSize - 1f).coerceAtLeast(10f)) }
+    fun increaseFontSize() = setFontSize((_state.value.fontSize + 1f).coerceAtMost(MAX_BOOK_FONT_SIZE))
+    fun decreaseFontSize() = setFontSize((_state.value.fontSize - 1f).coerceAtLeast(MIN_BOOK_FONT_SIZE))
+
+    private fun setFontSize(size: Float) {
+        _state.update { it.copy(fontSize = size) }
+        viewModelScope.launch { prefs.setBookFontSize(size) }
+    }
+
+    fun cycleFont() {
+        val next = _state.value.font.next
+        _state.update { it.copy(font = next) }
+        viewModelScope.launch { prefs.setBookFont(next) }
+    }
 
     fun cycleTheme() = _state.update {
         val next = EpubTheme.entries[(it.theme.ordinal + 1) % EpubTheme.entries.size]

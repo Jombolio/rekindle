@@ -106,6 +106,13 @@ class Prefs {
   Future<void> setChapterConfirmMs(int ms) =>
       _prefs.setInt('chapter_confirm_ms', ms);
 
+  // The font and text size books open with.
+  String? get bookFont => _prefs.getString('book_font');
+  Future<void> setBookFont(String font) => _prefs.setString('book_font', font);
+  double? get bookFontSize => _prefs.getDouble('book_font_size');
+  Future<void> setBookFontSize(double size) =>
+      _prefs.setDouble('book_font_size', size);
+
   // Whether "Check for updates" offers pre-releases (betas, release
   // candidates) as well as stable releases. Off by default.
   bool get receivePreReleases =>

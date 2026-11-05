@@ -5,6 +5,8 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rekindle.app.core.prefs.BookFont
+import com.rekindle.app.core.prefs.DEFAULT_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.DEFAULT_CHAPTER_CONFIRM_MS
 import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.domain.model.ServerSource
@@ -15,6 +17,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
@@ -29,6 +32,9 @@ data class SettingsState(
     val confirmChapterChange: Boolean = true,
     /** How long an armed chapter-change confirmation stays open, in milliseconds. */
     val chapterConfirmMs: Int = DEFAULT_CHAPTER_CONFIRM_MS,
+    /** The font and text size books open with. */
+    val bookFont: BookFont = BookFont.ORIGINAL,
+    val bookFontSize: Float = DEFAULT_BOOK_FONT_SIZE,
 )
 
 @HiltViewModel
@@ -56,19 +62,36 @@ class SettingsViewModel @Inject constructor(
                 prefs.confirmChapterChange,
                 prefs.chapterConfirmMs,
             ) { theme, safUri, confirmChapter, confirmMs ->
-                SettingsState(
-                    themeMode = theme,
-                    downloadSafUri = safUri,
-                    downloadLocationLabel = if (safUri.isBlank()) "" else safUriLabel(safUri),
-                    confirmChapterChange = confirmChapter,
-                    chapterConfirmMs = confirmMs,
-                )
-            }.collect { _state.value = it }
+                { current: SettingsState ->
+                    current.copy(
+                        themeMode = theme,
+                        downloadSafUri = safUri,
+                        downloadLocationLabel = if (safUri.isBlank()) "" else safUriLabel(safUri),
+                        confirmChapterChange = confirmChapter,
+                        chapterConfirmMs = confirmMs,
+                    )
+                }
+            }.collect { change -> _state.update(change) }
+        }
+        viewModelScope.launch {
+            combine(prefs.bookFont, prefs.bookFontSize) { font, size ->
+                font to size
+            }.collect { (font, size) ->
+                _state.update { it.copy(bookFont = font, bookFontSize = size) }
+            }
         }
     }
 
     fun setThemeMode(mode: String) {
         viewModelScope.launch { prefs.setThemeMode(mode) }
+    }
+
+    fun setBookFont(font: BookFont) {
+        viewModelScope.launch { prefs.setBookFont(font) }
+    }
+
+    fun setBookFontSize(size: Float) {
+        viewModelScope.launch { prefs.setBookFontSize(size) }
     }
 
     fun setConfirmChapterChange(confirm: Boolean) {

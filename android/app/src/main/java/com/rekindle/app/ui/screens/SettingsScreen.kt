@@ -1,5 +1,8 @@
 package com.rekindle.app.ui.screens
 
+import kotlin.math.roundToInt
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.horizontalScroll
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -57,6 +60,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.rekindle.app.domain.model.ServerSource
+import com.rekindle.app.core.prefs.BookFont
+import com.rekindle.app.core.prefs.MAX_BOOK_FONT_SIZE
+import com.rekindle.app.core.prefs.MIN_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.MAX_CHAPTER_CONFIRM_MS
 import com.rekindle.app.core.prefs.MIN_CHAPTER_CONFIRM_MS
 import com.rekindle.app.ui.viewmodel.SettingsViewModel
@@ -228,6 +234,48 @@ fun SettingsScreen(
                         steps = (MAX_CHAPTER_CONFIRM_MS - MIN_CHAPTER_CONFIRM_MS) / 250 - 1,
                     )
                 }
+
+                // ── Books ──────────────────────────────────────────────
+                SectionHeader("Books")
+
+                Text("Font", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Anything but \"Book's own\" replaces the fonts a book asks for.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    BookFont.entries.forEach { font ->
+                        FilterChip(
+                            selected = state.bookFont == font,
+                            onClick = { vm.setBookFont(font) },
+                            label = { Text(font.label) },
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Text size",
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        state.bookFontSize.toInt().toString(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Slider(
+                    value = state.bookFontSize,
+                    onValueChange = { vm.setBookFontSize(it.roundToInt().toFloat()) },
+                    valueRange = MIN_BOOK_FONT_SIZE..MAX_BOOK_FONT_SIZE,
+                    steps = (MAX_BOOK_FONT_SIZE - MIN_BOOK_FONT_SIZE).toInt() - 1,
+                )
 
                 // ── Downloads / Storage ───────────────────────────────────────────
                 SectionHeader("Downloads")

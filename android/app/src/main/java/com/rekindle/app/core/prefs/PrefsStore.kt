@@ -200,6 +200,12 @@ class PrefsStore @Inject constructor(
             .coerceIn(MIN_CHAPTER_CONFIRM_MS, MAX_CHAPTER_CONFIRM_MS)
     }
 
+    /** The font and text size books open with. */
+    val bookFont: Flow<BookFont> = store.data.map { BookFont.parse(it[Keys.BOOK_FONT]) }
+    val bookFontSize: Flow<Float> = store.data.map {
+        (it[Keys.BOOK_FONT_SIZE] ?: DEFAULT_BOOK_FONT_SIZE).coerceIn(MIN_BOOK_FONT_SIZE, MAX_BOOK_FONT_SIZE)
+    }
+
     /**
      * Content URI string granted via ACTION_OPEN_DOCUMENT_TREE.
      * Empty = use app-private external storage (no permission needed).
@@ -220,6 +226,12 @@ class PrefsStore @Inject constructor(
 
     suspend fun setSpineGap(gap: Float) =
         store.edit { it[Keys.SPINE_GAP] = gap }
+
+    suspend fun setBookFont(font: BookFont) = store.edit { it[Keys.BOOK_FONT] = font.name }
+
+    suspend fun setBookFontSize(size: Float) = store.edit {
+        it[Keys.BOOK_FONT_SIZE] = size.coerceIn(MIN_BOOK_FONT_SIZE, MAX_BOOK_FONT_SIZE)
+    }
 
     suspend fun setConfirmChapterChange(confirm: Boolean) =
         store.edit { it[Keys.CONFIRM_CHAPTER_CHANGE] = confirm }
@@ -265,6 +277,8 @@ class PrefsStore @Inject constructor(
         val DOWNLOAD_DIR = stringPreferencesKey("download_directory")
         val DOWNLOAD_SAF_URI = stringPreferencesKey("download_saf_uri")
         val SPINE_GAP = floatPreferencesKey("spine_gap")
+        val BOOK_FONT = stringPreferencesKey("book_font")
+        val BOOK_FONT_SIZE = floatPreferencesKey("book_font_size")
         val CONFIRM_CHAPTER_CHANGE = booleanPreferencesKey("confirm_chapter_change")
         val CHAPTER_CONFIRM_MS = intPreferencesKey("chapter_confirm_ms")
         val SOURCES_JSON = stringPreferencesKey("sources_json")

@@ -1,3 +1,4 @@
+import '../core/epub/book_font.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -206,6 +207,65 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               Duration(milliseconds: v.round())),
                     ),
                   ],
+                ],
+              ),
+            ),
+          ),
+
+          // ── Books ──────────────────────────────────────────────────────
+          const SizedBox(height: 24),
+          const _SectionHeader('Books'),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text('Font', style: theme.textTheme.bodyLarge),
+                      ),
+                      DropdownButton<BookFont>(
+                        value: settings.bookFont,
+                        items: [
+                          for (final font in BookFont.values)
+                            DropdownMenuItem(
+                              value: font,
+                              child: Text(font.label),
+                            ),
+                        ],
+                        onChanged: (font) {
+                          if (font == null) return;
+                          ref.read(settingsProvider.notifier).setBookFont(font);
+                        },
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 32),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text('Text size',
+                            style: theme.textTheme.bodyLarge),
+                      ),
+                      Text(
+                        settings.bookFontSize.round().toString(),
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(color: theme.colorScheme.primary),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    value: settings.bookFontSize,
+                    min: kMinBookFontSize,
+                    max: kMaxBookFontSize,
+                    divisions: (kMaxBookFontSize - kMinBookFontSize).round(),
+                    label: settings.bookFontSize.round().toString(),
+                    onChanged: (v) => ref
+                        .read(settingsProvider.notifier)
+                        .setBookFontSize(v.roundToDouble()),
+                  ),
                 ],
               ),
             ),

@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.FontDownload
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.TextDecrease
 import androidx.compose.material.icons.filled.TextIncrease
@@ -29,6 +30,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.rekindle.app.core.prefs.BookFont
 import com.rekindle.app.ui.viewmodel.EpubReaderViewModel
 import com.rekindle.app.ui.viewmodel.EpubTheme
 
@@ -78,10 +80,10 @@ fun EpubReaderScreen(
                     },
                     update = { wv ->
                         wv.book = book
-                        wv.themeCss = themeCss(state.theme)
+                        wv.themeCss = themeCss(state.theme, state.font)
                         wv.setBackgroundColor(bgColor.toArgb())
                         wv.applyFontSize(state.fontSize)
-                        wv.show(chapter.path, state.theme.name, state.startFraction)
+                        wv.show(chapter.path, "${state.theme.name}|${state.font.name}", state.startFraction)
                     },
                     // No padding for the HUD: the controls float over the page, because
                     // resizing the page on every tap moved the text being read. The
@@ -110,6 +112,9 @@ fun EpubReaderScreen(
                         )
                         IconButton(onClick = vm::cycleTheme) {
                             Icon(Icons.Default.Palette, "Cycle theme", tint = fgColor)
+                        }
+                        IconButton(onClick = vm::cycleFont) {
+                            Icon(Icons.Default.FontDownload, "Font: ${state.font.label}", tint = fgColor)
                         }
                         IconButton(onClick = vm::decreaseFontSize) {
                             Icon(Icons.Default.TextDecrease, "Decrease font", tint = fgColor)
@@ -176,7 +181,7 @@ private fun colorHex(color: Color): String {
  * The reader's theme, added after the book's own styles. Colours use !important
  * because books often hard-code black text, which would vanish on the dark theme.
  */
-private fun themeCss(theme: EpubTheme): String {
+private fun themeCss(theme: EpubTheme, font: BookFont): String {
     val bg = colorHex(theme.bgColor)
     val fg = colorHex(theme.fgColor)
     return """
@@ -185,5 +190,6 @@ body { line-height: 1.6; padding: 64px 16px !important; max-width: 720px;
        margin: 0 auto !important; font-family: serif; box-sizing: border-box; }
 body * { color: inherit !important; background-color: transparent !important; }
 img, svg { max-width: 100% !important; height: auto; }
+${font.css}
 """
 }

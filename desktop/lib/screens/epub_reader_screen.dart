@@ -64,7 +64,6 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   EpubChapter? _chapter;
   bool _chapterFailed = false;
   int _chapterIndex = 0;
-  double _fontSize = 16;
   _Theme _theme = _Theme.light;
   bool _showControls = true;
   bool _notDownloaded = false;
@@ -357,7 +356,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   /// Changes something that reflows the chapter, keeping the reader's place.
   void _reflow(VoidCallback change) {
     final fraction = _currentFraction;
-    setState(change);
+    // Not inside setState: saving a setting returns a Future, which setState rejects.
+    change();
+    setState(() {});
     _restorePosition(fraction);
   }
 
@@ -397,6 +398,8 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   @override
   Widget build(BuildContext context) {
     final book = _book;
+    // Watched, so a change here or in Settings applies straight away.
+    final reading = ref.watch(settingsProvider);
 
     return KeyboardListener(
       focusNode: _focusNode,
@@ -446,11 +449,11 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                               : BookChapterView(
                                   book: book,
                                   chapter: _chapter!,
-                                  textStyle: TextStyle(
-                                    fontSize: _fontSize,
+                                  textStyle: reading.bookFont.applyTo(TextStyle(
+                                    fontSize: reading.bookFontSize,
                                     color: _fgColor,
                                     height: 1.6,
-                                  ),
+                                  )),
                                   onTapLink: _onTapLink,
                                 ),
                         ),
@@ -496,18 +499,28 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                                 }),
                               ),
                               IconButton(
+                                icon: Icon(Icons.font_download,
+                                    color: _fgColor),
+                                tooltip: 'Font: ${reading.bookFont.label}',
+                                onPressed: () => _reflow(() => ref
+                                    .read(settingsProvider.notifier)
+                                    .setBookFont(reading.bookFont.next)),
+                              ),
+                              IconButton(
                                 icon: Icon(Icons.text_decrease,
                                     color: _fgColor),
-                                onPressed: () => _reflow(() =>
-                                    _fontSize =
-                                        (_fontSize - 1).clamp(10, 32)),
+                                onPressed: () => _reflow(() => ref
+                                    .read(settingsProvider.notifier)
+                                    .setBookFontSize(
+                                        reading.bookFontSize - 1)),
                               ),
                               IconButton(
                                 icon: Icon(Icons.text_increase,
                                     color: _fgColor),
-                                onPressed: () => _reflow(() =>
-                                    _fontSize =
-                                        (_fontSize + 1).clamp(10, 32)),
+                                onPressed: () => _reflow(() => ref
+                                    .read(settingsProvider.notifier)
+                                    .setBookFontSize(
+                                        reading.bookFontSize + 1)),
                               ),
                             ],
                           ),

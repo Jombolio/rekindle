@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../core/discord/discord_activity.dart';
+import '../core/epub/book_font.dart';
 import '../core/storage/prefs.dart';
 
 class SettingsState {
@@ -19,6 +20,10 @@ class SettingsState {
   /// How long an armed chapter-change confirmation stays open.
   final Duration chapterConfirmWindow;
 
+  /// The font and text size books open with.
+  final BookFont bookFont;
+  final double bookFontSize;
+
   /// Offer pre-releases (betas, release candidates) when checking for updates.
   final bool receivePreReleases;
 
@@ -30,6 +35,8 @@ class SettingsState {
     required this.downloadDirectory,
     required this.confirmChapterChange,
     required this.chapterConfirmWindow,
+    this.bookFont = BookFont.standard,
+    this.bookFontSize = kDefaultBookFontSize,
     this.receivePreReleases = false,
     this.autoCheckUpdates = true,
     this.discord = const DiscordPresenceSettings(),
@@ -40,6 +47,8 @@ class SettingsState {
     String? downloadDirectory,
     bool? confirmChapterChange,
     Duration? chapterConfirmWindow,
+    BookFont? bookFont,
+    double? bookFontSize,
     bool? receivePreReleases,
     bool? autoCheckUpdates,
     DiscordPresenceSettings? discord,
@@ -49,6 +58,8 @@ class SettingsState {
         downloadDirectory: downloadDirectory ?? this.downloadDirectory,
         confirmChapterChange: confirmChapterChange ?? this.confirmChapterChange,
         chapterConfirmWindow: chapterConfirmWindow ?? this.chapterConfirmWindow,
+        bookFont: bookFont ?? this.bookFont,
+        bookFontSize: bookFontSize ?? this.bookFontSize,
         receivePreReleases: receivePreReleases ?? this.receivePreReleases,
         autoCheckUpdates: autoCheckUpdates ?? this.autoCheckUpdates,
         discord: discord ?? this.discord,
@@ -72,6 +83,9 @@ class SettingsNotifier extends Notifier<SettingsState> {
       chapterConfirmWindow: Duration(
         milliseconds: _clampConfirmMs(prefs.chapterConfirmMs),
       ),
+      bookFont: BookFont.parse(prefs.bookFont),
+      bookFontSize: (prefs.bookFontSize ?? kDefaultBookFontSize)
+          .clamp(kMinBookFontSize, kMaxBookFontSize),
       receivePreReleases: prefs.receivePreReleases,
       autoCheckUpdates: prefs.autoCheckUpdates,
       discord: DiscordPresenceSettings(
@@ -103,6 +117,17 @@ class SettingsNotifier extends Notifier<SettingsState> {
     final ms = _clampConfirmMs(window.inMilliseconds);
     await Prefs.instance.setChapterConfirmMs(ms);
     state = state.copyWith(chapterConfirmWindow: Duration(milliseconds: ms));
+  }
+
+  Future<void> setBookFont(BookFont font) async {
+    await Prefs.instance.setBookFont(font.name);
+    state = state.copyWith(bookFont: font);
+  }
+
+  Future<void> setBookFontSize(double size) async {
+    final clamped = size.clamp(kMinBookFontSize, kMaxBookFontSize);
+    await Prefs.instance.setBookFontSize(clamped);
+    state = state.copyWith(bookFontSize: clamped);
   }
 
   Future<void> setReceivePreReleases({required bool receive}) async {
