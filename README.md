@@ -51,7 +51,7 @@ Please at least read this before posting an issue or requesting support.
 
 ## Supported Formats
 
-`.cbz` · `.cbr` · `.epub` · `.mobi` · `.pdf`
+`.cbz` · `.cbr` · `.epub` · `.mobi` · `.azw` · `.azw3` · `.pdf`
 
 ---
 

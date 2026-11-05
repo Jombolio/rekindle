@@ -283,6 +283,38 @@ public class MobiConverterTests : IDisposable
     }
 
     [Fact]
+    public void Manifest_TitlesChaptersByHeadingThenTitleThenFileName()
+    {
+        var path = Path.Combine(_root, "titles.epub");
+        using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
+        {
+            void Add(string name, string text)
+            {
+                using var w = new StreamWriter(zip.CreateEntry(name).Open());
+                w.Write(text);
+            }
+            Add("META-INF/container.xml", "<container><rootfiles><rootfile full-path=\"b.opf\"/></rootfiles></container>");
+            Add("b.opf", "<package xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><metadata><dc:title>The Book</dc:title></metadata><manifest><item id=\"a\" href=\"a.html\"/><item id=\"b\" href=\"b.html\"/><item id=\"c\" href=\"c.html\"/></manifest><spine><itemref idref=\"a\"/><itemref idref=\"b\"/><itemref idref=\"c\"/></spine></package>");
+            Add("a.html", "<html><head><title>The Book</title></head><body><h2>Chapter <i>One</i></h2></body></html>");
+            Add("b.html", "<html><head><title>Only a title</title></head><body><p>x</p></body></html>");
+            Add("c.html", "<html><body><p>x</p></body></html>");
+        }
+
+        var manifest = _books.GetManifest(path)!;
+
+        manifest.Title.Should().Be("The Book");
+        manifest.Chapters.Select(c => c.Title).Should().Equal("Chapter One", "Only a title", "c.html");
+    }
+
+    [Fact]
+    public void Manifest_OnNonEpub_ReturnsNull()
+    {
+        var path = Path.Combine(_root, "junk2.epub");
+        File.WriteAllText(path, "not a zip");
+        _books.GetManifest(path).Should().BeNull();
+    }
+
+    [Fact]
     public void CountChapters_OnNonEpub_ReturnsZero()
     {
         var path = Path.Combine(_root, "junk.epub");

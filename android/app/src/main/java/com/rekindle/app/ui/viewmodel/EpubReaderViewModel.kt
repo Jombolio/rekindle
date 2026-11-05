@@ -5,8 +5,8 @@ import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.rekindle.app.core.epub.EpubBook
 import com.rekindle.app.core.epub.EpubParser
+import com.rekindle.app.core.epub.ReaderBook
 import com.rekindle.app.data.repository.DownloadRepository
 import com.rekindle.app.data.repository.MediaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -30,7 +30,7 @@ import java.util.UUID
 import javax.inject.Inject
 
 data class EpubReaderState(
-    val book: EpubBook? = null,
+    val book: ReaderBook? = null,
     val chapterIndex: Int = 0,
     /** Where to place the view on entering [chapterIndex]. Doesn't follow scrolling. */
     val startFraction: Float = 0f,
@@ -94,7 +94,7 @@ class EpubReaderViewModel @Inject constructor(
 
     private suspend fun loadEpub() {
         try {
-            val book = withContext(Dispatchers.IO) { EpubParser.open(obtainBookFile()) }
+            val book = withContext(Dispatchers.IO) { openBook() }
             if (book.chapters.isEmpty()) {
                 // Publishing the book anyway would crash the screen on chapters[0].
                 book.close()
@@ -114,8 +114,8 @@ class EpubReaderViewModel @Inject constructor(
         }
     }
 
-    /** The downloaded copy when there's a usable one, otherwise fetched from the server. */
-    private suspend fun obtainBookFile(): File {
+    /** The downloaded copy when there's a usable one, otherwise streamed from the server. */
+    private suspend fun openBook(): ReaderBook {
         // awaitState (not stateFor) restores from disk if the in-memory map is cold,
         // so opening a downloaded book offline doesn't falsely report "not downloaded".
         val localPath = downloadRepo.awaitState(mediaId).localPath
@@ -130,35 +130,19 @@ class EpubReaderViewModel @Inject constructor(
             } else {
                 File(localPath)
             }
-            if (EpubParser.isEpubFile(local)) return local
+            if (EpubParser.isEpubFile(local)) return EpubParser.open(local)
         }
-
-        sessionFile.parentFile?.mkdirs()
-        val temp = File(sessionFile.path + ".tmp")
-        try {
-            mediaRepo.getBook(mediaId).use { body ->
-                temp.outputStream().use { body.byteStream().copyTo(it) }
-            }
-            if (!temp.renameTo(sessionFile)) {
-                temp.copyTo(sessionFile, overwrite = true)
-            }
-        } finally {
-            temp.delete()
-        }
-        return sessionFile
+        return mediaRepo.openRemoteBook(mediaId)
     }
 
     private fun describeLoadFailure(e: Exception): String = when (e) {
-        is HttpException -> if (e.code() == 403) {
-            "Your account doesn't have permission to open this book."
-        } else {
-            // 422 carries the server's explanation, e.g. a DRM-protected MOBI.
-            val reason = if (e.code() == 422) {
-                runCatching {
-                    JSONObject(e.response()?.errorBody()?.string().orEmpty()).getString("error")
-                }.getOrNull()
-            } else null
-            reason ?: "This book couldn't be opened."
+        is HttpException -> when (e.code()) {
+            404 -> "Your server needs updating to read this book without downloading it."
+            // 422 carries the server's explanation, e.g. a DRM-protected Kindle file.
+            422 -> runCatching {
+                JSONObject(e.response()?.errorBody()?.string().orEmpty()).getString("error")
+            }.getOrNull() ?: "This book couldn't be opened."
+            else -> "This book couldn't be opened."
         }
         is IOException -> "Couldn't reach the server. Connect, or download this book to read it offline."
         else -> "This book couldn't be opened."

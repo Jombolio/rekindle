@@ -12,7 +12,7 @@ public class LibraryScannerService(
     ILogger<LibraryScannerService> logger)
 {
     public static readonly HashSet<string> SupportedExtensions =
-        [".cbz", ".cbr", ".pdf", ".epub", ".mobi"];
+        [".cbz", ".cbr", ".pdf", ".epub", ".mobi", ".azw", ".azw3"];
 
     public async Task ScanAsync(Library library)
     {

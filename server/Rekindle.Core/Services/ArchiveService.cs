@@ -122,7 +122,7 @@ public class ArchiveService
             return Path.GetExtension(filePath).ToLowerInvariant() switch
             {
                 ".pdf" => await RenderPdfCoverAsync(filePath),
-                ".mobi" => MobiConverter.ReadCover(filePath) is { } cover ? new MemoryStream(cover) : null,
+                ".mobi" or ".azw" or ".azw3" => MobiConverter.ReadCover(filePath) is { } cover ? new MemoryStream(cover) : null,
                 _ => await ExtractArchiveCoverAsync(filePath),
             };
         }

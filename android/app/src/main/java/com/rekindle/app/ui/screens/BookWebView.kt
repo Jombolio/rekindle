@@ -10,8 +10,8 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import com.rekindle.app.core.epub.EpubBook
 import com.rekindle.app.core.epub.EpubParser
+import com.rekindle.app.core.epub.ReaderBook
 import java.io.ByteArrayInputStream
 
 /**
@@ -28,7 +28,7 @@ class BookWebView(
     private val onPositionChanged: (Float) -> Unit,
 ) : WebView(context) {
 
-    var book: EpubBook? = null
+    var book: ReaderBook? = null
     var themeCss: String = ""
 
     /** Which chapter + theme is loaded, to tell a real change from a recomposition. */
@@ -134,15 +134,18 @@ class BookWebView(
             val book = book
             if (uri.host != BOOK_HOST || book == null) return refused()
             val path = uri.path?.removePrefix("/") ?: return refused()
-            val bytes = runCatching { book.read(path) }.getOrNull() ?: return refused()
 
             // Served as HTML rather than XHTML: one stray character in strict XML
             // would replace the whole chapter with a parse error.
             if (book.chapterIndexOf(path) != null) {
+                // When streaming, a dropped connection shouldn't look like a blank page.
+                val bytes = runCatching { book.read(path) }.getOrNull()
+                    ?: CHAPTER_FAILED.toByteArray()
                 val html = EpubParser.renderChapter(EpubParser.decodeText(bytes), themeCss)
                 return WebResourceResponse("text/html", "utf-8", ByteArrayInputStream(html.toByteArray()))
             }
-            return WebResourceResponse(mimeTypeOf(path), null, ByteArrayInputStream(bytes))
+            val stream = runCatching { book.open(path) }.getOrNull() ?: return refused()
+            return WebResourceResponse(mimeTypeOf(path), null, stream)
         }
 
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -185,6 +188,9 @@ class BookWebView(
     private companion object {
         // .invalid can never resolve, so nothing here can leave the device even if
         // a request were ever to get past the interceptor.
+        const val CHAPTER_FAILED =
+            "<html><body><p>This chapter couldn't be loaded. Check your connection, then " +
+                "go to another chapter and back to try again.</p></body></html>"
         const val BOOK_HOST = "book.rekindle.invalid"
         const val DEFAULT_FONT_SIZE = 16f
         const val RESTORE_WINDOW_MS = 2000L

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -16,6 +15,8 @@ import '../core/api/media_api.dart';
 import '../core/db/local_db_provider.dart';
 import '../core/download/download_manager.dart';
 import '../core/epub/epub_parser.dart';
+import '../core/epub/reader_book.dart';
+import '../core/epub/remote_book.dart';
 import '../core/models/reading_progress.dart';
 import '../providers/auth_provider.dart';
 import '../providers/discord_presence_provider.dart';
@@ -59,7 +60,9 @@ class EpubReaderScreen extends ConsumerStatefulWidget {
 }
 
 class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
-  EpubBook? _book;
+  ReaderBook? _book;
+  EpubChapter? _chapter;
+  bool _chapterFailed = false;
   int _chapterIndex = 0;
   double _fontSize = 16;
   _Theme _theme = _Theme.light;
@@ -71,6 +74,8 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   double? _pendingFraction;
   DateTime _restoreDeadline = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _shortChapterTimer;
+  int _chapterRequest = 0;
+  double _wantedFraction = 0;
 
   @override
   void initState() {
@@ -92,7 +97,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     _focusNode.dispose();
     _shortChapterTimer?.cancel();
     // A last save for scrolling still under way as the reader closes.
-    if (_book != null && _activeRestore == null && _scroll.hasClients) {
+    // Not while a chapter is still loading: there's no position to read yet, and
+    // saving one would overwrite the saved place.
+    if (_chapter != null && _activeRestore == null && _scroll.hasClients) {
       _savePosition(_currentFraction);
     }
     _scroll.dispose();
@@ -110,11 +117,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     final client = ref.read(apiClientProvider);
     final db = ref.read(localDbProvider);
 
-    final EpubBook book;
+    final ReaderBook? book;
     try {
-      final bytes = await _readBookBytes(client, db);
-      if (bytes == null || !mounted) return;
-      book = await Isolate.run(() => EpubParser.parse(bytes));
+      book = await _openBook(client, db);
     } catch (_) {
       // A malformed EPUB would otherwise throw out of here and leave the
       // reader on an endless spinner.
@@ -123,10 +128,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
       }
       return;
     }
-    if (book.chapters.isEmpty) {
-      if (mounted) {
-        setState(() => _loadError = 'This EPUB has no readable chapters.');
-      }
+    if (book == null || !mounted) return;
+    if (book.chapterCount == 0) {
+      setState(() => _loadError = 'This book has no readable chapters.');
       return;
     }
 
@@ -136,65 +140,81 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     final saved = await _savedPosition(client, db);
     if (!mounted) return;
 
-    final chapter = saved.chapter.clamp(0, book.chapters.length - 1);
+    final chapter = saved.chapter.clamp(0, book.chapterCount - 1);
     setState(() {
       _book = book;
       _chapterIndex = chapter;
     });
 
     ref.read(readerProvider((widget.mediaId, null)).notifier).openBook(
-          chapterCount: book.chapters.length,
+          chapterCount: book.chapterCount,
           chapter: chapter,
           fraction: saved.fraction,
         );
-    _restorePosition(saved.fraction ?? 0);
-    _scheduleShortChapterCheck();
+    await _showChapter(chapter, saved.fraction ?? 0);
     _reportChapter();
   }
 
-  /// The book's bytes: the downloaded copy when there is a usable one, otherwise
-  /// from the server. Returns null, with the screen updated, if neither works.
-  Future<Uint8List?> _readBookBytes(ApiClient client, Database db) async {
+  /// The downloaded copy when there is a usable one, otherwise streamed from the
+  /// server. Returns null, with the screen updated, if neither works.
+  Future<ReaderBook?> _openBook(ApiClient client, Database db) async {
     // Resolve the downloaded file from the local DB (not the in-memory
     // download provider, which may still be restoring on a cold offline start).
     final dir = await resolveDownloadDir();
     final localPath = await DownloadManager(client, db, downloadBaseDir: dir)
         .localPath(widget.mediaId);
     if (localPath != null && await EpubParser.isEpubFile(localPath)) {
-      return File(localPath).readAsBytes();
+      final bytes = await File(localPath).readAsBytes();
+      return Isolate.run(() => EpubParser.parse(bytes));
     }
 
     try {
-      return await MediaApi(client).getBookBytes(widget.mediaId);
+      return await RemoteBook.open(client, widget.mediaId);
     } on DioException catch (e) {
       if (!mounted) return null;
-      final reason = _serverReason(e);
       setState(() {
-        if (reason != null) {
-          _loadError = reason;
-        } else if (e.response == null) {
+        final status = e.response?.statusCode;
+        if (e.response == null) {
           _notDownloaded = true;
+        } else if (status == 404) {
+          _loadError = 'Your server needs updating to read this book without '
+              'downloading it.';
         } else {
-          _loadError = "This book couldn't be opened.";
+          _loadError = _serverReason(e) ?? "This book couldn't be opened.";
         }
       });
       return null;
     }
   }
 
-  /// Why the server can't provide this book: a read-only account, or a reason it
-  /// gave itself, such as a DRM-protected MOBI.
+  /// The explanation the server gives for a book it can't provide, such as a
+  /// DRM-protected Kindle file.
   String? _serverReason(DioException e) {
-    if (e.response?.statusCode == 403) {
-      return "Your account doesn't have permission to open this book.";
-    }
     final data = e.response?.data;
-    if (e.response?.statusCode != 422 || data is! List<int>) return null;
+    return data is Map ? data['error'] as String? : null;
+  }
+
+  /// Fetches a chapter and shows it at [fraction]. A newer request wins if the
+  /// reader moves on while this one is still on its way.
+  Future<void> _showChapter(int index, double fraction) async {
+    final book = _book;
+    if (book == null) return;
+    final request = ++_chapterRequest;
+    _wantedFraction = fraction;
+    setState(() {
+      _chapter = null;
+      _chapterFailed = false;
+    });
     try {
-      final json = jsonDecode(utf8.decode(data));
-      return json is Map ? json['error'] as String? : null;
+      final chapter = await book.loadChapter(index);
+      if (!mounted || request != _chapterRequest) return;
+      setState(() => _chapter = chapter);
+      _restorePosition(fraction);
+      _scheduleShortChapterCheck();
     } catch (_) {
-      return null;
+      if (mounted && request == _chapterRequest) {
+        setState(() => _chapterFailed = true);
+      }
     }
   }
 
@@ -250,16 +270,15 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   void _nextChapter() {
     final book = _book;
     if (book == null) return;
-    if (_chapterIndex < book.chapters.length - 1) {
+    if (_chapterIndex < book.chapterCount - 1) {
       _goToChapter(_chapterIndex + 1);
     }
   }
 
   void _goToChapter(int index) {
     setState(() => _chapterIndex = index);
-    _restorePosition(0);
     _savePosition(0);
-    _scheduleShortChapterCheck();
+    _showChapter(index, 0);
     _reportChapter();
   }
 
@@ -291,6 +310,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
 
   /// Where the view is now, as a fraction of the chapter.
   double get _currentFraction {
+    if (_chapter == null) return _pendingFraction ?? 0;
     final pending = _activeRestore;
     if (pending != null || !_scroll.hasClients) return pending ?? 0;
     final max = _scroll.position.maxScrollExtent;
@@ -317,7 +337,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
           fraction: fraction,
           completed: isBookFinished(
             chapter: _chapterIndex,
-            chapterCount: book.chapters.length,
+            chapterCount: book.chapterCount,
             fraction: fraction,
           ),
         );
@@ -359,7 +379,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     if (book == null) return;
     ref
         .read(nowReadingProvider.notifier)
-        .updatePosition(widget.mediaId, _chapterIndex, book.chapters.length);
+        .updatePosition(widget.mediaId, _chapterIndex, book.chapterCount);
   }
 
   Color get _bgColor => switch (_theme) {
@@ -416,16 +436,23 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                           controller: _scroll,
                           padding:
                               const EdgeInsets.fromLTRB(24, 80, 24, 100),
-                          child: BookChapterView(
-                            book: book,
-                            chapter: book.chapters[_chapterIndex],
-                            textStyle: TextStyle(
-                              fontSize: _fontSize,
-                              color: _fgColor,
-                              height: 1.6,
-                            ),
-                            onTapLink: _onTapLink,
-                          ),
+                          child: _chapter == null
+                              ? _ChapterPlaceholder(
+                                  failed: _chapterFailed,
+                                  fgColor: _fgColor,
+                                  onRetry: () =>
+                                      _showChapter(_chapterIndex, _wantedFraction),
+                                )
+                              : BookChapterView(
+                                  book: book,
+                                  chapter: _chapter!,
+                                  textStyle: TextStyle(
+                                    fontSize: _fontSize,
+                                    color: _fgColor,
+                                    height: 1.6,
+                                  ),
+                                  onTapLink: _onTapLink,
+                                ),
                         ),
                       ),
                     ),
@@ -451,7 +478,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                               ),
                               Expanded(
                                 child: Text(
-                                  book.chapters[_chapterIndex].title,
+                                  book.chapterTitle(_chapterIndex),
                                   style: TextStyle(
                                     color: _fgColor,
                                     fontWeight: FontWeight.w600,
@@ -511,7 +538,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                               Expanded(
                                 child: Text(
                                   'Chapter ${_chapterIndex + 1}'
-                                  ' / ${book.chapters.length}',
+                                  ' / ${book.chapterCount}',
                                   style: TextStyle(color: _fgColor),
                                   textAlign: TextAlign.center,
                                 ),
@@ -520,7 +547,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                                 icon: Icon(Icons.chevron_right,
                                     color: _fgColor),
                                 onPressed: _chapterIndex <
-                                        book.chapters.length - 1
+                                        book.chapterCount - 1
                                     ? _nextChapter
                                     : null,
                               ),
@@ -537,10 +564,45 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   }
 }
 
+/// Stands in for a chapter while it's on its way from the server.
+class _ChapterPlaceholder extends StatelessWidget {
+  final bool failed;
+  final Color fgColor;
+  final VoidCallback onRetry;
+
+  const _ChapterPlaceholder({
+    required this.failed,
+    required this.fgColor,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 120),
+      child: Center(
+        child: failed
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    "This chapter couldn't be loaded.",
+                    style: TextStyle(color: fgColor),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(onPressed: onRetry, child: const Text('Try again')),
+                ],
+              )
+            : const CircularProgressIndicator(),
+      ),
+    );
+  }
+}
+
 /// One chapter, with its images and links resolved against the book.
 @visibleForTesting
 class BookChapterView extends StatelessWidget {
-  final EpubBook book;
+  final ReaderBook book;
   final EpubChapter chapter;
   final TextStyle textStyle;
   final void Function(String url) onTapLink;
@@ -578,15 +640,14 @@ class BookChapterView extends StatelessWidget {
 /// Serves images from inside the book. Anything else a book asks for is refused,
 /// so opening one can't make network requests.
 class _BookWidgetFactory extends WidgetFactory {
-  final EpubBook book;
+  final ReaderBook book;
   _BookWidgetFactory(this.book);
 
   @override
   ImageProvider<Object>? imageProviderFromNetwork(String url) {
     final uri = Uri.tryParse(url);
     if (uri == null || uri.scheme != _bookScheme) return null;
-    final bytes = book.imageAt(Uri.decodeFull(uri.path));
-    return bytes == null ? null : MemoryImage(bytes);
+    return book.imageProvider(Uri.decodeFull(uri.path).replaceFirst('/', ''));
   }
 }
 

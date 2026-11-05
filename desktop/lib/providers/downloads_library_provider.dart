@@ -24,7 +24,7 @@ class DownloadedItem {
     this.localPath,
   });
 
-  bool get isEpub => const {'epub', 'mobi'}.contains(format.toLowerCase());
+  bool get isEpub => const {'epub', 'mobi', 'azw', 'azw3'}.contains(format.toLowerCase());
 
   /// Series name derived from the download's parent directory (the download
   /// path mirrors the server's on-disk layout, e.g. ".../Batman/Chapter1.cbz").

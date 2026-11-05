@@ -83,11 +83,11 @@ class DownloadManager @Inject constructor(
         onProgress: (DownloadState) -> Unit,
         safBaseUri: Uri? = null,
     ): String = withContext(Dispatchers.IO) {
-        // The reader only understands EPUB, so MOBI is stored as the server's
-        // conversion of it, under an .epub name and format.
-        val isMobi = sourceFormat.equals("mobi", ignoreCase = true)
-        val format = if (isMobi) "epub" else sourceFormat
-        val relativePath = if (isMobi && sourceRelativePath.isNotBlank()) {
+        // The reader only understands EPUB, so Kindle formats are stored as the
+        // server's conversion, under an .epub name and format.
+        val isKindle = sourceFormat.lowercase() in setOf("mobi", "azw", "azw3")
+        val format = if (isKindle) "epub" else sourceFormat
+        val relativePath = if (isKindle && sourceRelativePath.isNotBlank()) {
             sourceRelativePath.substringBeforeLast('.') + ".epub"
         } else {
             sourceRelativePath
@@ -112,7 +112,7 @@ class DownloadManager @Inject constructor(
             // file can be found and removed after a process death or cancel.
             upsert(mediaId, format, title, DownloadStatus.DOWNLOADING, 0f, localPath)
 
-            val endpoint = if (isMobi) "book" else "download"
+            val endpoint = if (isKindle) "book" else "download"
             val url = "${serverBaseUrl.trimEnd('/')}/api/media/$mediaId/$endpoint"
             val request = Request.Builder().url(url).header("Authorization", authHeader).build()
 
@@ -189,7 +189,7 @@ class DownloadManager @Inject constructor(
     ): String = withContext(Dispatchers.IO) {
         val dir = extractedDir(mediaId)
         // Text books are read whole by the EPUB reader; their images aren't pages.
-        if (format.lowercase() in setOf("epub", "mobi")) return@withContext dir.absolutePath
+        if (format.lowercase() in setOf("epub", "mobi", "azw", "azw3")) return@withContext dir.absolutePath
 
         onProgress(DownloadState(status = DownloadStatus.EXTRACTING, progress = 1f, localPath = localPath))
 

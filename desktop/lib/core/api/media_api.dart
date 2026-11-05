@@ -55,19 +55,41 @@ class MediaApi {
     return (count: count, spreads: spreads);
   }
 
-  /// The book as EPUB bytes, for reading without saving a download. The server
-  /// converts other text formats, and refuses accounts without download permission.
-  Future<Uint8List> getBookBytes(String mediaId) async {
+  /// A book's title and chapters, for reading it a chapter at a time.
+  Future<({String title, List<({String title, String path})> chapters})>
+      getBookManifest(String mediaId) async {
+    final resp = await _client.dio.get('api/media/$mediaId/book/manifest');
+    final data = resp.data as Map<String, dynamic>;
+    return (
+      title: (data['title'] ?? '') as String,
+      chapters: [
+        for (final c in data['chapters'] as List<dynamic>)
+          (
+            title: (c['title'] ?? '') as String,
+            path: c['path'] as String,
+          ),
+      ],
+    );
+  }
+
+  /// One file from inside a book, by its path in the EPUB.
+  Future<Uint8List> getBookContent(String mediaId, String path) async {
     final resp = await _client.dio.get<List<int>>(
-      'api/media/$mediaId/book',
-      options: Options(
-        responseType: ResponseType.bytes,
-        // Same reasoning as downloads: big books on slow links take a while.
-        receiveTimeout: const Duration(minutes: 30),
-      ),
+      'api/media/$mediaId/book/content/${_encodePath(path)}',
+      options: Options(responseType: ResponseType.bytes),
     );
     return Uint8List.fromList(resp.data!);
   }
+
+  String bookContentUrl(String mediaId, String path) {
+    final base = _client.baseUrl.endsWith('/')
+        ? _client.baseUrl
+        : '${_client.baseUrl}/';
+    return '${base}api/media/$mediaId/book/content/${_encodePath(path)}';
+  }
+
+  static String _encodePath(String path) =>
+      path.split('/').map(Uri.encodeComponent).join('/');
 
   /// Returns all folder-type items in [libraryId] whose title contains [query].
   /// Archives and individual chapters are never included.

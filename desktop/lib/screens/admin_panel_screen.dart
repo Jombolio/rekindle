@@ -540,7 +540,7 @@ class _UploadPanelState extends ConsumerState<UploadPanel> {
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['cbz', 'cbr', 'pdf', 'epub', 'mobi', 'CBZ', 'CBR', 'PDF', 'EPUB', 'MOBI'],
+      allowedExtensions: ['cbz', 'cbr', 'pdf', 'epub', 'mobi', 'azw', 'azw3', 'CBZ', 'CBR', 'PDF', 'EPUB', 'MOBI', 'AZW', 'AZW3'],
       allowMultiple: false,
     );
     if (result == null || result.files.isEmpty) return;

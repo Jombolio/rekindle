@@ -51,10 +51,10 @@ class DownloadManager {
     required ProgressCallback onProgress,
     CancelToken? cancelToken,
   }) async {
-    // The readers only understand EPUB, so MOBI is stored as the server's
-    // conversion of it, under an .epub name and format.
-    final isMobi = format.toLowerCase() == 'mobi';
-    if (isMobi) {
+    // The readers only understand EPUB, so Kindle formats are stored as the
+    // server's conversion, under an .epub name and format.
+    final isKindle = const {'mobi', 'azw', 'azw3'}.contains(format.toLowerCase());
+    if (isKindle) {
       format = 'epub';
       if (relativePath.isNotEmpty) {
         relativePath = p.setExtension(relativePath, '.epub');
@@ -79,7 +79,7 @@ class DownloadManager {
 
     try {
       await _client.dio.download(
-        isMobi ? 'api/media/$mediaId/book' : 'api/media/$mediaId/download',
+        isKindle ? 'api/media/$mediaId/book' : 'api/media/$mediaId/download',
         localPath,
         cancelToken: cancelToken,
         // Override the base receiveTimeout — large archives on slow connections

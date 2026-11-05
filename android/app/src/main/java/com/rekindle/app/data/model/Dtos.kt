@@ -36,6 +36,13 @@ data class ReadingProgressDto(
     val positionFraction: Double? = null,
 )
 
+data class BookChapterDto(val title: String = "", val path: String = "")
+
+data class BookManifestDto(
+    val title: String = "",
+    val chapters: List<BookChapterDto> = emptyList(),
+)
+
 data class ProgressSummaryRequest(val ids: List<String>)
 
 data class ProgressSummaryDto(

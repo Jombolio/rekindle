@@ -133,6 +133,72 @@ public class BookEndpointTests : IClassFixture<TestWebApplicationFactory>, IDisp
     }
 
     [Fact]
+    public async Task ReadOnlyAccount_CanStreamABook_ButNotFetchTheFile()
+    {
+        var id = await SeedAsync(Epub("a.xhtml", "b.xhtml"), "epub");
+        using var readOnly = _factory.CreateClient();
+        readOnly.SetBearerToken(await TokenAtLevelAsync(1));
+
+        var manifest = await readOnly.GetFromJsonAsync<JsonElement>($"/api/media/{id}/book/manifest");
+        var chapters = manifest.GetProperty("chapters");
+        chapters.GetArrayLength().Should().Be(2);
+        var path = chapters[1].GetProperty("path").GetString();
+        path.Should().Be("OPS/b.xhtml");
+
+        var chapter = await readOnly.GetAsync($"/api/media/{id}/book/content/{path}");
+        chapter.StatusCode.Should().Be(HttpStatusCode.OK);
+        chapter.Content.Headers.ContentType!.MediaType.Should().Be("text/html");
+        chapter.Headers.CacheControl!.NoStore.Should().BeTrue();
+        (await chapter.Content.ReadAsStringAsync()).Should().Contain("<p>b.xhtml</p>");
+
+        (await readOnly.GetAsync($"/api/media/{id}/book")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await readOnly.GetAsync($"/api/media/{id}/download")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Theory]
+    [InlineData("OPS/book.opf")]
+    [InlineData("META-INF/container.xml")]
+    [InlineData("OPS/none.xhtml")]
+    [InlineData("OPS/..%2F..%2F..%2Fsecret.xhtml")]
+    public async Task Content_OnlyServesReadingContentFromInsideTheBook(string path)
+    {
+        var id = await SeedAsync(Epub("a.xhtml"), "epub");
+        (await _client.GetAsync($"/api/media/{id}/book/content/{path}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Content_FindsFilesWithSpacesInTheirNames()
+    {
+        var id = await SeedAsync(Epub("chapter 1.xhtml"), "epub");
+        var manifest = await _client.GetFromJsonAsync<JsonElement>($"/api/media/{id}/book/manifest");
+        manifest.GetProperty("chapters")[0].GetProperty("path").GetString().Should().Be("OPS/chapter 1.xhtml");
+
+        (await _client.GetAsync($"/api/media/{id}/book/content/OPS/chapter%201.xhtml")).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Stream_ForAKindleBook_ConvertsAndServesChapters()
+    {
+        var id = await SeedAsync(Mobi(new BookFixtures.Mobi { Text = "<h1>Hello</h1><p>hi</p>"u8.ToArray() }), "azw3");
+
+        var manifest = await _client.GetFromJsonAsync<JsonElement>($"/api/media/{id}/book/manifest");
+        var chapter = manifest.GetProperty("chapters")[0];
+        chapter.GetProperty("title").GetString().Should().Be("Hello");
+
+        var body = await _client.GetStringAsync($"/api/media/{id}/book/content/{chapter.GetProperty("path").GetString()}");
+        body.Should().Contain("<p>hi</p>");
+    }
+
+    [Fact]
+    public async Task Manifest_ForAnUnconvertibleBook_Returns422WithTheReason()
+    {
+        var id = await SeedAsync(Mobi(new BookFixtures.Mobi { Text = "<p>a</p>"u8.ToArray(), Encryption = 2 }), "mobi");
+        var resp = await _client.GetAsync($"/api/media/{id}/book/manifest");
+        resp.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString().Should().Contain("DRM");
+    }
+
+    [Fact]
     public async Task Book_ForADownloadAccount_ReturnsTheBook()
     {
         var id = await SeedAsync(Epub("a.xhtml"), "epub");

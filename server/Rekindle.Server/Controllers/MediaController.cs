@@ -195,9 +195,55 @@ public class MediaController(
         return PhysicalFile(pagePath, mimeType);
     }
 
-    /// The whole book as an EPUB. Needs the download permission because a client
-    /// ends up holding a complete copy of the file, which read-only accounts must
-    /// not get. MOBI files are converted on first request.
+    /// A book's title and chapters, for reading it a chapter at a time. Open to every
+    /// signed-in user, like comic pages.
+    [HttpGet("{id}/book/manifest")]
+    public async Task<IActionResult> GetBookManifest(string id)
+    {
+        var media = await mediaRepository.GetByIdAsync(id);
+        if (media is null || !BookService.IsTextBook(media.Format) || !System.IO.File.Exists(media.FilePath))
+            return NotFound();
+
+        try
+        {
+            var manifest = bookService.GetManifest(await bookService.GetEpubPathAsync(media.Id, media.FilePath));
+            return manifest is null
+                ? UnprocessableEntity(new { error = "This book couldn't be read." })
+                : Ok(manifest);
+        }
+        catch (MobiNotSupportedException e)
+        {
+            return UnprocessableEntity(new { error = e.Message });
+        }
+    }
+
+    /// One chapter, stylesheet or image from inside a book, streamed straight out of
+    /// the archive. Open to every signed-in user: like comic pages, this is reading,
+    /// and the book as a file stays behind the download permission.
+    [HttpGet("{id}/book/content/{**path}")]
+    public async Task<IActionResult> GetBookContent(string id, string path)
+    {
+        var media = await mediaRepository.GetByIdAsync(id);
+        if (media is null || !BookService.IsTextBook(media.Format) || !System.IO.File.Exists(media.FilePath))
+            return NotFound();
+
+        try
+        {
+            var content = bookService.OpenContent(await bookService.GetEpubPathAsync(media.Id, media.FilePath), path);
+            if (content is null) return NotFound();
+
+            Response.Headers.CacheControl = "no-store";
+            return File(content.Stream, content.ContentType);
+        }
+        catch (MobiNotSupportedException e)
+        {
+            return UnprocessableEntity(new { error = e.Message });
+        }
+    }
+
+    /// The whole book as an EPUB, for saving a download. Needs the download permission
+    /// because the client ends up holding a complete copy of the file. Kindle formats
+    /// are converted on first request.
     [HttpGet("{id}/book")]
     [Authorize(Policy = PermissionPolicies.CanDownload)]
     public async Task<IActionResult> GetBook(string id)
@@ -324,7 +370,7 @@ public class MediaController(
     {
         "epub" => "application/epub+zip",
         "pdf" => "application/pdf",
-        "mobi" => "application/x-mobipocket-ebook",
+        "mobi" or "azw" or "azw3" => "application/x-mobipocket-ebook",
         _ => "application/octet-stream"
     };
 

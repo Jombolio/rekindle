@@ -3,6 +3,7 @@ package com.rekindle.app.core.epub
 import org.w3c.dom.Element
 import java.io.Closeable
 import java.io.File
+import java.io.InputStream
 import java.net.URLDecoder
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
@@ -10,28 +11,38 @@ import javax.xml.parsers.DocumentBuilderFactory
 
 data class EpubChapter(val title: String, val path: String)
 
+/** A book the reader can show, from a downloaded file or streamed from the server. */
+interface ReaderBook : Closeable {
+    val title: String
+    val chapters: List<EpubChapter>
+
+    /** Opens the file at [path] inside the book, or returns null if it can't be had. */
+    fun open(path: String): InputStream?
+
+    fun read(path: String): ByteArray? = open(path)?.use { it.readBytes() }
+
+    fun chapterIndexOf(path: String): Int? {
+        val wanted = EpubParser.normalizePath(path)
+        return chapters.indexOfFirst { it.path.equals(wanted, ignoreCase = true) }
+            .takeIf { it >= 0 }
+    }
+}
+
 /**
  * An open EPUB. Files are read from the archive when asked for rather than held
  * in memory, so an illustrated book doesn't cost its full size in RAM. Must be
  * closed when finished with.
  */
 class EpubBook internal constructor(
-    val title: String,
-    val chapters: List<EpubChapter>,
+    override val title: String,
+    override val chapters: List<EpubChapter>,
     private val zip: ZipFile,
     private val entries: Map<String, ZipEntry>,
-) : Closeable {
+) : ReaderBook {
 
-    /** The file at [path] inside the book, or null if there is none. */
-    fun read(path: String): ByteArray? {
+    override fun open(path: String): InputStream? {
         val entry = entries[EpubParser.normalizePath(path).lowercase()] ?: return null
-        return synchronized(zip) { zip.getInputStream(entry).use { it.readBytes() } }
-    }
-
-    fun chapterIndexOf(path: String): Int? {
-        val wanted = EpubParser.normalizePath(path)
-        return chapters.indexOfFirst { it.path.equals(wanted, ignoreCase = true) }
-            .takeIf { it >= 0 }
+        return zip.getInputStream(entry)
     }
 
     override fun close() = zip.close()

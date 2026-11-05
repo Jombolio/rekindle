@@ -3,9 +3,11 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:flutter/painting.dart';
 import 'package:xml/xml.dart';
 
 import 'book_styles.dart';
+import 'reader_book.dart';
 
 class EpubChapter {
   final String title;
@@ -25,7 +27,7 @@ class EpubChapter {
   });
 }
 
-class EpubBook {
+class EpubBook implements ReaderBook {
   final String title;
   final List<EpubChapter> chapters;
 
@@ -41,7 +43,22 @@ class EpubBook {
   Uint8List? imageAt(String path) =>
       images[EpubParser.normalizePath(path).toLowerCase()];
 
-  /// Index of the chapter stored at [path], or null if it isn't one.
+  @override
+  int get chapterCount => chapters.length;
+
+  @override
+  String chapterTitle(int index) => chapters[index].title;
+
+  @override
+  Future<EpubChapter> loadChapter(int index) async => chapters[index];
+
+  @override
+  ImageProvider<Object>? imageProvider(String path) {
+    final bytes = imageAt(path);
+    return bytes == null ? null : MemoryImage(bytes);
+  }
+
+  @override
   int? chapterIndexOf(String path) {
     final wanted = EpubParser.normalizePath(path).toLowerCase();
     final index =

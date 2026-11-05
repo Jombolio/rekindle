@@ -1,6 +1,7 @@
 package com.rekindle.app.data.repository
 
-import okhttp3.ResponseBody
+import com.rekindle.app.core.epub.EpubChapter
+import com.rekindle.app.core.epub.RemoteBook
 import com.rekindle.app.data.api.RekindleApi
 import com.rekindle.app.data.db.ProgressQueueDao
 import com.rekindle.app.data.db.ProgressQueueEntity
@@ -94,7 +95,16 @@ class MediaRepository @Inject constructor(
         }
     }
 
-    suspend fun getBook(mediaId: String): ResponseBody = api.getBook(mediaId)
+    /** Opens a book for reading from the server, a chapter at a time. */
+    suspend fun openRemoteBook(mediaId: String): RemoteBook {
+        val manifest = api.getBookManifest(mediaId)
+        return RemoteBook(
+            api = api,
+            mediaId = mediaId,
+            title = manifest.title,
+            chapters = manifest.chapters.map { EpubChapter(it.title, it.path) },
+        )
+    }
 
     suspend fun saveProgress(
         mediaId: String,
