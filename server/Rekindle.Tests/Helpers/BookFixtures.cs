@@ -42,6 +42,7 @@ public static class BookFixtures
         public int ExtraDataFlags;
         public uint Encoding = 65001;
         public string Title = "A Book";
+        public string? Author;
         public byte[][] ExtraRecords = [];
         public int? FirstImageRecord;
         public int? CoverOffset;
@@ -76,19 +77,42 @@ public static class BookFixtures
 
             using var record0 = new MemoryStream();
             record0.Write(header);
-            if (CoverOffset is { } cover)
+            if (CoverOffset is not null || Author is not null)
             {
                 Put32(header, 128, 0x40);
                 record0.Position = 0;
                 record0.Write(header);
                 record0.Position = record0.Length;
-                var exth = new byte[12 + 12];
+
+                var entries = new List<byte[]>();
+                if (CoverOffset is { } cover)
+                {
+                    var entry = new byte[12];
+                    Put32(entry, 0, 201);
+                    Put32(entry, 4, 12);
+                    Put32(entry, 8, (uint)cover);
+                    entries.Add(entry);
+                }
+                if (Author is { } author)
+                {
+                    var name = System.Text.Encoding.UTF8.GetBytes(author);
+                    var entry = new byte[8 + name.Length];
+                    Put32(entry, 0, 100);
+                    Put32(entry, 4, (uint)entry.Length);
+                    name.CopyTo(entry, 8);
+                    entries.Add(entry);
+                }
+
+                var exth = new byte[12 + entries.Sum(e => e.Length)];
                 "EXTH"u8.CopyTo(exth);
                 Put32(exth, 4, (uint)exth.Length);
-                Put32(exth, 8, 1);
-                Put32(exth, 12, 201);
-                Put32(exth, 16, 12);
-                Put32(exth, 20, (uint)cover);
+                Put32(exth, 8, (uint)entries.Count);
+                var at = 12;
+                foreach (var entry in entries)
+                {
+                    entry.CopyTo(exth, at);
+                    at += entry.Length;
+                }
                 record0.Write(exth);
             }
             var titleOffset = record0.Length;

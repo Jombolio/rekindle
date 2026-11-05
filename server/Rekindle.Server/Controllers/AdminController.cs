@@ -91,6 +91,7 @@ public class AdminController(
 [Authorize(Policy = PermissionPolicies.CanManageMedia)]
 public class UploadController(
     LibraryRepository libraryRepository,
+    MediaRepository mediaRepository,
     LibraryScannerService scanner,
     ScanProgressTracker progressTracker,
     ILogger<UploadController> logger) : ControllerBase
@@ -98,13 +99,54 @@ public class UploadController(
     private static readonly HashSet<string> AllowedExtensions =
         LibraryScannerService.SupportedExtensions;
 
+    /// Says whether a book on the caller's machine can be imported, from just the
+    /// start of the file, so nothing that can't be read is ever uploaded. [title]
+    /// and [author] are the client's reading of an EPUB, which it sends no head for.
+    [HttpPost("upload/inspect")]
+    [RequestSizeLimit(BookImportInspector.MaxHeadBytes + 64 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = BookImportInspector.MaxHeadBytes + 64 * 1024)]
+    public async Task<IActionResult> Inspect(
+        [FromForm] string libraryId,
+        [FromForm] string fileName,
+        [FromForm] string? title,
+        [FromForm] string? author,
+        IFormFile? head)
+    {
+        var library = await libraryRepository.GetByIdAsync(libraryId);
+        if (library is null)
+            return NotFound(new { error = "Library not found." });
+
+        var safeName = Path.GetFileName(fileName);
+        if (string.IsNullOrWhiteSpace(safeName))
+            return BadRequest(new { error = "Invalid file name." });
+
+        byte[] headBytes = [];
+        if (head is not null)
+        {
+            using var buffer = new MemoryStream();
+            await head.CopyToAsync(buffer);
+            headBytes = buffer.ToArray();
+        }
+
+        var existing = await mediaRepository.GetBookNamesForLibraryAsync(library.Id);
+        var inspection = BookImportInspector.Inspect(safeName, headBytes, title, author, existing);
+        return Ok(new
+        {
+            status = inspection.Status.ToString(),
+            title = inspection.Title,
+            author = inspection.Author,
+            reason = inspection.Reason,
+        });
+    }
+
     [HttpPost("upload")]
     [RequestSizeLimit(4_294_967_296)]
     [RequestFormLimits(MultipartBodyLengthLimit = 4_294_967_296)]
     public async Task<IActionResult> Upload(
         [FromForm] string libraryId,
         [FromForm] string? relativePath,
-        IFormFile? file)
+        IFormFile? file,
+        [FromForm] bool deferScan = false)
     {
         if (file is null || file.Length == 0)
             return BadRequest(new { error = "No file provided." });
@@ -170,8 +212,17 @@ public class UploadController(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to write uploaded file to {DestPath}", destPath);
+            // A partial file would be scanned as a book and block a retry.
+            try { System.IO.File.Delete(destPath); } catch (IOException) { }
             return StatusCode(500, new { error = "Failed to save the file on the server." });
         }
+
+        logger.LogInformation("Uploaded '{FileName}' to library {LibraryId} at '{RelPath}'",
+            safeName, libraryId, relativePath ?? "root");
+
+        // A batch asks for one scan itself once all of its files are there.
+        if (deferScan)
+            return Ok(new { message = "Upload complete.", fileName = safeName });
 
         // Only kick off a scan if one isn't already running for this library —
         // rapid successive uploads must not race concurrent scans.
@@ -184,8 +235,6 @@ public class UploadController(
             });
         }
 
-        logger.LogInformation("Uploaded '{FileName}' to library {LibraryId} at '{RelPath}'",
-            safeName, libraryId, relativePath ?? "root");
         return Ok(new { message = "Upload complete. Library scan started.", fileName = safeName });
     }
 }

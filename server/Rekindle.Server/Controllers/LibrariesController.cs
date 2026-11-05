@@ -103,7 +103,7 @@ public class LibrariesController(
         // Guard against concurrent scans of the same library — two interleaving
         // scans race the DB and can mis-parent chapters.
         if (!progressTracker.TryBeginScan(id))
-            return Accepted(new { message = "A scan is already in progress for this library." });
+            return Accepted(new { message = "A scan is already in progress for this library.", started = false });
 
         // Fire-and-forget — scan runs in background
         _ = Task.Run(async () =>
@@ -112,7 +112,7 @@ public class LibrariesController(
             finally { progressTracker.ReleaseScan(id); }
         });
 
-        return Accepted(new { message = "Scan started." });
+        return Accepted(new { message = "Scan started.", started = true });
     }
 
     [HttpGet("{id}/scan/progress")]
