@@ -195,6 +195,16 @@ fun ChapterIndexScreen(
                                 }
                         }
                     }
+                    IconButton(onClick = vm::refresh, enabled = !state.refreshing) {
+                        if (state.refreshing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                        }
+                    }
                 },
             )
         },

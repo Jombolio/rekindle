@@ -42,6 +42,11 @@ class ChapterIndexScreen extends ConsumerWidget {
     final canDownload =
         authState is AuthAuthenticated && authState.canDownload;
 
+    void refresh() {
+      refreshProgressBadges(ref);
+      ref.invalidate(chapterProvider(folderId));
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(folderTitle),
@@ -51,7 +56,7 @@ class ChapterIndexScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
-            onPressed: () => ref.invalidate(chapterProvider(folderId)),
+            onPressed: refresh,
           ),
         ],
       ),
@@ -62,7 +67,7 @@ class ChapterIndexScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => ErrorView(
           message: e.toString(),
-          onRetry: () => ref.invalidate(chapterProvider(folderId)),
+          onRetry: refresh,
         ),
         data: (items) {
           final subfolders = items.where((m) => m.isFolder).toList();

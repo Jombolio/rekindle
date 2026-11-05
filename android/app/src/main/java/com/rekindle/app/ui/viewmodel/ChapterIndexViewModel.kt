@@ -20,6 +20,7 @@ import com.rekindle.app.domain.model.ScrapeStatus
 import org.json.JSONObject
 import retrofit2.HttpException
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,6 +38,8 @@ data class ChapterIndexState(
     /** Server reading state by media id: cross-device progress and "new" flags. */
     val summaries: Map<String, ProgressSummary> = emptyMap(),
     val loading: Boolean = true,
+    /** A reload over an already-populated list: the list stays, the action spins. */
+    val refreshing: Boolean = false,
     val error: String? = null,
     val metadata: MangaMetadata? = null,
     val metadataLoading: Boolean = false,
@@ -99,30 +102,14 @@ class ChapterIndexViewModel @Inject constructor(
         private set
     private var baseUrl: String = ""
 
+    /** Collector for this device's queued progress; rebound on every reload. */
+    private var localProgressJob: Job? = null
+
     init {
         viewModelScope.launch {
             authHeader = "Bearer ${prefs.token.first() ?: ""}"
             baseUrl = prefs.serverUrl.first()
-            runCatching { repo.getChapters(folderId) }
-                .onSuccess { chapters ->
-                    _state.update { it.copy(chapters = chapters, loading = false) }
-                    loadSummaries()
-                    chapters.forEach { downloadRepo.restoreIfNeeded(it.id) }
-                    downloadRepo.restoreFolderIfNeeded(folderId)
-                    // Observe (not one-shot read) so the badges refresh the moment
-                    // the reader writes progress — a one-shot load in init showed
-                    // stale "In progress · N / M" labels after backing out of a
-                    // chapter, because this ViewModel survives the navigation.
-                    val ids = chapters.filter { !it.isFolder }.map { it.id }
-                    launch {
-                        progressDao.observeByMediaIds(ids).collect { rows ->
-                            _state.update { st ->
-                                st.copy(readProgress = rows.associateBy { it.mediaId })
-                            }
-                        }
-                    }
-                }
-                .onFailure { e -> _state.update { it.copy(loading = false, error = e.message) } }
+            loadChapters()
 
             // Load metadata for manga and comic libraries
             if (libraryType == "manga" || libraryType == "comic") {
@@ -138,13 +125,65 @@ class ChapterIndexViewModel @Inject constructor(
         }
     }
 
-    private fun loadSummaries() {
+    /**
+     * Re-reads the chapter list and the reading state shown on it: a scan may
+     * have added chapters, and progress may have moved on another device since
+     * this screen opened.
+     */
+    fun refresh() {
+        if (_state.value.refreshing) return
+        viewModelScope.launch {
+            _state.update { it.copy(refreshing = true) }
+            try {
+                loadChapters()
+            } finally {
+                _state.update { it.copy(refreshing = false) }
+            }
+        }
+    }
+
+    private suspend fun loadChapters() {
+        runCatching { repo.getChapters(folderId) }
+            .onSuccess { chapters ->
+                _state.update { it.copy(chapters = chapters, loading = false, error = null) }
+                loadSummaries()
+                chapters.forEach { downloadRepo.restoreIfNeeded(it.id) }
+                downloadRepo.restoreFolderIfNeeded(folderId)
+                observeLocalProgress(chapters)
+            }
+            .onFailure { e ->
+                // A failed refresh must not swap the chapters already on screen
+                // for an error — they are how a downloaded series is opened
+                // offline. Only a first load has nothing to keep.
+                _state.update { st ->
+                    if (st.chapters.isEmpty()) st.copy(loading = false, error = e.message) else st
+                }
+            }
+    }
+
+    /**
+     * Observes (rather than one-shot reads) this device's queued progress, so
+     * the badges refresh the moment the reader writes progress — a one-shot
+     * load showed stale "In progress · N / M" labels after backing out of a
+     * chapter, because this ViewModel survives the navigation. Rebound on each
+     * reload: the query is fixed to the ids it was handed, so chapters a scan
+     * added would otherwise never be watched.
+     */
+    private fun observeLocalProgress(chapters: List<Media>) {
+        val ids = chapters.filter { !it.isFolder }.map { it.id }
+        localProgressJob?.cancel()
+        localProgressJob = viewModelScope.launch {
+            progressDao.observeByMediaIds(ids).collect { rows ->
+                _state.update { st -> st.copy(readProgress = rows.associateBy { it.mediaId }) }
+            }
+        }
+    }
+
+    private suspend fun loadSummaries() {
         val chapters = _state.value.chapters
         if (chapters.isEmpty()) return
-        viewModelScope.launch {
-            val fetched = repo.getProgressSummaries(chapters)
-            _state.update { it.copy(summaries = fetched) }
-        }
+        val fetched = repo.getProgressSummaries(chapters)
+        _state.update { it.copy(summaries = fetched) }
     }
 
     /**

@@ -81,6 +81,15 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
     }
   }
 
+  /// Reloads the library *and* the reading state its badges show, so progress
+  /// made elsewhere (another device, or the phone) lands on the covers here.
+  void _refresh() {
+    refreshProgressBadges(ref);
+    ref
+        .read(mediaListProvider(widget.libraryId).notifier)
+        .refresh(widget.libraryId);
+  }
+
   void _openItem(BuildContext context, Media item) {
     if (item.isFolder) {
       context.push('/series/${item.id}',
@@ -136,9 +145,7 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
         IconButton(
           icon: const Icon(Icons.refresh),
           tooltip: 'Refresh',
-          onPressed: () => ref
-              .read(mediaListProvider(widget.libraryId).notifier)
-              .refresh(widget.libraryId),
+          onPressed: _refresh,
         ),
       ],
     );
@@ -379,9 +386,7 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => ErrorView(
           message: e.toString(),
-          onRetry: () => ref
-              .read(mediaListProvider(widget.libraryId).notifier)
-              .refresh(widget.libraryId),
+          onRetry: _refresh,
         ),
         data: (items) => _gridBody(context, items),
       ),

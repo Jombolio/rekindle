@@ -20,6 +20,18 @@ ProgressSummary? watchProgressSummary(
   return local == null ? null : ProgressSummary.fromLocal(local, media.pageCount);
 }
 
+/// Re-fetches everything behind the badges: the server's summaries (this and
+/// any other device's progress) and this device's local rows.
+///
+/// A refresh has to ask for this by hand: the summary chunks are keyed by the
+/// ids they cover, so a reload that returns the same items hands the tiles back
+/// the progress fetched when the screen opened — which is why progress made
+/// elsewhere only caught up after leaving the screen and coming back.
+void refreshProgressBadges(WidgetRef ref) {
+  ref.invalidate(progressSummariesProvider);
+  ref.invalidate(localProgressProvider);
+}
+
 /// Circular read-progress indicator for the bottom-left corner of a cover.
 ///
 /// A partial orange ring while reading, a full green ring with a check once
