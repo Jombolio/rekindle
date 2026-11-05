@@ -44,8 +44,12 @@ class LibrariesApi {
     return Library.fromJson(resp.data as Map<String, dynamic>);
   }
 
-  Future<void> scan(String libraryId) =>
-      _client.dio.post('api/libraries/$libraryId/scan');
+  /// Returns false when a scan was already running, so none was started.
+  Future<bool> scan(String libraryId) async {
+    final resp = await _client.dio.post('api/libraries/$libraryId/scan');
+    final data = resp.data;
+    return data is! Map || data['started'] != false;
+  }
 
   Future<ScanProgress> getScanProgress(String libraryId) async {
     final resp = await _client.dio.get('api/libraries/$libraryId/scan/progress');

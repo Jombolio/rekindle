@@ -12,6 +12,7 @@ import '../core/models/library.dart';
 import '../core/models/media.dart';
 import '../providers/auth_provider.dart';
 import '../providers/sources_provider.dart';
+import 'book_import_dialog.dart';
 import 'widgets/cover_image.dart';
 
 // ── Per-source providers ──────────────────────────────────────────────────
@@ -599,6 +600,19 @@ class _UploadPanelState extends ConsumerState<UploadPanel> {
           children: [
             Text('Upload Archive to Library',
                 style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _uploading
+                  ? null
+                  : () => showDialog<void>(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (_) => BookImportDialog(
+                            backend: ApiBookImportBackend(client)),
+                      ),
+              icon: const Icon(Icons.menu_book_outlined),
+              label: const Text('Import books from a Kindle or folder…'),
+            ),
             const SizedBox(height: 24),
             if (_error != null) ...[
               _ErrorText(_error!),

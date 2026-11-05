@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 
+import '../import/book_import.dart';
 import 'api_client.dart';
 
 class AdminStats {
@@ -105,17 +108,21 @@ class AdminApi {
     String? relativePath,
     required String filePath,
     required String fileName,
+    bool deferScan = false,
+    CancelToken? cancelToken,
     void Function(int sent, int total)? onProgress,
   }) async {
     final formData = FormData.fromMap({
       'libraryId': libraryId,
       if (relativePath != null && relativePath.isNotEmpty) 'relativePath': relativePath,
+      if (deferScan) 'deferScan': 'true',
       'file': await MultipartFile.fromFile(filePath, filename: fileName),
     });
 
     final resp = await _client.dio.post(
       'api/admin/upload',
       data: formData,
+      cancelToken: cancelToken,
       onSendProgress: onProgress,
       options: Options(
         sendTimeout: const Duration(minutes: 30),
@@ -124,6 +131,31 @@ class AdminApi {
     );
     final data = resp.data as Map<String, dynamic>;
     return data['message'] as String? ?? 'Upload complete.';
+  }
+
+  /// Asks whether a book can be imported, from the start of its file.
+  Future<BookInspection> inspectBook({
+    required String libraryId,
+    required String fileName,
+    Uint8List? head,
+    String? title,
+    String? author,
+  }) async {
+    final formData = FormData.fromMap({
+      'libraryId': libraryId,
+      'fileName': fileName,
+      if (title != null) 'title': title,
+      if (author != null) 'author': author,
+      if (head != null) 'head': MultipartFile.fromBytes(head, filename: 'head'),
+    });
+    final resp = await _client.dio.post('api/admin/upload/inspect', data: formData);
+    final data = resp.data as Map<String, dynamic>;
+    return BookInspection(
+      status: ImportStatus.fromServer(data['status'] as String?),
+      title: data['title'] as String?,
+      author: data['author'] as String?,
+      reason: data['reason'] as String?,
+    );
   }
 
   Future<int> clearCache() async {
