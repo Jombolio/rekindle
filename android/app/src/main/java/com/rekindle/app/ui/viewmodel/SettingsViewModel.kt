@@ -2,13 +2,17 @@ package com.rekindle.app.ui.viewmodel
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.provider.DocumentsContract
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rekindle.app.core.prefs.BookFont
 import com.rekindle.app.core.prefs.DEFAULT_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.DEFAULT_CHAPTER_CONFIRM_MS
+import com.rekindle.app.BuildConfig
 import com.rekindle.app.core.prefs.PrefsStore
+import com.rekindle.app.core.update.AppUpdateChecker
+import com.rekindle.app.core.update.UpdateCheck
 import com.rekindle.app.domain.model.ServerSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -35,12 +39,17 @@ data class SettingsState(
     /** The font and text size books open with. */
     val bookFont: BookFont = BookFont.ORIGINAL,
     val bookFontSize: Float = DEFAULT_BOOK_FONT_SIZE,
+    /** Offer betas and release candidates when checking for updates. */
+    val receivePreReleases: Boolean = false,
+    val checkingForUpdates: Boolean = false,
+    val updateCheck: UpdateCheck? = null,
 )
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val prefs: PrefsStore,
     @ApplicationContext private val context: Context,
+    private val updateChecker: AppUpdateChecker,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SettingsState())
@@ -48,6 +57,9 @@ class SettingsViewModel @Inject constructor(
 
     val sources = prefs.sources.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val activeSourceId = prefs.activeSourceId.stateIn(viewModelScope, SharingStarted.Eagerly, "")
+
+    /** F-Droid signs its own builds, so a downloaded APK can't update such an install. */
+    val installedFromFdroid: Boolean = installerPackage()?.contains("fdroid", ignoreCase = true) == true
 
     /** Absolute path of the app-private downloads directory (always available, no permission). */
     val appPrivatePath: String = File(
@@ -74,6 +86,11 @@ class SettingsViewModel @Inject constructor(
             }.collect { change -> _state.update(change) }
         }
         viewModelScope.launch {
+            prefs.receivePreReleases.collect { receive ->
+                _state.update { it.copy(receivePreReleases = receive) }
+            }
+        }
+        viewModelScope.launch {
             combine(prefs.bookFont, prefs.bookFontSize) { font, size ->
                 font to size
             }.collect { (font, size) ->
@@ -84,6 +101,22 @@ class SettingsViewModel @Inject constructor(
 
     fun setThemeMode(mode: String) {
         viewModelScope.launch { prefs.setThemeMode(mode) }
+    }
+
+    fun setReceivePreReleases(receive: Boolean) {
+        // The last answer was for the other channel.
+        _state.update { it.copy(updateCheck = null) }
+        viewModelScope.launch { prefs.setReceivePreReleases(receive) }
+    }
+
+    fun checkForUpdates() {
+        if (_state.value.checkingForUpdates) return
+        _state.update { it.copy(checkingForUpdates = true, updateCheck = null) }
+        val includePreReleases = _state.value.receivePreReleases
+        viewModelScope.launch {
+            val result = updateChecker.check(BuildConfig.VERSION_NAME, includePreReleases)
+            _state.update { it.copy(checkingForUpdates = false, updateCheck = result) }
+        }
     }
 
     fun setBookFont(font: BookFont) {
@@ -130,6 +163,16 @@ class SettingsViewModel @Inject constructor(
             prefs.addOrUpdateSource(source.copy(name = newName))
         }
     }
+
+    private fun installerPackage(): String? = runCatching {
+        val manager = context.packageManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            manager.getInstallSourceInfo(context.packageName).installingPackageName
+        } else {
+            @Suppress("DEPRECATION")
+            manager.getInstallerPackageName(context.packageName)
+        }
+    }.getOrNull()
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 

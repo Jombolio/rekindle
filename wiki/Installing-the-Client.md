@@ -180,6 +180,14 @@ If you don't have F-Droid installed, download it from [f-droid.org](https://f-dr
 
 F-Droid checks for updates automatically. When a new Rekindle release is published to the repository, F-Droid will notify you and let you update through the normal update flow.
 
+### Updating
+
+Open **Settings → Updates** and tap **Check for updates**. Turn on **Include pre-releases** to be offered betas and release candidates as well.
+
+**Download** hands the APK to your browser, and Android installs it after you confirm. The app only checks when you ask.
+
+Copies installed from F-Droid are updated by F-Droid, which only offers stable releases. F-Droid signs its own builds, so an APK from the release page can't update them. To follow pre-releases, uninstall that copy first and install the APK; your downloads and local progress on the device are removed when you uninstall.
+
 ---
 
 ## Next Steps

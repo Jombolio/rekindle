@@ -200,6 +200,9 @@ class PrefsStore @Inject constructor(
             .coerceIn(MIN_CHAPTER_CONFIRM_MS, MAX_CHAPTER_CONFIRM_MS)
     }
 
+    /** Whether "Check for updates" offers betas and release candidates. */
+    val receivePreReleases: Flow<Boolean> = store.data.map { it[Keys.RECEIVE_PRE_RELEASES] ?: false }
+
     /** The font and text size books open with. */
     val bookFont: Flow<BookFont> = store.data.map { BookFont.parse(it[Keys.BOOK_FONT]) }
     val bookFontSize: Flow<Float> = store.data.map {
@@ -226,6 +229,9 @@ class PrefsStore @Inject constructor(
 
     suspend fun setSpineGap(gap: Float) =
         store.edit { it[Keys.SPINE_GAP] = gap }
+
+    suspend fun setReceivePreReleases(receive: Boolean) =
+        store.edit { it[Keys.RECEIVE_PRE_RELEASES] = receive }
 
     suspend fun setBookFont(font: BookFont) = store.edit { it[Keys.BOOK_FONT] = font.name }
 
@@ -277,6 +283,7 @@ class PrefsStore @Inject constructor(
         val DOWNLOAD_DIR = stringPreferencesKey("download_directory")
         val DOWNLOAD_SAF_URI = stringPreferencesKey("download_saf_uri")
         val SPINE_GAP = floatPreferencesKey("spine_gap")
+        val RECEIVE_PRE_RELEASES = booleanPreferencesKey("receive_pre_releases")
         val BOOK_FONT = stringPreferencesKey("book_font")
         val BOOK_FONT_SIZE = floatPreferencesKey("book_font_size")
         val CONFIRM_CHAPTER_CHANGE = booleanPreferencesKey("confirm_chapter_change")
