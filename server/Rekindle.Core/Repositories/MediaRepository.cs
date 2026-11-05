@@ -133,6 +133,21 @@ public class MediaRepository(DbConnectionFactory factory)
             (string?)r.parent_id));
     }
 
+    /// The file name and title of every text book in a library, to tell what it
+    /// already holds.
+    public async Task<IReadOnlyList<BookName>> GetBookNamesForLibraryAsync(string libraryId)
+    {
+        using var conn = factory.Create();
+        var rows = await conn.QueryAsync(
+            """
+            SELECT file_path, title FROM media
+            WHERE library_id = @libraryId AND media_type = 'archive'
+              AND lower(format) IN ('epub', 'mobi', 'azw', 'azw3');
+            """,
+            new { libraryId });
+        return rows.Select(r => new BookName(Path.GetFileName((string)r.file_path), (string)r.title)).ToList();
+    }
+
     public async Task InsertAsync(Media media)
     {
         using var conn = factory.Create();
@@ -206,3 +221,4 @@ public class MediaRepository(DbConnectionFactory factory)
 }
 
 public record MediaPathEntry(string Id, string FilePath, string MediaType, string? ParentId);
+public record BookName(string FileName, string Title);

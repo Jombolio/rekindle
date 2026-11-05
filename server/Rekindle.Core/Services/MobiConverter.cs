@@ -9,6 +9,8 @@ namespace Rekindle.Core.Services;
 /// message is safe to show to the user.
 public sealed class MobiNotSupportedException(string message) : Exception(message);
 
+public sealed record MobiHeaderInfo(string? Title, string? Author, bool IsEncrypted);
+
 /// Converts MOBI files to EPUB so the clients only need one book reader. Handles
 /// classic MOBI text, including the copy embedded in dual MOBI/KF8 files, and
 /// KF8-only files (see MobiConverter.Kf8.cs).
@@ -50,12 +52,47 @@ public static partial class MobiConverter
         }
     }
 
+    /// What the start of a file says about the book, without reading its text. The
+    /// head can stop anywhere: only the first record has to be there.
+    /// <exception cref="MobiNotSupportedException">The head isn't a readable MOBI header.</exception>
+    public static MobiHeaderInfo ReadHeaderInfo(byte[] head)
+    {
+        if (head.Length < 78 || Encoding.ASCII.GetString(head, 60, 8) != "BOOKMOBI")
+            throw new MobiNotSupportedException("This file is not a valid MOBI book.");
+        var count = U16(head, 76);
+        if (count == 0 || head.Length < 86) throw new MobiNotSupportedException(Damaged);
+
+        var start = U32(head, 78);
+        var end = count > 1 && head.Length >= 94 ? U32(head, 86) : (uint)head.Length;
+        end = Math.Min(end, (uint)head.Length);
+        // The encryption field has to be there, or nothing can be said about DRM.
+        if (start >= end || end - start < 16) throw new MobiNotSupportedException(Damaged);
+
+        var header = head.AsSpan((int)start, (int)(end - start)).ToArray();
+        var encrypted = IsEncrypted(header);
+        try
+        {
+            var book = MobiBook.FromHeader(header, []);
+            return new MobiHeaderInfo(book.HasTitle ? book.Title.Trim() : null, book.Author?.Trim(), encrypted);
+        }
+        catch (Exception e) when (e is MobiNotSupportedException or IndexOutOfRangeException
+                                      or ArgumentException or OverflowException)
+        {
+            // Metadata is only a nicety on a book that can't be imported anyway.
+            if (encrypted) return new MobiHeaderInfo(null, null, true);
+            throw new MobiNotSupportedException(Damaged);
+        }
+    }
+
+    private static bool IsEncrypted(byte[] header) => U16(header, 12) != 0;
+
     // ── Parsing ─────────────────────────────────────────────────────────────
 
     private sealed class MobiBook
     {
         public bool IsKf8;
         public string Title = "Unknown";
+        public bool HasTitle;
         public string? Author;
         public Encoding TextEncoding = Encoding.Latin1;
         public string RawText = string.Empty; // One char per source byte (Latin-1).
@@ -80,9 +117,24 @@ public static partial class MobiConverter
                 throw new MobiNotSupportedException(Damaged);
             var header = records[0];
 
-            if (U16(header, 12) != 0)
+            if (IsEncrypted(header))
                 throw new MobiNotSupportedException("This MOBI file is protected by DRM and can't be opened.");
-            if (Encoding.ASCII.GetString(header, 16, 4) != "MOBI")
+
+            var book = FromHeader(header, records);
+            if (withText)
+            {
+                var headerLength = (int)Math.Min(U32(header, 20), int.MaxValue / 2);
+                var extraFlags = headerLength >= 0xE4 && header.Length >= 244 ? U16(header, 242) : 0;
+                book.RawText = Encoding.Latin1.GetString(DecompressText(records, header, extraFlags));
+            }
+            return book;
+        }
+
+        /// Everything the first record says about the book. Doesn't look at DRM:
+        /// a protected book's metadata isn't encrypted.
+        public static MobiBook FromHeader(byte[] header, byte[][] records)
+        {
+            if (header.Length < 132 || Encoding.ASCII.GetString(header, 16, 4) != "MOBI")
                 throw new MobiNotSupportedException(Damaged);
 
             var headerLength = (int)Math.Min(U32(header, 20), int.MaxValue / 2);
@@ -98,16 +150,13 @@ public static partial class MobiConverter
             var nameOffset = U32(header, 84);
             var nameLength = U32(header, 88);
             if (nameLength > 0 && (ulong)nameOffset + nameLength <= (ulong)header.Length)
+            {
                 book.Title = book.TextEncoding.GetString(header, (int)nameOffset, (int)nameLength);
+                book.HasTitle = true;
+            }
 
             if ((U32(header, 128) & 0x40) != 0)
                 book.ReadExth(header, 16 + headerLength);
-
-            if (withText)
-            {
-                var extraFlags = headerLength >= 0xE4 && header.Length >= 244 ? U16(header, 242) : 0;
-                book.RawText = Encoding.Latin1.GetString(DecompressText(records, header, extraFlags));
-            }
             return book;
         }
 
@@ -128,7 +177,10 @@ public static partial class MobiConverter
                 if (type == 100)
                     Author = TextEncoding.GetString(header, pos + 8, dataLength);
                 else if (type == 503)
+                {
                     Title = TextEncoding.GetString(header, pos + 8, dataLength);
+                    HasTitle = true;
+                }
                 else if (type == 201 && dataLength >= 4 && U32(header, pos + 8) < int.MaxValue)
                     CoverImage = ImageForRecIndex((int)U32(header, pos + 8) + 1);
 
