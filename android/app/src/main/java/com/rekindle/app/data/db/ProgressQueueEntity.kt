@@ -16,6 +16,8 @@ data class ProgressQueueEntity(
     @ColumnInfo(name = "is_completed") val isCompleted: Boolean,
     @ColumnInfo(name = "last_read_at") val lastReadAt: Long,
     @ColumnInfo(name = "synced") val synced: Boolean = false,
+    /** How far through the current chapter, 0 to 1. Text books only. */
+    @ColumnInfo(name = "position_fraction") val positionFraction: Double? = null,
 )
 
 @Dao

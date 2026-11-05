@@ -109,9 +109,9 @@ class DownloadRepository @Inject constructor(
                 val localPath = semaphore.withPermit {
                     downloadManager.download(
                         mediaId = mediaId,
-                        format = format,
+                        sourceFormat = format,
                         title = title,
-                        relativePath = relativePath,
+                        sourceRelativePath = relativePath,
                         serverBaseUrl = baseUrl,
                         authHeader = "Bearer $token",
                         onProgress = { update(mediaId, it) },
@@ -254,9 +254,9 @@ class DownloadRepository @Inject constructor(
                             runCatching {
                                 downloadManager.download(
                                     mediaId = archive.id,
-                                    format = archive.format,
+                                    sourceFormat = archive.format,
                                     title = archive.displayTitle,
-                                    relativePath = archive.relativePath,
+                                    sourceRelativePath = archive.relativePath,
                                     serverBaseUrl = baseUrl,
                                     authHeader = "Bearer $token",
                                     onProgress = { update(archive.id, it) },

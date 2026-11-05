@@ -119,9 +119,12 @@ public class ArchiveService
 
         try
         {
-            return Path.GetExtension(filePath).ToLowerInvariant() == ".pdf"
-                ? await RenderPdfCoverAsync(filePath)
-                : await ExtractArchiveCoverAsync(filePath);
+            return Path.GetExtension(filePath).ToLowerInvariant() switch
+            {
+                ".pdf" => await RenderPdfCoverAsync(filePath),
+                ".mobi" => MobiConverter.ReadCover(filePath) is { } cover ? new MemoryStream(cover) : null,
+                _ => await ExtractArchiveCoverAsync(filePath),
+            };
         }
         catch (Exception ex)
         {

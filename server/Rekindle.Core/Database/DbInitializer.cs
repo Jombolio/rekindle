@@ -48,6 +48,16 @@ public class DbInitializer(DbConnectionFactory factory, ILogger<DbInitializer> l
             await ApplyMigration(connection, 7, Migration_007);
         if (fromVersion < 8)
             await ApplyMigration(connection, 8, Migration_008);
+        if (fromVersion < 9)
+            await ApplyMigration(connection, 9, Migration_009);
+    }
+
+    private static async Task Migration_009(SqliteConnection connection)
+    {
+        // Where in the chapter a text book was left. Nullable: comics don't use
+        // it, and older clients keep writing without it.
+        await connection.ExecuteAsync(
+            "ALTER TABLE reading_progress ADD COLUMN position_fraction REAL;");
     }
 
     private static async Task Migration_008(SqliteConnection connection)

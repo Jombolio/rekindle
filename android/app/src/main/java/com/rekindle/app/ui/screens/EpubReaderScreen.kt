@@ -1,9 +1,5 @@
 package com.rekindle.app.ui.screens
 
-import android.view.GestureDetector
-import android.view.MotionEvent
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -26,7 +22,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,7 +29,6 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.rekindle.app.ui.viewmodel.EpubReaderState
 import com.rekindle.app.ui.viewmodel.EpubReaderViewModel
 import com.rekindle.app.ui.viewmodel.EpubTheme
 
@@ -71,47 +65,28 @@ fun EpubReaderScreen(
 
             else -> {
                 val book = state.book!!
-                val chapterHtml = book.chapters[state.chapterIndex].html
-                val styledHtml = wrapHtml(chapterHtml, state)
+                val chapter = book.chapters[state.chapterIndex]
 
                 AndroidView(
                     factory = { ctx ->
-                        WebView(ctx).apply {
-                            webViewClient = WebViewClient()
-                            settings.javaScriptEnabled = false
-                            setBackgroundColor(bgColor.toArgb())
-                            // The WebView consumes touches, so the parent Box's
-                            // clickable never fires over the page — feed a gesture
-                            // detector that toggles the HUD on a tap while letting
-                            // the WebView keep handling scroll/links (returns false).
-                            val detector = GestureDetector(ctx,
-                                object : GestureDetector.SimpleOnGestureListener() {
-                                    override fun onSingleTapUp(e: MotionEvent): Boolean {
-                                        vm.toggleControls()
-                                        return false
-                                    }
-                                })
-                            setOnTouchListener { v, ev ->
-                                detector.onTouchEvent(ev)
-                                if (ev.actionMasked == MotionEvent.ACTION_UP) v.performClick()
-                                false
-                            }
-                        }
+                        BookWebView(
+                            context = ctx,
+                            onTap = vm::toggleControls,
+                            onLinkToChapter = vm::goToChapter,
+                            onPositionChanged = vm::onPositionChanged,
+                        )
                     },
                     update = { wv ->
+                        wv.book = book
+                        wv.themeCss = themeCss(state.theme)
                         wv.setBackgroundColor(bgColor.toArgb())
-                        // Only reload when the rendered content actually changes.
-                        // Reloading on every recomposition (e.g. each HUD toggle)
-                        // reset the reading position to the top of the chapter.
-                        if (wv.tag != styledHtml) {
-                            wv.tag = styledHtml
-                            wv.loadDataWithBaseURL(null, styledHtml, "text/html", "utf-8", null)
-                        }
+                        wv.applyFontSize(state.fontSize)
+                        wv.show(chapter.path, state.theme.name, state.startFraction)
                     },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(top = if (state.showControls) 56.dp else 0.dp,
-                            bottom = if (state.showControls) 56.dp else 0.dp),
+                    // No padding for the HUD: the controls float over the page, because
+                    // resizing the page on every tap moved the text being read. The
+                    // theme's body padding keeps the chapter's ends clear of them.
+                    modifier = Modifier.fillMaxSize(),
                 )
 
                 if (state.showControls) {
@@ -128,7 +103,7 @@ fun EpubReaderScreen(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = fgColor)
                         }
                         Text(
-                            text = book.chapters[state.chapterIndex].title,
+                            text = chapter.title,
                             color = fgColor,
                             maxLines = 1,
                             modifier = Modifier.weight(1f),
@@ -197,22 +172,18 @@ private fun colorHex(color: Color): String {
     return "#%06X".format(argb and 0xFFFFFF)
 }
 
-private fun wrapHtml(html: String, state: EpubReaderState): String {
-    val bg = colorHex(state.theme.bgColor)
-    val fg = colorHex(state.theme.fgColor)
-    val fs = state.fontSize.toInt()
-    return """<!DOCTYPE html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-body { background:$bg; color:$fg; font-size:${fs}px; line-height:1.6;
-       padding:16px; max-width:720px; margin:0 auto; font-family:serif; }
-img { max-width:100%; }
-</style></head><body>
-${extractBody(html)}
-</body></html>"""
-}
-
-private fun extractBody(html: String): String {
-    val bodyRegex = Regex("<body[^>]*>(.*?)</body>", RegexOption.DOT_MATCHES_ALL)
-    return bodyRegex.find(html)?.groupValues?.get(1) ?: html
+/**
+ * The reader's theme, added after the book's own styles. Colours use !important
+ * because books often hard-code black text, which would vanish on the dark theme.
+ */
+private fun themeCss(theme: EpubTheme): String {
+    val bg = colorHex(theme.bgColor)
+    val fg = colorHex(theme.fgColor)
+    return """
+html, body { background: $bg !important; color: $fg !important; }
+body { line-height: 1.6; padding: 64px 16px !important; max-width: 720px;
+       margin: 0 auto !important; font-family: serif; box-sizing: border-box; }
+body * { color: inherit !important; background-color: transparent !important; }
+img, svg { max-width: 100% !important; height: auto; }
+"""
 }

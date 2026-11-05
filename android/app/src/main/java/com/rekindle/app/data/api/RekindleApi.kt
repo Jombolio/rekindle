@@ -105,6 +105,11 @@ interface RekindleApi {
         @Path("pageNum") pageNum: Int,
     ): ResponseBody
 
+    /** The book as an EPUB; the server converts other text formats. */
+    @GET("api/media/{id}/book")
+    @Streaming
+    suspend fun getBook(@Path("id") id: String): ResponseBody
+
     @POST("api/libraries/{id}/scan")
     suspend fun scanLibrary(@Path("id") libraryId: String)
 

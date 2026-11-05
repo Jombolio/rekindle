@@ -100,9 +100,23 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
   // matches what the screen actually shows.
   int? _externalPage;
 
+  // Set by the EPUB reader. There, "pages" are chapters whose count comes from
+  // the book itself, and completion depends on how far through the last chapter
+  // the reader got, not just on reaching it.
+  bool _bookMode = false;
+  double? _bookFraction;
+  bool _bookCompleted = false;
+
+  // The latest state, for the closing flush. Reading `state` there would make
+  // Riverpod rebuild this provider mid-dispose: the state resets to page 0, which
+  // then gets saved over the real progress, and the dispose call itself throws.
+  ReaderState _latest = const ReaderState();
+
   @override
   ReaderState build(ReaderArgs arg) {
     final (mediaId, _) = arg;
+    _latest = const ReaderState();
+    listenSelf((_, next) => _latest = next);
     ref.onDispose(() {
       _syncTimer?.cancel();
       _syncNow(mediaId, refreshCovers: true);
@@ -242,7 +256,7 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
     // server-side extraction if needed). Overrides the local count when online.
     try {
       final layout = await api.getPageCount(mediaId);
-      if (layout.count > 0) {
+      if (layout.count > 0 && !_bookMode) {
         state = state.copyWith(
           totalPages: layout.count,
           spreads: layout.spreads,
@@ -254,13 +268,44 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
 
     // Neither local pages nor a reachable server: surface an explicit offline
     // message instead of an endless loading spinner.
-    if (state.totalPages == 0) {
+    if (state.totalPages == 0 && !_bookMode) {
       state = state.copyWith(pagesUnavailable: true);
     }
   }
 
   void setTotalPages(int count) {
     state = state.copyWith(totalPages: count);
+  }
+
+  /// Puts the provider in book mode at the position the EPUB reader opened on.
+  void openBook({
+    required int chapterCount,
+    required int chapter,
+    required double? fraction,
+  }) {
+    _bookMode = true;
+    _bookFraction = fraction;
+    _externalPage = chapter;
+    state = state.copyWith(totalPages: chapterCount, currentPage: chapter);
+  }
+
+  /// Records where the EPUB reader is. Only an actual change counts as reading:
+  /// merely opening a book must not rewrite its saved progress.
+  void setBookPosition(
+    String mediaId, {
+    required int chapter,
+    required double fraction,
+    required bool completed,
+  }) {
+    final moved = chapter != state.currentPage ||
+        (fraction - (_bookFraction ?? 0)).abs() > 0.001 ||
+        completed != _bookCompleted;
+    if (!moved) return;
+    _userNavigated = true;
+    _bookFraction = fraction;
+    _bookCompleted = completed;
+    state = state.copyWith(currentPage: chapter);
+    _scheduleSync(mediaId);
   }
 
   void goToPage(int page, String mediaId) {
@@ -333,13 +378,15 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
     // A finished item restarts at 0 — don't overwrite its completion flag
     // unless the user actually navigated this session.
     if (_completedOnLoad && !_userNavigated) return;
-    final page = state.currentPage;
-    final isCompleted =
-        state.totalPages > 0 && page >= state.totalPages - 1;
+    final page = _latest.currentPage;
+    final isCompleted = _bookMode
+        ? _bookCompleted
+        : _latest.totalPages > 0 && page >= _latest.totalPages - 1;
+    final fraction = _bookMode ? _bookFraction : null;
     final lastReadAt = DateTime.now().millisecondsSinceEpoch;
 
     final db = ref.read(localDbProvider);
-    await _saveLocal(db, mediaId, page, isCompleted, lastReadAt);
+    await _saveLocal(db, mediaId, page, isCompleted, lastReadAt, fraction);
 
     final isOnline = ref.read(isOnlineProvider);
     if (!isOnline) return;
@@ -351,6 +398,7 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
         currentPage: page,
         isCompleted: isCompleted,
         lastReadAtMillis: lastReadAt,
+        positionFraction: fraction,
       );
       await _markSynced(db, mediaId, page, isCompleted, lastReadAt);
       if (refreshCovers) ref.invalidate(progressSummariesProvider);
@@ -384,6 +432,7 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
     int page,
     bool isCompleted,
     int lastReadAt,
+    double? positionFraction,
   ) =>
       db.insert(
         'progress_queue',
@@ -393,6 +442,7 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
           'is_completed': isCompleted ? 1 : 0,
           'last_read_at': lastReadAt,
           'synced': 0,
+          'position_fraction': positionFraction,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -487,7 +537,8 @@ Future<void> syncPendingProgress(WidgetRef ref) async {
       await api.saveProgress(mediaId,
           currentPage: page,
           isCompleted: completed,
-          lastReadAtMillis: row['last_read_at'] as int?);
+          lastReadAtMillis: row['last_read_at'] as int?,
+          positionFraction: (row['position_fraction'] as num?)?.toDouble());
       // Conditional on the row being unchanged: if the open reader's debounce
       // wrote a newer unsynced row while the POST was in flight, stamping it
       // synced here would silently drop that progress.

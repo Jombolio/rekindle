@@ -1,3 +1,7 @@
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
+
 import '../models/media.dart';
 import '../models/paged_response.dart';
 import '../models/progress_summary.dart';
@@ -51,6 +55,20 @@ class MediaApi {
     return (count: count, spreads: spreads);
   }
 
+  /// The book as EPUB bytes, for reading without saving a download. The server
+  /// converts other text formats, and refuses accounts without download permission.
+  Future<Uint8List> getBookBytes(String mediaId) async {
+    final resp = await _client.dio.get<List<int>>(
+      'api/media/$mediaId/book',
+      options: Options(
+        responseType: ResponseType.bytes,
+        // Same reasoning as downloads: big books on slow links take a while.
+        receiveTimeout: const Duration(minutes: 30),
+      ),
+    );
+    return Uint8List.fromList(resp.data!);
+  }
+
   /// Returns all folder-type items in [libraryId] whose title contains [query].
   /// Archives and individual chapters are never included.
   Future<List<Media>> searchFolders({
@@ -94,10 +112,12 @@ class MediaApi {
     required int currentPage,
     required bool isCompleted,
     int? lastReadAtMillis,
+    double? positionFraction,
   }) =>
       _client.dio.post('api/media/$mediaId/progress', data: {
         'currentPage': currentPage,
         'isCompleted': isCompleted,
+        if (positionFraction != null) 'positionFraction': positionFraction,
         if (lastReadAtMillis != null)
           'lastReadAt':
               DateTime.fromMillisecondsSinceEpoch(lastReadAtMillis, isUtc: true)

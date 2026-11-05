@@ -41,6 +41,8 @@ data class ReadingProgress(
     val currentPage: Int,
     val isCompleted: Boolean,
     val lastReadAt: Long,
+    /** How far through the current chapter, 0 to 1. Text books only. */
+    val positionFraction: Double? = null,
 )
 
 /**

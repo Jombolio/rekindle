@@ -33,6 +33,7 @@ data class ReadingProgressDto(
     val currentPage: Int = 0,
     val isCompleted: Boolean = false,
     val lastReadAt: String? = null,
+    val positionFraction: Double? = null,
 )
 
 data class ProgressSummaryRequest(val ids: List<String>)
@@ -69,6 +70,7 @@ data class SaveProgressRequest(
     val currentPage: Int,
     val isCompleted: Boolean,
     val lastReadAt: String? = null,
+    val positionFraction: Double? = null,
 )
 
 data class CreateLibraryRequest(val name: String, val rootPath: String, val type: String)
@@ -85,6 +87,7 @@ fun ReadingProgressDto.toDomain() = ReadingProgress(
     currentPage = currentPage,
     isCompleted = isCompleted,
     lastReadAt = 0L,
+    positionFraction = positionFraction,
 )
 fun ProgressSummaryDto.toDomain() = ProgressSummary(
     mediaId = mediaId,

@@ -224,4 +224,44 @@ public class ProgressUpsertTests : IDisposable
     }
 
     public void Dispose() => _db.Dispose();
+
+    [Fact]
+    public async Task PositionFraction_IsStoredAndReplaced()
+    {
+        var (userId, mediaId) = await SeedAsync();
+        var t = DateTime.UtcNow.AddMinutes(-5);
+
+        await _sut.UpsertAsync(new ReadingProgress { UserId = userId, MediaId = mediaId, CurrentPage = 2, PositionFraction = 0.25, LastReadAt = t }, trustClientOrdering: true);
+        (await _sut.GetAsync(userId, mediaId))!.PositionFraction.Should().Be(0.25);
+
+        await _sut.UpsertAsync(new ReadingProgress { UserId = userId, MediaId = mediaId, CurrentPage = 1, PositionFraction = 0.75, LastReadAt = t.AddMinutes(1) }, trustClientOrdering: true);
+        var stored = await _sut.GetAsync(userId, mediaId);
+        stored!.CurrentPage.Should().Be(1);
+        stored.PositionFraction.Should().Be(0.75);
+    }
+
+    [Fact]
+    public async Task PositionFraction_FromAnOlderClient_ResetsToNull()
+    {
+        var (userId, mediaId) = await SeedAsync();
+        var t = DateTime.UtcNow.AddMinutes(-5);
+
+        await _sut.UpsertAsync(new ReadingProgress { UserId = userId, MediaId = mediaId, CurrentPage = 2, PositionFraction = 0.5, LastReadAt = t }, trustClientOrdering: true);
+        await _sut.UpsertAsync(new ReadingProgress { UserId = userId, MediaId = mediaId, CurrentPage = 3, LastReadAt = t.AddMinutes(1) }, trustClientOrdering: true);
+
+        (await _sut.GetAsync(userId, mediaId))!.PositionFraction.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task PositionFraction_StaysWithItsPage_WhenALegacyWriteIsClamped()
+    {
+        var (userId, mediaId) = await SeedAsync();
+
+        await _sut.UpsertAsync(new ReadingProgress { UserId = userId, MediaId = mediaId, CurrentPage = 5, PositionFraction = 0.5 });
+        await _sut.UpsertAsync(new ReadingProgress { UserId = userId, MediaId = mediaId, CurrentPage = 2 });
+
+        var stored = await _sut.GetAsync(userId, mediaId);
+        stored!.CurrentPage.Should().Be(5);
+        stored.PositionFraction.Should().Be(0.5);
+    }
 }
