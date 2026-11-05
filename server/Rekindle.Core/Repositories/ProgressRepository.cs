@@ -12,7 +12,8 @@ public class ProgressRepository(DbConnectionFactory factory)
         var row = await conn.QuerySingleOrDefaultAsync<ReadingProgress>(
             """
             SELECT user_id AS UserId, media_id AS MediaId, current_page AS CurrentPage,
-                   is_completed AS IsCompleted, last_read_at AS LastReadAt
+                   is_completed AS IsCompleted, position_fraction AS PositionFraction,
+                   last_read_at AS LastReadAt
             FROM reading_progress
             WHERE user_id = @userId AND media_id = @mediaId;
             """,
@@ -26,7 +27,8 @@ public class ProgressRepository(DbConnectionFactory factory)
         var rows = await conn.QueryAsync<ReadingProgress>(
             """
             SELECT user_id AS UserId, media_id AS MediaId, current_page AS CurrentPage,
-                   is_completed AS IsCompleted, last_read_at AS LastReadAt
+                   is_completed AS IsCompleted, position_fraction AS PositionFraction,
+                   last_read_at AS LastReadAt
             FROM reading_progress
             WHERE user_id = @userId
             ORDER BY last_read_at DESC;
@@ -67,13 +69,26 @@ public class ProgressRepository(DbConnectionFactory factory)
                   ELSE MAX(current_page, excluded.current_page)
               END
               """;
+        // The fraction belongs to the page: when a legacy write's page is clamped
+        // away, the stored page keeps its stored fraction.
+        var fractionExpr = trustClientOrdering
+            ? "excluded.position_fraction"
+            : """
+              CASE
+                  WHEN reading_progress.is_completed = 1 AND excluded.is_completed = 0
+                      THEN excluded.position_fraction
+                  WHEN excluded.current_page >= current_page THEN excluded.position_fraction
+                  ELSE position_fraction
+              END
+              """;
 
         using var conn = factory.Create();
         await conn.ExecuteAsync(
             $"""
-            INSERT INTO reading_progress (user_id, media_id, current_page, is_completed, last_read_at)
-            VALUES (@UserId, @MediaId, @CurrentPage, @IsCompleted, @LastReadAt)
+            INSERT INTO reading_progress (user_id, media_id, current_page, is_completed, position_fraction, last_read_at)
+            VALUES (@UserId, @MediaId, @CurrentPage, @IsCompleted, @PositionFraction, @LastReadAt)
             ON CONFLICT(user_id, media_id) DO UPDATE SET
+                position_fraction = {fractionExpr},
                 current_page = {currentPageExpr},
                 is_completed = excluded.is_completed,
                 last_read_at = excluded.last_read_at

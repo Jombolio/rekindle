@@ -7,7 +7,7 @@ public static partial class FilenameParser
     public record FileMeta(string Title, string? Series, int? Volume);
 
     private static readonly HashSet<string> KnownExtensions =
-        [".cbz", ".cbr", ".pdf", ".epub", ".mobi"];
+        [".cbz", ".cbr", ".pdf", ".epub", ".mobi", ".azw", ".azw3"];
 
     public static FileMeta Parse(string filePath)
     {

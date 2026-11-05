@@ -13,6 +13,10 @@ val keystorePropsFile = rootProject.file("keystore.properties")
 if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { keystoreProps.load(it) }
 
 android {
+    // The built-in dictionary lives with the desktop client's assets, so the two
+    // clients share one copy. See tools/build_wordnet.py.
+    sourceSets.getByName("main").assets.srcDir("../../desktop/assets/dictionary")
+
     namespace = "com.rekindle.app"
     compileSdk = 35
 

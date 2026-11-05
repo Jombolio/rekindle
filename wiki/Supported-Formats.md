@@ -4,8 +4,8 @@
 |--------|-----------|-------|
 | Comic Book ZIP | `.cbz` | Most common comic format |
 | Comic Book RAR | `.cbr` | RAR-archived comics |
-| EPUB | `.epub` | Rendered natively — no WebView |
-| MOBI | `.mobi` | |
+| EPUB | `.epub` | Streams a chapter at a time, or reads offline once downloaded, with images and the book's own layout |
+| Kindle | `.mobi` `.azw` `.azw3` | Converted to EPUB by the server when first opened, including KF8 files. DRM-protected files can't be opened |
 | PDF | `.pdf` | Native renderer, no external dependency |
 
 ---

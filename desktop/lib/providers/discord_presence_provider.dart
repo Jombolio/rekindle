@@ -124,7 +124,9 @@ class NowReadingNotifier extends Notifier<NowReading?> {
   }
 
   static ReadingKind _kindFor(String? format, String? libraryType) {
-    if (format == 'epub') return ReadingKind.book;
+    if (const {'epub', 'mobi', 'azw', 'azw3'}.contains(format)) {
+      return ReadingKind.book;
+    }
     return switch (libraryType) {
       'manga' => ReadingKind.manga,
       'book' || 'books' => ReadingKind.book,

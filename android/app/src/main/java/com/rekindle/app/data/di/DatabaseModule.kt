@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.rekindle.app.data.db.AppDatabase
 import com.rekindle.app.data.db.DownloadDao
 import com.rekindle.app.data.db.FolderDownloadDao
+import com.rekindle.app.data.db.MIGRATION_2_3
 import com.rekindle.app.data.db.ProgressQueueDao
 import dagger.Module
 import dagger.Provides
@@ -21,6 +22,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "rekindle.db")
+            .addMigrations(MIGRATION_2_3)
             .fallbackToDestructiveMigration()
             .build()
 

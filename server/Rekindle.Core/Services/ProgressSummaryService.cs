@@ -146,7 +146,7 @@ public class ProgressSummaryService(MediaRepository mediaRepository, ProgressRep
             // there is no meaningful fraction.
             if (archive.PageCount is not > 0)
                 return 0;
-            return Math.Clamp(p.CurrentPage / (double)archive.PageCount.Value, 0, 1);
+            return Math.Clamp((p.CurrentPage + (p.PositionFraction ?? 0)) / archive.PageCount.Value, 0, 1);
         }
 
         /// Every archive at any depth beneath the folder.

@@ -1,5 +1,7 @@
 package com.rekindle.app.data.repository
 
+import com.rekindle.app.core.epub.EpubChapter
+import com.rekindle.app.core.epub.RemoteBook
 import com.rekindle.app.data.api.RekindleApi
 import com.rekindle.app.data.db.ProgressQueueDao
 import com.rekindle.app.data.db.ProgressQueueEntity
@@ -80,7 +82,7 @@ class MediaRepository @Inject constructor(
         // never pushed) — prefer it, or an online open would resume at the stale
         // server page and the debounce would then overwrite the real progress.
         if (local != null && !local.synced) {
-            return ReadingProgress(local.mediaId, local.currentPage, local.isCompleted, local.lastReadAt)
+            return ReadingProgress(local.mediaId, local.currentPage, local.isCompleted, local.lastReadAt, local.positionFraction)
         }
         return try {
             api.getProgress(mediaId).toDomain()
@@ -88,12 +90,28 @@ class MediaRepository @Inject constructor(
             // Offline: fall back to the locally-queued progress so a downloaded item
             // resumes at the saved page (and completed archives restart at 0) with no server.
             local?.let {
-                ReadingProgress(it.mediaId, it.currentPage, it.isCompleted, it.lastReadAt)
+                ReadingProgress(it.mediaId, it.currentPage, it.isCompleted, it.lastReadAt, it.positionFraction)
             }
         }
     }
 
-    suspend fun saveProgress(mediaId: String, currentPage: Int, isCompleted: Boolean) {
+    /** Opens a book for reading from the server, a chapter at a time. */
+    suspend fun openRemoteBook(mediaId: String): RemoteBook {
+        val manifest = api.getBookManifest(mediaId)
+        return RemoteBook(
+            api = api,
+            mediaId = mediaId,
+            title = manifest.title,
+            chapters = manifest.chapters.map { EpubChapter(it.title, it.path) },
+        )
+    }
+
+    suspend fun saveProgress(
+        mediaId: String,
+        currentPage: Int,
+        isCompleted: Boolean,
+        positionFraction: Double? = null,
+    ) {
         progressDao.upsert(
             ProgressQueueEntity(
                 mediaId = mediaId,
@@ -101,6 +119,7 @@ class MediaRepository @Inject constructor(
                 isCompleted = isCompleted,
                 lastReadAt = System.currentTimeMillis(),
                 synced = false,
+                positionFraction = positionFraction,
             )
         )
     }
@@ -163,6 +182,7 @@ class MediaRepository @Inject constructor(
                     // carry when it actually happened so the server orders it
                     // correctly against progress from other devices.
                     Instant.ofEpochMilli(local.lastReadAt).toString(),
+                    local.positionFraction,
                 ),
             )
             // Only clear the synced flag if the row is still the one we sent — a

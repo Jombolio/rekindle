@@ -105,4 +105,6 @@ Navigation is **GoRouter** (`desktop/lib/app.dart`). The router refreshes on `so
 - **`NaturalStringComparer`** is used everywhere filenames are sorted (archive entries, directory listings) so "Chapter 2" < "Chapter 10".
 - **`FilenameParser`** extracts series/volume/issue metadata from filenames. The scraper uses `media.Title` (folder name), not `media.Series` (parsed from issue filenames), to avoid wrong search terms.
 - **Spread detection** is server-side: `width > height` per page, stored in the manifest. Clients consume the `spreads` boolean array; they do not detect spreads themselves.
+- **Text books are read as EPUB, streamed.** Kindle formats convert once (`MobiConverter`, cached under `CachePath/books/`). `/book/manifest` and `/book/content/{path}` stream one file at a time straight out of the archive and are open to level 1, like comic pages. `/book` returns the whole file and needs the download permission, so level 1 can read but never holds a copy.
+- **For text books, "pages" are chapters.** `/pagecount` returns the spine count, not images. Progress also carries `positionFraction` (0 to 1 within the chapter). A book is completed only near the end of its last chapter, not on reaching it.
 - **Permission levels** are integers, not enums, in both server JWT claims and client prefs. Level 4 = admin everywhere.

@@ -1,6 +1,7 @@
 package com.rekindle.app.data.api
 
 import com.rekindle.app.data.model.AdminStatsDto
+import com.rekindle.app.data.model.BookManifestDto
 import com.rekindle.app.data.model.MangaMetadataDto
 import com.rekindle.app.data.model.MetadataConfigDto
 import com.rekindle.app.data.model.ScrapeResultDto
@@ -28,6 +29,7 @@ import com.rekindle.app.data.model.UploadResponseDto
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.ResponseBody
+import retrofit2.Call
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -104,6 +106,18 @@ interface RekindleApi {
         @Path("id") id: String,
         @Path("pageNum") pageNum: Int,
     ): ResponseBody
+
+    /** A book's title and chapters, for reading it a chapter at a time. */
+    @GET("api/media/{id}/book/manifest")
+    suspend fun getBookManifest(@Path("id") id: String): BookManifestDto
+
+    /** One file from inside a book. Blocking, for the WebView's request thread. */
+    @GET("api/media/{id}/book/content/{path}")
+    @Streaming
+    fun getBookContent(
+        @Path("id") id: String,
+        @Path(value = "path", encoded = true) path: String,
+    ): Call<ResponseBody>
 
     @POST("api/libraries/{id}/scan")
     suspend fun scanLibrary(@Path("id") libraryId: String)

@@ -17,6 +17,7 @@ public class MediaController(
     ProgressRepository progressRepository,
     ProgressSummaryService progressSummaryService,
     ArchiveService archiveService,
+    BookService bookService,
     IOptions<RekindleOptions> options) : ControllerBase
 {
     [HttpGet]
@@ -69,6 +70,25 @@ public class MediaController(
     {
         var media = await mediaRepository.GetByIdAsync(id);
         if (media is null) return NotFound();
+
+        // A text book's "pages" are its chapters. Its images aren't pages, and
+        // extracting them as if they were recorded the wrong total.
+        if (BookService.IsTextBook(media.Format) && !Directory.Exists(media.FilePath))
+        {
+            var chapters = 0;
+            try
+            {
+                chapters = bookService.CountChapters(
+                    await bookService.GetEpubPathAsync(media.Id, media.FilePath));
+            }
+            catch (MobiNotSupportedException)
+            {
+                // Left at 0: /book reports the reason when the book is opened.
+            }
+            if (chapters > 0 && media.PageCount != chapters)
+                await mediaRepository.UpdatePageCountAsync(media.Id, chapters);
+            return Ok(new { pageCount = chapters, spreads = Array.Empty<bool>() });
+        }
 
         var count = await archiveService.GetPageCountAsync(media.Id, media.FilePath);
         var spreads = await archiveService.GetSpreadsAsync(media.Id, media.FilePath);
@@ -175,6 +195,77 @@ public class MediaController(
         return PhysicalFile(pagePath, mimeType);
     }
 
+    /// A book's title and chapters, for reading it a chapter at a time. Open to every
+    /// signed-in user, like comic pages.
+    [HttpGet("{id}/book/manifest")]
+    public async Task<IActionResult> GetBookManifest(string id)
+    {
+        var media = await mediaRepository.GetByIdAsync(id);
+        if (media is null || !BookService.IsTextBook(media.Format) || !System.IO.File.Exists(media.FilePath))
+            return NotFound();
+
+        try
+        {
+            var manifest = bookService.GetManifest(await bookService.GetEpubPathAsync(media.Id, media.FilePath));
+            return manifest is null
+                ? UnprocessableEntity(new { error = "This book couldn't be read." })
+                : Ok(manifest);
+        }
+        catch (MobiNotSupportedException e)
+        {
+            return UnprocessableEntity(new { error = e.Message });
+        }
+    }
+
+    /// One chapter, stylesheet or image from inside a book, streamed straight out of
+    /// the archive. Open to every signed-in user: like comic pages, this is reading,
+    /// and the book as a file stays behind the download permission.
+    [HttpGet("{id}/book/content/{**path}")]
+    public async Task<IActionResult> GetBookContent(string id, string path)
+    {
+        var media = await mediaRepository.GetByIdAsync(id);
+        if (media is null || !BookService.IsTextBook(media.Format) || !System.IO.File.Exists(media.FilePath))
+            return NotFound();
+
+        try
+        {
+            var content = bookService.OpenContent(await bookService.GetEpubPathAsync(media.Id, media.FilePath), path);
+            if (content is null) return NotFound();
+
+            Response.Headers.CacheControl = "no-store";
+            return File(content.Stream, content.ContentType);
+        }
+        catch (MobiNotSupportedException e)
+        {
+            return UnprocessableEntity(new { error = e.Message });
+        }
+    }
+
+    /// The whole book as an EPUB, for saving a download. Needs the download permission
+    /// because the client ends up holding a complete copy of the file. Kindle formats
+    /// are converted on first request.
+    [HttpGet("{id}/book")]
+    [Authorize(Policy = PermissionPolicies.CanDownload)]
+    public async Task<IActionResult> GetBook(string id)
+    {
+        var media = await mediaRepository.GetByIdAsync(id);
+        if (media is null || !BookService.IsTextBook(media.Format) || Directory.Exists(media.FilePath))
+            return NotFound();
+
+        if (!System.IO.File.Exists(media.FilePath))
+            return NotFound(new { error = "File not found on server." });
+
+        try
+        {
+            var path = await bookService.GetEpubPathAsync(media.Id, media.FilePath);
+            return PhysicalFile(path, "application/epub+zip", enableRangeProcessing: true);
+        }
+        catch (MobiNotSupportedException e)
+        {
+            return UnprocessableEntity(new { error = e.Message });
+        }
+    }
+
     [HttpGet("{id}/download")]
     [Authorize(Policy = PermissionPolicies.CanDownload)]
     public async Task<IActionResult> Download(string id)
@@ -223,6 +314,7 @@ public class MediaController(
             MediaId = id,
             CurrentPage = Math.Max(0, req.CurrentPage),
             IsCompleted = req.IsCompleted,
+            PositionFraction = req.PositionFraction is { } f && double.IsFinite(f) ? Math.Clamp(f, 0, 1) : null,
             LastReadAt = lastReadAt
         };
 
@@ -278,7 +370,7 @@ public class MediaController(
     {
         "epub" => "application/epub+zip",
         "pdf" => "application/pdf",
-        "mobi" => "application/x-mobipocket-ebook",
+        "mobi" or "azw" or "azw3" => "application/x-mobipocket-ebook",
         _ => "application/octet-stream"
     };
 
@@ -286,7 +378,7 @@ public class MediaController(
     /// Client-side time of the write (UTC). Optional for backwards compatibility;
     /// when present the server trusts it for ordering (see ProgressRepository).
     /// </param>
-    public record UpdateProgressRequest(int CurrentPage, bool IsCompleted, DateTime? LastReadAt = null);
+    public record UpdateProgressRequest(int CurrentPage, bool IsCompleted, DateTime? LastReadAt = null, double? PositionFraction = null);
 
     public record ProgressSummaryRequest(List<string>? Ids);
 }

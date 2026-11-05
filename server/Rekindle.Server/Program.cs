@@ -110,6 +110,7 @@ builder.Services.AddSingleton<SetupTokenService>();
 builder.Services.AddSingleton<ScanProgressTracker>();
 builder.Services.AddScoped<LibraryScannerService>();
 builder.Services.AddSingleton<ArchiveService>();
+builder.Services.AddSingleton<BookService>();
 builder.Services.AddScoped<MetadataRepository>();
 builder.Services.AddSingleton<AniListService>();
 builder.Services.AddSingleton<MalService>();

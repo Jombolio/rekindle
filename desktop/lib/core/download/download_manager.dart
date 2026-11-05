@@ -51,6 +51,16 @@ class DownloadManager {
     required ProgressCallback onProgress,
     CancelToken? cancelToken,
   }) async {
+    // The readers only understand EPUB, so Kindle formats are stored as the
+    // server's conversion, under an .epub name and format.
+    final isKindle = const {'mobi', 'azw', 'azw3'}.contains(format.toLowerCase());
+    if (isKindle) {
+      format = 'epub';
+      if (relativePath.isNotEmpty) {
+        relativePath = p.setExtension(relativePath, '.epub');
+      }
+    }
+
     final base = downloadBaseDir ?? await _defaultDownloadsDir();
     // relativePath is server-controlled — a hostile or compromised source could
     // smuggle ../ (or an absolute path) and write outside the downloads dir.
@@ -69,7 +79,7 @@ class DownloadManager {
 
     try {
       await _client.dio.download(
-        'api/media/$mediaId/download',
+        isKindle ? 'api/media/$mediaId/book' : 'api/media/$mediaId/download',
         localPath,
         cancelToken: cancelToken,
         // Override the base receiveTimeout — large archives on slow connections

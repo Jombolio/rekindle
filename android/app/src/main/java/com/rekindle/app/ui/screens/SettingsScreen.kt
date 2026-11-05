@@ -1,5 +1,10 @@
 package com.rekindle.app.ui.screens
 
+import androidx.compose.material3.Button
+import android.net.Uri
+import kotlin.math.roundToInt
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.horizontalScroll
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -57,6 +62,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.rekindle.app.domain.model.ServerSource
+import com.rekindle.app.BuildConfig
+import com.rekindle.app.core.prefs.BookFont
+import com.rekindle.app.core.update.UpdateCheck
+import com.rekindle.app.core.prefs.MAX_BOOK_FONT_SIZE
+import com.rekindle.app.core.prefs.MIN_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.MAX_CHAPTER_CONFIRM_MS
 import com.rekindle.app.core.prefs.MIN_CHAPTER_CONFIRM_MS
 import com.rekindle.app.ui.viewmodel.SettingsViewModel
@@ -227,6 +237,105 @@ fun SettingsScreen(
                         // 250 ms steps; steps counts the gaps *between* endpoints.
                         steps = (MAX_CHAPTER_CONFIRM_MS - MIN_CHAPTER_CONFIRM_MS) / 250 - 1,
                     )
+                }
+
+                // ── Books ──────────────────────────────────────────────
+                SectionHeader("Books")
+
+                Text("Font", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Anything but \"Book's own\" replaces the fonts a book asks for.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    BookFont.entries.forEach { font ->
+                        FilterChip(
+                            selected = state.bookFont == font,
+                            onClick = { vm.setBookFont(font) },
+                            label = { Text(font.label) },
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Text size",
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        state.bookFontSize.toInt().toString(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Slider(
+                    value = state.bookFontSize,
+                    onValueChange = { vm.setBookFontSize(it.roundToInt().toFloat()) },
+                    valueRange = MIN_BOOK_FONT_SIZE..MAX_BOOK_FONT_SIZE,
+                    steps = (MAX_BOOK_FONT_SIZE - MIN_BOOK_FONT_SIZE).toInt() - 1,
+                )
+
+                // ── Updates ────────────────────────────────────────────
+                SectionHeader("Updates")
+
+                Text(
+                    "Version ${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                if (vm.installedFromFdroid) {
+                    Text(
+                        "Installed from F-Droid, which updates this app itself and only offers " +
+                            "stable releases. A download from here is signed differently and " +
+                            "can't update this copy.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Include pre-releases", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Betas and release candidates. They may have bugs.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Switch(
+                        checked = state.receivePreReleases,
+                        onCheckedChange = { vm.setReceivePreReleases(it) },
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = vm::checkForUpdates, enabled = !state.checkingForUpdates) {
+                    Text(if (state.checkingForUpdates) "Checking…" else "Check for updates")
+                }
+                when (val result = state.updateCheck) {
+                    null -> {}
+                    UpdateCheck.UpToDate -> Text("You're up to date.", style = MaterialTheme.typography.bodyMedium)
+                    UpdateCheck.Failed -> Text(
+                        "Couldn't check for updates. Try again when you're online.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    is UpdateCheck.Available -> {
+                        Text(
+                            "Version ${result.release.version} is available.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Button(onClick = {
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.release.downloadUrl)))
+                            }
+                        }) { Text("Download") }
+                    }
                 }
 
                 // ── Downloads / Storage ───────────────────────────────────────────

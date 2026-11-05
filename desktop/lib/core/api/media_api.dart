@@ -1,3 +1,7 @@
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
+
 import '../models/media.dart';
 import '../models/paged_response.dart';
 import '../models/progress_summary.dart';
@@ -51,6 +55,42 @@ class MediaApi {
     return (count: count, spreads: spreads);
   }
 
+  /// A book's title and chapters, for reading it a chapter at a time.
+  Future<({String title, List<({String title, String path})> chapters})>
+      getBookManifest(String mediaId) async {
+    final resp = await _client.dio.get('api/media/$mediaId/book/manifest');
+    final data = resp.data as Map<String, dynamic>;
+    return (
+      title: (data['title'] ?? '') as String,
+      chapters: [
+        for (final c in data['chapters'] as List<dynamic>)
+          (
+            title: (c['title'] ?? '') as String,
+            path: c['path'] as String,
+          ),
+      ],
+    );
+  }
+
+  /// One file from inside a book, by its path in the EPUB.
+  Future<Uint8List> getBookContent(String mediaId, String path) async {
+    final resp = await _client.dio.get<List<int>>(
+      'api/media/$mediaId/book/content/${_encodePath(path)}',
+      options: Options(responseType: ResponseType.bytes),
+    );
+    return Uint8List.fromList(resp.data!);
+  }
+
+  String bookContentUrl(String mediaId, String path) {
+    final base = _client.baseUrl.endsWith('/')
+        ? _client.baseUrl
+        : '${_client.baseUrl}/';
+    return '${base}api/media/$mediaId/book/content/${_encodePath(path)}';
+  }
+
+  static String _encodePath(String path) =>
+      path.split('/').map(Uri.encodeComponent).join('/');
+
   /// Returns all folder-type items in [libraryId] whose title contains [query].
   /// Archives and individual chapters are never included.
   Future<List<Media>> searchFolders({
@@ -94,10 +134,12 @@ class MediaApi {
     required int currentPage,
     required bool isCompleted,
     int? lastReadAtMillis,
+    double? positionFraction,
   }) =>
       _client.dio.post('api/media/$mediaId/progress', data: {
         'currentPage': currentPage,
         'isCompleted': isCompleted,
+        if (positionFraction != null) 'positionFraction': positionFraction,
         if (lastReadAtMillis != null)
           'lastReadAt':
               DateTime.fromMillisecondsSinceEpoch(lastReadAtMillis, isUtc: true)

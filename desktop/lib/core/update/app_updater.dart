@@ -106,8 +106,12 @@ class AppUpdater {
 
     final placed = <String>[];
     final backups = <(String, String)>[];
+    // Held open while extracting. Left open, it would keep the downloaded zip
+    // locked on Windows, so it could never be cleaned up.
+    InputFileStream? input;
     try {
-      final archive = ZipDecoder().decodeBuffer(InputFileStream(zipPath));
+      input = InputFileStream(zipPath);
+      final archive = ZipDecoder().decodeBuffer(input);
       final files = <(String rel, int mode)>[];
       for (final entry in archive.files) {
         if (!entry.isFile) continue;
@@ -151,6 +155,7 @@ class AppUpdater {
       }
       rethrow;
     } finally {
+      await input?.close();
       try {
         if (stagingDir.existsSync()) stagingDir.deleteSync(recursive: true);
       } catch (_) {}

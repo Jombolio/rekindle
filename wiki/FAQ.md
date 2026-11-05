@@ -75,7 +75,7 @@ Check the following:
 
 ### My archives aren't showing up after a scan
 
-- Make sure the file extensions are in the [supported list](Supported-Formats) (`.cbz`, `.cbr`, `.epub`, `.mobi`, `.pdf`).
+- Make sure the file extensions are in the [supported list](Supported-Formats) (`.cbz`, `.cbr`, `.epub`, `.mobi`, `.azw`, `.azw3`, `.pdf`).
 - The library's root path must point to the **parent** folder containing your series subfolders, not to a specific series folder.
 - Check the server console output for scan errors.
 

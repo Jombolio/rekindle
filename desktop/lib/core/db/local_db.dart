@@ -20,13 +20,13 @@ class LocalDb {
 
     return openDatabase(
       '${dbDir.path}/local.db',
-      version: 2,
-      onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
+      version: 3,
+      onCreate: onCreate,
+      onUpgrade: onUpgrade,
     );
   }
 
-  static Future<void> _onCreate(Database db, int version) async {
+  static Future<void> onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE media_cache (
         id TEXT PRIMARY KEY,
@@ -47,7 +47,8 @@ class LocalDb {
         current_page INTEGER NOT NULL DEFAULT 0,
         is_completed INTEGER NOT NULL DEFAULT 0,
         last_read_at INTEGER NOT NULL,
-        synced INTEGER NOT NULL DEFAULT 0
+        synced INTEGER NOT NULL DEFAULT 0,
+        position_fraction REAL
       )
     ''');
 
@@ -72,7 +73,7 @@ class LocalDb {
     ''');
   }
 
-  static Future<void> _onUpgrade(
+  static Future<void> onUpgrade(
       Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await db.execute('''
@@ -83,6 +84,11 @@ class LocalDb {
           completed INTEGER NOT NULL DEFAULT 0
         )
       ''');
+    }
+    if (oldVersion < 3) {
+      await db.execute(
+        'ALTER TABLE progress_queue ADD COLUMN position_fraction REAL',
+      );
     }
   }
 }

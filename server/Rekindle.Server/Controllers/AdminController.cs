@@ -48,14 +48,35 @@ public class AdminController(
     public IActionResult ClearCache()
     {
         var pagesCache = Path.Combine(options.Value.CachePath, "pages");
-        if (!Directory.Exists(pagesCache))
+        var booksCache = new DirectoryInfo(Path.Combine(options.Value.CachePath, "books"));
+        if (!Directory.Exists(pagesCache) && !booksCache.Exists)
             return Ok(new { message = "Cache is already empty." });
 
         long freed = 0;
-        foreach (var dir in new DirectoryInfo(pagesCache).GetDirectories())
+        if (Directory.Exists(pagesCache))
         {
-            freed += dir.EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
-            dir.Delete(recursive: true);
+            foreach (var dir in new DirectoryInfo(pagesCache).GetDirectories())
+            {
+                freed += dir.EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
+                dir.Delete(recursive: true);
+            }
+        }
+        // Books converted from MOBI; regenerated the next time one is opened.
+        if (booksCache.Exists)
+        {
+            foreach (var file in booksCache.GetFiles())
+            {
+                try
+                {
+                    var length = file.Length;
+                    file.Delete();
+                    freed += length;
+                }
+                catch (IOException)
+                {
+                    // Being served right now; it stays until the next clear.
+                }
+            }
         }
 
         logger.LogInformation("Admin cleared page cache ({FreedBytes} bytes freed)", freed);

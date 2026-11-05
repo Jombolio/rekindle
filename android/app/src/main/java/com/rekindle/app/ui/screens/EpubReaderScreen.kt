@@ -1,9 +1,16 @@
 package com.rekindle.app.ui.screens
 
-import android.view.GestureDetector
-import android.view.MotionEvent
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -16,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.FontDownload
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.TextDecrease
 import androidx.compose.material.icons.filled.TextIncrease
@@ -26,7 +34,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,7 +41,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.rekindle.app.ui.viewmodel.EpubReaderState
+import com.rekindle.app.core.prefs.BookFont
+import com.rekindle.app.ui.viewmodel.BookDefinition
 import com.rekindle.app.ui.viewmodel.EpubReaderViewModel
 import com.rekindle.app.ui.viewmodel.EpubTheme
 
@@ -71,48 +79,42 @@ fun EpubReaderScreen(
 
             else -> {
                 val book = state.book!!
-                val chapterHtml = book.chapters[state.chapterIndex].html
-                val styledHtml = wrapHtml(chapterHtml, state)
+                val chapter = book.chapters[state.chapterIndex]
 
                 AndroidView(
                     factory = { ctx ->
-                        WebView(ctx).apply {
-                            webViewClient = WebViewClient()
-                            settings.javaScriptEnabled = false
-                            setBackgroundColor(bgColor.toArgb())
-                            // The WebView consumes touches, so the parent Box's
-                            // clickable never fires over the page — feed a gesture
-                            // detector that toggles the HUD on a tap while letting
-                            // the WebView keep handling scroll/links (returns false).
-                            val detector = GestureDetector(ctx,
-                                object : GestureDetector.SimpleOnGestureListener() {
-                                    override fun onSingleTapUp(e: MotionEvent): Boolean {
-                                        vm.toggleControls()
-                                        return false
-                                    }
-                                })
-                            setOnTouchListener { v, ev ->
-                                detector.onTouchEvent(ev)
-                                if (ev.actionMasked == MotionEvent.ACTION_UP) v.performClick()
-                                false
-                            }
-                        }
+                        BookWebView(
+                            context = ctx,
+                            onTap = vm::toggleControls,
+                            onLinkToChapter = vm::goToChapter,
+                            onPositionChanged = vm::onPositionChanged,
+                            onDefine = vm::define,
+                            onTouchedPage = vm::dismissDefinition,
+                        )
                     },
                     update = { wv ->
+                        wv.book = book
+                        wv.themeCss = themeCss(state.theme, state.font)
                         wv.setBackgroundColor(bgColor.toArgb())
-                        // Only reload when the rendered content actually changes.
-                        // Reloading on every recomposition (e.g. each HUD toggle)
-                        // reset the reading position to the top of the chapter.
-                        if (wv.tag != styledHtml) {
-                            wv.tag = styledHtml
-                            wv.loadDataWithBaseURL(null, styledHtml, "text/html", "utf-8", null)
-                        }
+                        wv.applyFontSize(state.fontSize)
+                        wv.show(chapter.path, "${state.theme.name}|${state.font.name}", state.startFraction)
                     },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(top = if (state.showControls) 56.dp else 0.dp,
-                            bottom = if (state.showControls) 56.dp else 0.dp),
+                    // No padding for the HUD: the controls float over the page, because
+                    // resizing the page on every tap moved the text being read. The
+                    // theme's body padding keeps the chapter's ends clear of them.
+                    modifier = Modifier.fillMaxSize(),
                 )
+
+                state.definition?.let { definition ->
+                    DefinitionCard(
+                        definition = definition,
+                        background = bgColor,
+                        foreground = fgColor,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(start = 12.dp, end = 12.dp, bottom = if (state.showControls) 64.dp else 16.dp),
+                    )
+                }
 
                 if (state.showControls) {
                     // Top bar
@@ -128,13 +130,16 @@ fun EpubReaderScreen(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = fgColor)
                         }
                         Text(
-                            text = book.chapters[state.chapterIndex].title,
+                            text = chapter.title,
                             color = fgColor,
                             maxLines = 1,
                             modifier = Modifier.weight(1f),
                         )
                         IconButton(onClick = vm::cycleTheme) {
                             Icon(Icons.Default.Palette, "Cycle theme", tint = fgColor)
+                        }
+                        IconButton(onClick = vm::cycleFont) {
+                            Icon(Icons.Default.FontDownload, "Font: ${state.font.label}", tint = fgColor)
                         }
                         IconButton(onClick = vm::decreaseFontSize) {
                             Icon(Icons.Default.TextDecrease, "Decrease font", tint = fgColor)
@@ -178,6 +183,48 @@ fun EpubReaderScreen(
     }
 }
 
+/**
+ * A small card with a word's meanings. It floats over the page without taking focus or
+ * moving anything, so the reader's place and flow are untouched.
+ */
+@Composable
+private fun DefinitionCard(
+    definition: BookDefinition,
+    background: Color,
+    foreground: Color,
+    modifier: Modifier = Modifier,
+) {
+    val muted = foreground.copy(alpha = 0.7f)
+    Surface(
+        modifier = modifier.fillMaxWidth().heightIn(max = 240.dp),
+        color = background,
+        contentColor = foreground,
+        shape = RoundedCornerShape(12.dp),
+        shadowElevation = 6.dp,
+    ) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(14.dp)) {
+            if (definition.entries.isEmpty()) {
+                Text("No definition found for \"${definition.word}\".", color = muted)
+            }
+            definition.entries.forEach { entry ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(entry.word, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.width(8.dp))
+                    Text(entry.partOfSpeech, color = muted, fontStyle = FontStyle.Italic, fontSize = 13.sp)
+                }
+                entry.senses.forEachIndexed { i, sense ->
+                    Text("${i + 1}. ${sense.definition}", fontSize = 14.sp, modifier = Modifier.padding(top = 2.dp))
+                    sense.example?.let {
+                        Text("\"$it\"", color = muted, fontStyle = FontStyle.Italic, fontSize = 13.sp)
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+            Text("WordNet", color = muted, fontSize = 11.sp)
+        }
+    }
+}
+
 private val EpubTheme.bgColor: Color
     get() = when (this) {
         EpubTheme.LIGHT -> Color.White
@@ -197,22 +244,19 @@ private fun colorHex(color: Color): String {
     return "#%06X".format(argb and 0xFFFFFF)
 }
 
-private fun wrapHtml(html: String, state: EpubReaderState): String {
-    val bg = colorHex(state.theme.bgColor)
-    val fg = colorHex(state.theme.fgColor)
-    val fs = state.fontSize.toInt()
-    return """<!DOCTYPE html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-body { background:$bg; color:$fg; font-size:${fs}px; line-height:1.6;
-       padding:16px; max-width:720px; margin:0 auto; font-family:serif; }
-img { max-width:100%; }
-</style></head><body>
-${extractBody(html)}
-</body></html>"""
-}
-
-private fun extractBody(html: String): String {
-    val bodyRegex = Regex("<body[^>]*>(.*?)</body>", RegexOption.DOT_MATCHES_ALL)
-    return bodyRegex.find(html)?.groupValues?.get(1) ?: html
+/**
+ * The reader's theme, added after the book's own styles. Colours use !important
+ * because books often hard-code black text, which would vanish on the dark theme.
+ */
+private fun themeCss(theme: EpubTheme, font: BookFont): String {
+    val bg = colorHex(theme.bgColor)
+    val fg = colorHex(theme.fgColor)
+    return """
+html, body { background: $bg !important; color: $fg !important; }
+body { line-height: 1.6; padding: 64px 16px !important; max-width: 720px;
+       margin: 0 auto !important; font-family: serif; box-sizing: border-box; }
+body * { color: inherit !important; background-color: transparent !important; }
+img, svg { max-width: 100% !important; height: auto; }
+${font.css}
+"""
 }
