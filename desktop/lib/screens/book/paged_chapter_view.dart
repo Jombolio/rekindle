@@ -633,14 +633,34 @@ class PageCurlPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (progress <= 0 || width <= 0) return;
+    if (width <= 0) return;
     if (clip != null) canvas.clipRect(clip!);
 
     final t = progress.clamp(0.0, 1.0);
+    // Paint the flat endpoints explicitly. In particular, t == 0 is a real
+    // frame after capturing the destination, not an empty overlay.
+    if (t == 0 || t == 1) {
+      final edge = spine + direction * width * (t == 0 ? 1 : -1);
+      final rect = Rect.fromLTRB(
+          math.min(spine, edge), 0, math.max(spine, edge), size.height);
+      canvas.drawRect(rect, Paint()..color = paper.withValues(alpha: 1));
+      final image = t == 0 ? front : back;
+      if (image != null) {
+        canvas.drawImageRect(
+          image,
+          Rect.fromLTRB(rect.left * image.width / area.width, 0,
+              rect.right * image.width / area.width, image.height.toDouble()),
+          rect,
+          Paint()..filterQuality = FilterQuality.medium,
+        );
+      }
+      return;
+    }
+
     // The fold moves from the free edge to the spine; the roll tightens as it
     // goes, so the page lies flat at the end.
     final fold = width * (1 - t);
-    final radius = math.max(0.5, width * 0.16 * (1 - t));
+    final radius = width * 0.16 * (1 - t);
     final halfTurn = math.pi * radius;
 
     // Where paper at distance [u] from the spine ends up, as a distance from
@@ -704,8 +724,7 @@ class PageCurlPainter extends CustomPainter {
         final src = Rect.fromLTRB(math.min(sa, sb) * scaleX, 0,
             math.max(sa, sb) * scaleX, area.height * scaleY);
         // Lit at the top of the roll, settling as it lies flat.
-        final shade =
-            angle < math.pi ? 0.16 * (1 + math.cos(angle)) + 0.03 : 0.04;
+        final shade = (0.16 * (1 + math.cos(angle)) + 0.04) * (1 - t);
         backs.add((src, dst, shade));
       }
     }
@@ -784,6 +803,7 @@ class PageCurlPainter extends CustomPainter {
       !identical(old.back, back) ||
       old.spine != spine ||
       old.width != width ||
+      old.area != area ||
       old.direction != direction ||
       old.paper != paper ||
       old.clip != clip;

@@ -49,6 +49,7 @@ data class SettingsState(
     /** Offer betas and release candidates when checking for updates. */
     val receivePreReleases: Boolean = false,
     /** Show archives' file extensions after their names. */
+    val comicPageTurns: Boolean = true,
     val showFileExtensions: Boolean = false,
     /** Taps still needed to turn pre-releases on, while counting down; else null. */
     val preReleaseTapsLeft: Int? = null,
@@ -78,6 +79,9 @@ class SettingsViewModel @Inject constructor(
     ).absolutePath
 
     init {
+        viewModelScope.launch {
+            prefs.comicPageTurns.collect { enabled -> _state.update { it.copy(comicPageTurns = enabled) } }
+        }
         viewModelScope.launch {
             combine(
                 prefs.themeMode,
@@ -117,6 +121,10 @@ class SettingsViewModel @Inject constructor(
                 _state.update { it.copy(bookFont = font, bookFontSize = size) }
             }
         }
+    }
+
+    fun setComicPageTurns(enabled: Boolean) {
+        viewModelScope.launch { prefs.setComicPageTurns(enabled) }
     }
 
     fun setShowFileExtensions(show: Boolean) {

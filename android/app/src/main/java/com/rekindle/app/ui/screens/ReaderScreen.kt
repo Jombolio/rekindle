@@ -62,7 +62,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
@@ -516,16 +519,18 @@ private fun PagedModeContent(
 
     // Advance one slide forward, or navigate to next chapter at the last slide.
     fun goForward() = scope.launch {
+        if (pagerState.isScrollInProgress) return@launch
         if (pagerState.currentPage < slideCount - 1)
-            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+            pagerState.animateScrollToPage(pagerState.currentPage + 1, animationSpec = tween(if (state.comicPageTurns) 450 else 200))
         else
             onNextChapter()
     }
 
     // Advance one slide backward, or navigate to prev chapter at the first slide.
     fun goBack() = scope.launch {
+        if (pagerState.isScrollInProgress) return@launch
         if (pagerState.currentPage > 0)
-            pagerState.animateScrollToPage(pagerState.currentPage - 1)
+            pagerState.animateScrollToPage(pagerState.currentPage - 1, animationSpec = tween(if (state.comicPageTurns) 450 else 200))
         else
             onPrevChapter()
     }
@@ -578,7 +583,7 @@ private fun PagedModeContent(
         userScrollEnabled = !isZoomed,
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(state.isRtl) {
+            .pointerInput(state.isRtl, state.comicPageTurns, slideCount) {
                 detectTapGestures(
                     // Double-tap toggles between the fit view and a fixed zoom, and is
                     // the reliable way back to the original view once zoomed in.
@@ -613,43 +618,64 @@ private fun PagedModeContent(
         // bleeds onto the next page mid-swipe.
         val isCurrent = viewIndex == pagerState.currentPage
 
-        if (slide.size == 1) {
-            ZoomablePageImage(
-                model = imageModelFn(slide[0]),
-                modifier = Modifier.fillMaxSize(),
-                zoom = zoom,
-                applyTransform = isCurrent,
-            )
-        } else {
-            val left = if (state.isRtl) slide[1] else slide[0]
-            val right = if (state.isRtl) slide[0] else slide[1]
-            // graphicsLayer is on the Row (spread centre = W/2) so both pages zoom
-            // around the same origin instead of each zooming around their own centre.
-            Row(
-                Modifier.fillMaxSize().graphicsLayer {
-                    val s = if (isCurrent) zoom.scale.floatValue else 1f
-                    scaleX = s; scaleY = s
-                    translationX = if (isCurrent) zoom.offsetX.floatValue else 0f
-                    translationY = if (isCurrent) zoom.offsetY.floatValue else 0f
-                }
-            ) {
+        // Cancel horizontal paging translation and hinge the page at its edge.
+        // Read pager position in the draw phase, keeping image loading out of ticks.
+        Box(Modifier.fillMaxSize().graphicsLayer {
+            if (state.comicPageTurns && !isZoomed) {
+                val offset = (pagerState.currentPage - viewIndex +
+                    pagerState.currentPageOffsetFraction).coerceIn(-1f, 1f)
+                val physical = if (state.isRtl) -offset else offset
+                translationX = physical * size.width
+                transformOrigin = TransformOrigin(if (physical >= 0f) 0f else 1f, 0.5f)
+                rotationY = -physical * 90f
+                cameraDistance = 12f * density
+                alpha = if (kotlin.math.abs(offset) >= 1f) 0f else 1f
+            }
+        }.background(Color.Black).drawWithContent {
+            drawContent()
+            if (state.comicPageTurns && !isZoomed) {
+                val offset = pagerState.currentPage - viewIndex + pagerState.currentPageOffsetFraction
+                drawRect(Color.Black.copy(alpha = 0.22f * kotlin.math.abs(offset).coerceIn(0f, 1f)))
+            }
+        }) {
+            if (slide.size == 1) {
                 ZoomablePageImage(
-                    model = imageModelFn(left),
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    alignment = androidx.compose.ui.Alignment.CenterEnd,
+                    model = imageModelFn(slide[0]),
+                    modifier = Modifier.fillMaxSize(),
                     zoom = zoom,
-                    applyTransform = false,
+                    applyTransform = isCurrent,
                 )
-                if (state.spineGap > 0f) {
-                    Box(Modifier.fillMaxHeight().padding(horizontal = (state.spineGap / 2).dp))
+            } else {
+                val left = if (state.isRtl) slide[1] else slide[0]
+                val right = if (state.isRtl) slide[0] else slide[1]
+                // graphicsLayer is on the Row (spread centre = W/2) so both pages zoom
+                // around the same origin instead of each zooming around their own centre.
+                Row(
+                    Modifier.fillMaxSize().graphicsLayer {
+                        val s = if (isCurrent) zoom.scale.floatValue else 1f
+                        scaleX = s; scaleY = s
+                        translationX = if (isCurrent) zoom.offsetX.floatValue else 0f
+                        translationY = if (isCurrent) zoom.offsetY.floatValue else 0f
+                    }
+                ) {
+                    ZoomablePageImage(
+                        model = imageModelFn(left),
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        alignment = androidx.compose.ui.Alignment.CenterEnd,
+                        zoom = zoom,
+                        applyTransform = false,
+                    )
+                    if (state.spineGap > 0f) {
+                        Box(Modifier.fillMaxHeight().padding(horizontal = (state.spineGap / 2).dp))
+                    }
+                    ZoomablePageImage(
+                        model = imageModelFn(right),
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        alignment = androidx.compose.ui.Alignment.CenterStart,
+                        zoom = zoom,
+                        applyTransform = false,
+                    )
                 }
-                ZoomablePageImage(
-                    model = imageModelFn(right),
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    alignment = androidx.compose.ui.Alignment.CenterStart,
-                    zoom = zoom,
-                    applyTransform = false,
-                )
             }
         }
     }

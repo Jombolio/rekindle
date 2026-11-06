@@ -204,6 +204,10 @@ class PrefsStore @Inject constructor(
     val receivePreReleases: Flow<Boolean> = store.data.map { it[Keys.RECEIVE_PRE_RELEASES] ?: false }
 
     /** Whether archive names show their file extension (".cbz"). Off by default. */
+    val comicPageTurns: Flow<Boolean> = store.data.map { it[Keys.COMIC_PAGE_TURNS] ?: true }
+    suspend fun setComicPageTurns(enabled: Boolean) =
+        store.edit { it[Keys.COMIC_PAGE_TURNS] = enabled }
+
     val showFileExtensions: Flow<Boolean> = store.data.map { it[Keys.SHOW_FILE_EXTENSIONS] ?: false }
 
     /** The font and text size books open with. */
@@ -301,6 +305,7 @@ class PrefsStore @Inject constructor(
         val DOWNLOAD_SAF_URI = stringPreferencesKey("download_saf_uri")
         val SPINE_GAP = floatPreferencesKey("spine_gap")
         val RECEIVE_PRE_RELEASES = booleanPreferencesKey("receive_pre_releases")
+        val COMIC_PAGE_TURNS = booleanPreferencesKey("comic_page_turns")
         val SHOW_FILE_EXTENSIONS = booleanPreferencesKey("show_file_extensions")
         val BOOK_FONT = stringPreferencesKey("book_font")
         val BOOK_FONT_SIZE = floatPreferencesKey("book_font_size")

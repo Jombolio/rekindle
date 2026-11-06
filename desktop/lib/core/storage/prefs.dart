@@ -64,6 +64,7 @@ class Prefs {
 
   // Per-series reading direction (key = series name or mediaId)
   bool isRtl(String key) => _prefs.getBool('rtl_$key') ?? false;
+
   /// Returns null when the user has never explicitly set a direction for [key].
   bool? isRtlExplicit(String key) => _prefs.getBool('rtl_$key');
   Future<void> setRtl(String key, {required bool rtl}) =>
@@ -110,6 +111,10 @@ class Prefs {
   bool get defineOnSelect => _prefs.getBool('define_on_select') ?? true;
 
   // Whether archive names show their file extension (".cbz"). Off by default.
+  bool get comicPageTurns => _prefs.getBool('comic_page_turns') ?? true;
+  Future<void> setComicPageTurns(bool enabled) =>
+      _prefs.setBool('comic_page_turns', enabled);
+
   bool get showFileExtensions =>
       _prefs.getBool('show_file_extensions') ?? false;
   Future<void> setShowFileExtensions({required bool show}) =>
@@ -157,7 +162,8 @@ class Prefs {
 
   // A version the user chose to skip: the automatic check won't offer it
   // again (a manual check still does).
-  String? get skippedUpdateVersion => _prefs.getString('skipped_update_version');
+  String? get skippedUpdateVersion =>
+      _prefs.getString('skipped_update_version');
   Future<void> setSkippedUpdateVersion(String version) =>
       _prefs.setString('skipped_update_version', version);
 

@@ -37,6 +37,7 @@ class SettingsState {
   final bool defineOnSelect;
 
   /// Show archives' file extensions after their names. Off by default.
+  final bool comicPageTurns;
   final bool showFileExtensions;
 
   /// Offer pre-releases (betas, release candidates) when checking for updates.
@@ -55,6 +56,7 @@ class SettingsState {
     this.bookTheme = BookTheme.matchApp,
     this.readingStyle = const ReadingStyle(),
     this.defineOnSelect = true,
+    this.comicPageTurns = true,
     this.showFileExtensions = false,
     this.receivePreReleases = false,
     this.autoCheckUpdates = true,
@@ -71,6 +73,7 @@ class SettingsState {
     BookTheme? bookTheme,
     ReadingStyle? readingStyle,
     bool? defineOnSelect,
+    bool? comicPageTurns,
     bool? showFileExtensions,
     bool? receivePreReleases,
     bool? autoCheckUpdates,
@@ -86,6 +89,7 @@ class SettingsState {
         bookTheme: bookTheme ?? this.bookTheme,
         readingStyle: readingStyle ?? this.readingStyle,
         defineOnSelect: defineOnSelect ?? this.defineOnSelect,
+        comicPageTurns: comicPageTurns ?? this.comicPageTurns,
         showFileExtensions: showFileExtensions ?? this.showFileExtensions,
         receivePreReleases: receivePreReleases ?? this.receivePreReleases,
         autoCheckUpdates: autoCheckUpdates ?? this.autoCheckUpdates,
@@ -116,6 +120,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
       bookTheme: BookTheme.parse(prefs.bookTheme),
       readingStyle: ReadingStyle.fromJson(prefs.readingStyle),
       defineOnSelect: prefs.defineOnSelect,
+      comicPageTurns: prefs.comicPageTurns,
       showFileExtensions: prefs.showFileExtensions,
       receivePreReleases: prefs.receivePreReleases,
       autoCheckUpdates: prefs.autoCheckUpdates,
@@ -169,6 +174,11 @@ class SettingsNotifier extends Notifier<SettingsState> {
   Future<void> setReadingStyle(ReadingStyle style) async {
     state = state.copyWith(readingStyle: style);
     await Prefs.instance.setReadingStyle(style.toJson());
+  }
+
+  Future<void> setComicPageTurns(bool enabled) async {
+    await Prefs.instance.setComicPageTurns(enabled);
+    state = state.copyWith(comicPageTurns: enabled);
   }
 
   Future<void> setShowFileExtensions({required bool show}) async {

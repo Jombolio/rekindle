@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/models/media.dart';
+import 'widgets/comic_page_turn.dart';
 import '../core/utils/slides.dart';
 import '../core/storage/prefs.dart';
 import '../providers/auth_provider.dart';
@@ -20,6 +21,7 @@ import '../providers/settings_provider.dart';
 class ReaderScreen extends ConsumerStatefulWidget {
   final String mediaId;
   final String? libraryType;
+
   /// When set, the reader starts at this page and ignores saved server progress.
   final int? initialPage;
 
@@ -89,7 +91,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   bool _hudVisible = true;
   Timer? _hideTimer;
   static const _hudTimeout = Duration(seconds: 3);
-  static const _hudFade   = Duration(milliseconds: 250);
+  static const _hudFade = Duration(milliseconds: 250);
 
   @override
   void initState() {
@@ -247,7 +249,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   /// unless the target already has an explicit user preference saved.
   void _openAdjacentChapter(BuildContext context, String targetId) {
     if (Prefs.instance.isRtlExplicit(targetId) == null) {
-      final isRtl = ref.read(readerProvider((widget.mediaId, widget.libraryType))).direction ==
+      final isRtl = ref
+              .read(readerProvider((widget.mediaId, widget.libraryType)))
+              .direction ==
           ReadingDirection.rtl;
       Prefs.instance.setRtl(targetId, rtl: isRtl);
     }
@@ -303,25 +307,45 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   }
 
   void _goLeft(BuildContext context, List<Media> siblings) {
-    final isRtl = ref.read(readerProvider((widget.mediaId, widget.libraryType))).direction ==
+    final isRtl = ref
+            .read(readerProvider((widget.mediaId, widget.libraryType)))
+            .direction ==
         ReadingDirection.rtl;
     isRtl ? _nextSlide(context, siblings) : _prevSlide(context, siblings);
   }
 
   void _goRight(BuildContext context, List<Media> siblings) {
-    final isRtl = ref.read(readerProvider((widget.mediaId, widget.libraryType))).direction ==
+    final isRtl = ref
+            .read(readerProvider((widget.mediaId, widget.libraryType)))
+            .direction ==
         ReadingDirection.rtl;
     isRtl ? _prevSlide(context, siblings) : _nextSlide(context, siblings);
   }
 
+  bool get _bookPageTurns =>
+      ref.read(settingsProvider).comicPageTurns &&
+      !MediaQuery.disableAnimationsOf(context);
+
+  Duration get _pageTurnDuration => Duration(
+      milliseconds: MediaQuery.disableAnimationsOf(context)
+          ? 1
+          : _bookPageTurns
+              ? 450
+              : 200);
+
   void _nextSlide(BuildContext context, List<Media> siblings) {
     _resetZoom();
-    if (_pageAnimating) return;
+    if (_pageAnimating ||
+        (_pageCtrl.hasClients &&
+            _pageCtrl.position.isScrollingNotifier.value)) {
+      return;
+    }
     // No PageView is built until pages load (totalPages == 0); touching
     // _pageCtrl.page without clients throws, so a key press before the page
     // count arrives — or on the offline-unavailable screen — would crash.
     if (!_pageCtrl.hasClients) return;
-    final state = ref.read(readerProvider((widget.mediaId, widget.libraryType)));
+    final state =
+        ref.read(readerProvider((widget.mediaId, widget.libraryType)));
     final slideCount = state.doublePage
         ? buildSlides(state.totalPages, state.spreads).length
         : state.totalPages;
@@ -330,7 +354,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       _disarmChapterConfirm();
       _pageAnimating = true;
       _pageCtrl
-          .nextPage(duration: const Duration(milliseconds: 200), curve: Curves.easeOut)
+          .nextPage(duration: _pageTurnDuration, curve: Curves.easeInOut)
           .whenComplete(() => _pageAnimating = false);
     } else {
       _tryNextChapter(context, siblings);
@@ -339,13 +363,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
   void _prevSlide(BuildContext context, List<Media> siblings) {
     _resetZoom();
-    if (_pageAnimating) return;
+    if (_pageAnimating ||
+        (_pageCtrl.hasClients &&
+            _pageCtrl.position.isScrollingNotifier.value)) {
+      return;
+    }
     if (!_pageCtrl.hasClients) return;
     if (_pageCtrl.page != null && _pageCtrl.page!.round() > 0) {
       _disarmChapterConfirm();
       _pageAnimating = true;
       _pageCtrl
-          .previousPage(duration: const Duration(milliseconds: 200), curve: Curves.easeOut)
+          .previousPage(duration: _pageTurnDuration, curve: Curves.easeInOut)
           .whenComplete(() => _pageAnimating = false);
     } else {
       _tryPrevChapter(context, siblings);
@@ -452,8 +480,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
     _scrollTrackedPage = bestPage;
 
-    final notifier = ref.read(readerProvider((widget.mediaId, widget.libraryType)).notifier);
-    if (bestPage != ref.read(readerProvider((widget.mediaId, widget.libraryType))).currentPage) {
+    final notifier =
+        ref.read(readerProvider((widget.mediaId, widget.libraryType)).notifier);
+    if (bestPage !=
+        ref
+            .read(readerProvider((widget.mediaId, widget.libraryType)))
+            .currentPage) {
       notifier.goToPage(bestPage, widget.mediaId);
     }
   }
@@ -503,7 +535,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       final idx = slideIdx + offset;
       if (idx < 0 || idx >= slides.length) continue;
       for (final pageIdx in slides[idx]) {
-        precacheImage(_buildImageProvider(pageIdx, extractedPages, client), context)
+        precacheImage(
+                _buildImageProvider(pageIdx, extractedPages, client), context)
             .ignore();
       }
     }
@@ -529,7 +562,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final readerState = ref.watch(readerProvider((widget.mediaId, widget.libraryType)));
+    final readerState =
+        ref.watch(readerProvider((widget.mediaId, widget.libraryType)));
     ref.listen(readerProvider((widget.mediaId, widget.libraryType)), (_, next) {
       if (next.totalPages > 0) {
         ref
@@ -580,11 +614,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     _prevSlides = slides;
 
     // Prefetch surrounding pages whenever the current page changes (paged mode).
-    if (totalPages > 0 && !scrollMode &&
+    if (totalPages > 0 &&
+        !scrollMode &&
         readerState.currentPage != _lastPrefetchedPage) {
       _lastPrefetchedPage = readerState.currentPage;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _prefetchAround(readerState.currentPage, extractedPages, client, slides);
+        _prefetchAround(
+            readerState.currentPage, extractedPages, client, slides);
       });
     }
 
@@ -606,7 +642,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
           // Keep the provider in step: without this the HUD counter/slider kept
           // showing the chapter's old saved progress while page 0 was displayed.
           ref
-              .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
+              .read(
+                  readerProvider((widget.mediaId, widget.libraryType)).notifier)
               .applyExternalPage(target);
           if (scrollMode) {
             if (target > 0) _jumpToSavedPageInScrollMode(target);
@@ -653,9 +690,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
             }
           } else {
             if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
-                event.logicalKey == LogicalKeyboardKey.keyA) { _goLeft(context, siblings); }
+                event.logicalKey == LogicalKeyboardKey.keyA) {
+              _goLeft(context, siblings);
+            }
             if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
-                event.logicalKey == LogicalKeyboardKey.keyD) { _goRight(context, siblings); }
+                event.logicalKey == LogicalKeyboardKey.keyD) {
+              _goRight(context, siblings);
+            }
           }
         },
         child: Scaffold(
@@ -674,8 +715,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 child: totalPages == 0
                     ? const SizedBox.expand()
                     : scrollMode
-                        ? _buildScrollView(
-                            context, readerState, extractedPages, client, siblings)
+                        ? _buildScrollView(context, readerState, extractedPages,
+                            client, siblings)
                         : _buildPagedView(
                             extractedPages, client, isRtl, slides, pageGap),
               ),
@@ -731,10 +772,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                   duration: _hudFade,
                   child: Stack(
                     children: [
-                      _buildTopBar(context, readerState, mediaAsync,
-                          isRtl, doublePage, scrollMode, pageGap),
-                      _buildBottomBar(context, readerState,
-                          totalPages, isRtl, doublePage, scrollMode, slides),
+                      _buildTopBar(context, readerState, mediaAsync, isRtl,
+                          doublePage, scrollMode, pageGap),
+                      _buildBottomBar(context, readerState, totalPages, isRtl,
+                          doublePage, scrollMode, slides),
                     ],
                   ),
                 ),
@@ -764,37 +805,37 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         return false;
       },
       child: ListView.builder(
-          controller: _scrollCtrl,
-          itemCount: totalPages,
-          // Pre-render 3 viewports worth of content below (and above) the
-          // visible area so images are already decoded before they scroll in.
-          scrollCacheExtent: const ScrollCacheExtent.viewport(3),
-          itemBuilder: (context, pageIndex) {
-            return Image(
-              key: _pageKeys[pageIndex],
-              image: _buildImageProvider(pageIndex, extractedPages, client),
-              width: double.infinity,
-              fit: BoxFit.fitWidth,
-              filterQuality: FilterQuality.medium,
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return const AspectRatio(
-                  aspectRatio: 2 / 3,
-                  child: Center(
-                    child: CircularProgressIndicator(color: Colors.white54),
-                  ),
-                );
-              },
-              errorBuilder: (_, __, ___) => SizedBox(
-                height: MediaQuery.sizeOf(context).height * 0.5,
-                child: const Center(
-                  child: Icon(Icons.broken_image,
-                      color: Colors.white54, size: 64),
+        controller: _scrollCtrl,
+        itemCount: totalPages,
+        // Pre-render 3 viewports worth of content below (and above) the
+        // visible area so images are already decoded before they scroll in.
+        scrollCacheExtent: const ScrollCacheExtent.viewport(3),
+        itemBuilder: (context, pageIndex) {
+          return Image(
+            key: _pageKeys[pageIndex],
+            image: _buildImageProvider(pageIndex, extractedPages, client),
+            width: double.infinity,
+            fit: BoxFit.fitWidth,
+            filterQuality: FilterQuality.medium,
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) return child;
+              return const AspectRatio(
+                aspectRatio: 2 / 3,
+                child: Center(
+                  child: CircularProgressIndicator(color: Colors.white54),
                 ),
+              );
+            },
+            errorBuilder: (_, __, ___) => SizedBox(
+              height: MediaQuery.sizeOf(context).height * 0.5,
+              child: const Center(
+                child:
+                    Icon(Icons.broken_image, color: Colors.white54, size: 64),
               ),
-            );
-          },
-        ),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -823,8 +864,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         onPageChanged: (viewIndex) {
           // Reset zoom so the next page starts at fit-to-screen.
           if (_isZoomed) _resetZoom();
-          // A manual swipe settles the animation externally — unblock the gate.
-          _pageAnimating = false;
           // Restore/remap jumps must not write progress: the provider already
           // holds the logical page, and reporting the new slide's last page
           // crept progress forward whenever slide grouping differed between
@@ -835,13 +874,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
           // any contained page back to this slide, so this is safe.
           final pageIndex = slides[viewIndex].last;
           ref
-              .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
+              .read(
+                  readerProvider((widget.mediaId, widget.libraryType)).notifier)
               .goToPage(pageIndex, widget.mediaId);
         },
         itemBuilder: (_, viewIndex) {
           final slide = slides[viewIndex];
+          final Widget content;
           if (slide.length == 1) {
-            return Image(
+            content = Image(
               image: _buildImageProvider(slide[0], extractedPages, client),
               fit: BoxFit.contain,
               filterQuality: FilterQuality.medium,
@@ -852,12 +893,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 );
               },
               errorBuilder: (_, __, ___) => const Center(
-                child: Icon(Icons.broken_image, color: Colors.white54, size: 64),
+                child:
+                    Icon(Icons.broken_image, color: Colors.white54, size: 64),
               ),
             );
+          } else {
+            content = _buildDoublePageSlide(
+                slide[0], slide[1], isRtl, extractedPages, client, pageGap);
           }
-          return _buildDoublePageSlide(
-              slide[0], slide[1], isRtl, extractedPages, client, pageGap);
+          return _bookPageTurns
+              ? ComicPageTurn(
+                  controller: _pageCtrl,
+                  index: viewIndex,
+                  reverse: isRtl,
+                  child: content,
+                )
+              : content;
         },
       ),
     );
@@ -872,7 +923,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     double gap,
   ) {
     // In RTL: pageA (lower number, read first) goes on the right; pageB on left.
-    final leftContent  = isRtl ? pageB : pageA;
+    final leftContent = isRtl ? pageB : pageA;
     final rightContent = isRtl ? pageA : pageB;
 
     // Alignment is determined by physical position relative to the spine.
@@ -901,7 +952,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
     return Row(
       children: [
-        Expanded(child: pageWidget(leftContent,  Alignment.centerRight)),
+        Expanded(child: pageWidget(leftContent, Alignment.centerRight)),
         if (gap > 0) SizedBox(width: gap),
         Expanded(child: pageWidget(rightContent, Alignment.centerLeft)),
       ],
@@ -961,7 +1012,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                   onPressed: () {
                     _resetZoom();
                     ref
-                        .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
+                        .read(
+                            readerProvider((widget.mediaId, widget.libraryType))
+                                .notifier)
                         .toggleScrollMode(widget.mediaId);
                     _didJump = false;
                     _didScrollJump = false;
@@ -974,13 +1027,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                   message: doublePage ? 'Single page' : 'Double page spread',
                   child: IconButton(
                     color: Colors.white,
-                    icon: Icon(doublePage
-                        ? Icons.menu_book
-                        : Icons.auto_stories),
+                    icon:
+                        Icon(doublePage ? Icons.menu_book : Icons.auto_stories),
                     onPressed: () {
                       _resetZoom();
                       ref
-                          .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
+                          .read(readerProvider(
+                              (widget.mediaId, widget.libraryType)).notifier)
                           .toggleDoublePage(widget.mediaId);
                       _didJump = false;
                     },
@@ -1002,7 +1055,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                   ),
                 ),
                 Text('${pageGap.round()}',
-                    style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 12)),
                 Tooltip(
                   message: 'Increase page gap',
                   child: IconButton(
@@ -1022,13 +1076,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 Tooltip(
                   message: isRtl ? 'Switch to LTR' : 'Switch to RTL',
                   child: TextButton.icon(
-                    style:
-                        TextButton.styleFrom(foregroundColor: Colors.white),
+                    style: TextButton.styleFrom(foregroundColor: Colors.white),
                     onPressed: () {
-                      final s = ref.read(readerProvider((widget.mediaId, widget.libraryType)));
+                      final s = ref.read(
+                          readerProvider((widget.mediaId, widget.libraryType)));
                       final newIsRtl = s.direction == ReadingDirection.ltr;
                       ref
-                          .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
+                          .read(readerProvider(
+                              (widget.mediaId, widget.libraryType)).notifier)
                           .toggleDirection(widget.mediaId);
                       final sl = s.doublePage
                           ? buildSlides(s.totalPages, s.spreads)
@@ -1091,12 +1146,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                       final page = v.round();
                       _resetZoom();
                       ref
-                          .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
+                          .read(readerProvider(
+                              (widget.mediaId, widget.libraryType)).notifier)
                           .goToPage(page, widget.mediaId);
                       if (scrollMode) {
                         _scrollToPage(page);
                       } else {
-                        _pageCtrl.jumpToPage(_pageToViewIndex(page, slides, isRtl));
+                        _pageCtrl
+                            .jumpToPage(_pageToViewIndex(page, slides, isRtl));
                       }
                     },
                   ),

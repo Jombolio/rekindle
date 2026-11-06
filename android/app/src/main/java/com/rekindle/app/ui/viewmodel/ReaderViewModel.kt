@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class ReaderState(
+    val comicPageTurns: Boolean = true,
     val title: String = "",
     val totalPages: Int = 0,
     val currentPage: Int = 0,
@@ -87,6 +88,7 @@ class ReaderViewModel @Inject constructor(
                     doublePage = prefs.isDoublePage(mediaId).first(),
                     scrollMode = prefs.isScrollMode(mediaId).first(),
                     spineGap = prefs.spineGap.first(),
+                    comicPageTurns = prefs.comicPageTurns.first(),
                     // Read once at open, like the other reader prefs: Settings is a
                     // different screen, so these cannot change while reading.
                     confirmChapterChange = prefs.confirmChapterChange.first(),
