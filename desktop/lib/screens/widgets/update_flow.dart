@@ -214,6 +214,10 @@ class _UpdateDialog extends StatelessWidget {
       InstallKind.packageManaged =>
         'This copy is managed by your package manager. Update it there, '
             'e.g. yay -Syu rekindle-bin on Arch.',
+      InstallKind.readOnlyFolder =>
+        "Rekindle can't write to the folder it's in, so it can't update itself. "
+            'Download this version from the release page, or move this copy to '
+            'a folder you can write to.',
       _ => "This is a development build, so it isn't updated in place.",
     };
 

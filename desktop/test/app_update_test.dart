@@ -49,6 +49,28 @@ void main() {
       expect(t.kind.assetName, 'Rekindle-windows-x64Setup.exe');
     });
 
+    test("the installer updates a folder this user can't write to", () {
+      // The default install: Program Files, running without elevation.
+      final dir = p.join('Program Files (x86)', 'Rekindle');
+      final t = detect(
+          windows: true,
+          exe: p.join(dir, 'rekindle.exe'),
+          files: {p.join(dir, 'unins000.exe')},
+          writable: false);
+      expect(t.kind, InstallKind.windowsInstaller);
+      expect(t.kind.installsInApp, isTrue);
+    });
+
+    test("a portable copy in a read-only folder can't update itself", () {
+      final t = detect(
+          windows: true,
+          exe: p.join('Program Files', 'Rekindle', 'rekindle.exe'),
+          writable: false);
+      expect(t.kind, InstallKind.readOnlyFolder);
+      expect(t.kind.installsInApp, isFalse);
+      expect(t.kind.assetName, 'RekindleClient-windows-x64.zip');
+    });
+
     test('Windows without it is the portable zip', () {
       final t = detect(windows: true, exe: p.join('Apps', 'Rekindle', 'rekindle.exe'));
       expect(t.kind, InstallKind.windowsPortable);
