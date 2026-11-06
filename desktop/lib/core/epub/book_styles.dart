@@ -47,11 +47,8 @@ class BookStyles {
         if (match == null) continue;
 
         final tag = match.group(1)?.toLowerCase();
-        final classes = match
-            .group(2)!
-            .split('.')
-            .where((c) => c.isNotEmpty)
-            .toList();
+        final classes =
+            match.group(2)!.split('.').where((c) => c.isNotEmpty).toList();
         if (classes.isNotEmpty) {
           for (final c in classes) {
             (byClass[c] ??= {}).addAll(declarations);
@@ -82,10 +79,30 @@ class BookStyles {
     return result;
   }
 
+  /// A `text-indent` as a number of em spaces, or 0 for none. The HTML widget
+  /// ignores the property, and books that set it usually leave paragraphs no
+  /// margin, so without it they run into one another. Negative (hanging)
+  /// indents and percentages, which depend on the page width, aren't reproduced.
+  static int indentEms(String value) {
+    final match = RegExp(r'^\s*([\d.]+)\s*(em|rem|px|pt)?\s*$')
+        .firstMatch(value.toLowerCase());
+    if (match == null) return 0;
+    final amount = double.tryParse(match.group(1)!) ?? 0;
+    final ems = switch (match.group(2)) {
+      'px' => amount / 16,
+      'pt' => amount / 12,
+      null => amount == 0 ? 0.0 : amount / 16, // Unitless lengths are pixels.
+      _ => amount,
+    };
+    if (ems < 0.25) return 0;
+    return ems.round().clamp(1, 4);
+  }
+
   /// Styles for an element, with class rules overriding tag rules.
   Map<String, String> stylesFor(String tag, Iterable<String> classes) {
     final tagRules = _byTag[tag.toLowerCase()];
-    final classRules = classes.map((c) => _byClass[c]).whereType<Map<String, String>>();
+    final classRules =
+        classes.map((c) => _byClass[c]).whereType<Map<String, String>>();
     if (tagRules == null && classRules.isEmpty) return const {};
     return {
       ...?tagRules,

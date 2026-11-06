@@ -34,9 +34,14 @@ String _opf(List<String> hrefs) => '''
 <package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/">
   <metadata><dc:title>My Book</dc:title></metadata>
   <manifest>
-    ${[for (var i = 0; i < hrefs.length; i++) '<item id="c$i" href="${hrefs[i]}"/>'].join()}
+    ${[
+      for (var i = 0; i < hrefs.length; i++)
+        '<item id="c$i" href="${hrefs[i]}"/>'
+    ].join()}
   </manifest>
-  <spine>${[for (var i = 0; i < hrefs.length; i++) '<itemref idref="c$i"/>'].join()}</spine>
+  <spine>${[
+      for (var i = 0; i < hrefs.length; i++) '<itemref idref="c$i"/>'
+    ].join()}</spine>
 </package>''';
 
 void main() {
@@ -60,7 +65,8 @@ void main() {
         'OPS/img/Cover.PNG': _png,
       }));
 
-      final path = EpubParser.resolve(book.chapters[0].path, '../img/Cover.PNG');
+      final path =
+          EpubParser.resolve(book.chapters[0].path, '../img/Cover.PNG');
       expect(path, 'OPS/img/Cover.PNG');
       expect(book.imageAt(path), isNotNull);
       expect(book.imageAt('ops/IMG/cover.png'), isNotNull,
@@ -107,7 +113,8 @@ void main() {
 
     test('expands self-closing tags but not void ones', () {
       expect(
-        EpubParser.expandSelfClosingTags('<a id="x"/><br/><img src="a/b.png"/><div/>'),
+        EpubParser.expandSelfClosingTags(
+            '<a id="x"/><br/><img src="a/b.png"/><div/>'),
         '<a id="x"></a><br/><img src="a/b.png"/><div></div>',
       );
     });
@@ -177,17 +184,31 @@ void main() {
       expect(styles.stylesFor('a', const []), isEmpty);
       expect(styles.stylesFor('p', const []), {'text-align': 'right'});
     });
+
+    test('turns paragraph indents into em spaces', () {
+      expect(BookStyles.indentEms('1.2em'), 1);
+      expect(BookStyles.indentEms('2em'), 2);
+      expect(BookStyles.indentEms('24px'), 2);
+      expect(BookStyles.indentEms('0'), 0);
+      expect(BookStyles.indentEms('-1em'), 0); // Hanging indents aren't kept.
+      expect(BookStyles.indentEms('5%'), 0);
+      expect(BookStyles.indentEms('20em'), 4);
+    });
   });
 
   group('isBookFinished', () {
     test('needs the end of the last chapter, not just reaching it', () {
-      expect(isBookFinished(chapter: 9, chapterCount: 10, fraction: 0), isFalse);
-      expect(isBookFinished(chapter: 9, chapterCount: 10, fraction: 0.5), isFalse);
-      expect(isBookFinished(chapter: 9, chapterCount: 10, fraction: 0.98), isTrue);
+      expect(
+          isBookFinished(chapter: 9, chapterCount: 10, fraction: 0), isFalse);
+      expect(
+          isBookFinished(chapter: 9, chapterCount: 10, fraction: 0.5), isFalse);
+      expect(
+          isBookFinished(chapter: 9, chapterCount: 10, fraction: 0.98), isTrue);
     });
 
     test('the end of an earlier chapter is not the end of the book', () {
-      expect(isBookFinished(chapter: 3, chapterCount: 10, fraction: 1), isFalse);
+      expect(
+          isBookFinished(chapter: 3, chapterCount: 10, fraction: 1), isFalse);
     });
 
     test('a single-chapter book can be in progress', () {
@@ -199,7 +220,8 @@ void main() {
   testWidgets('renders a chapter image from inside the book', (tester) async {
     final book = EpubParser.parse(_epub({
       'OPS/book.opf': _opf(['a.xhtml']),
-      'OPS/a.xhtml': '<html><body><p>Hello</p><img src="pic.png"/></body></html>',
+      'OPS/a.xhtml':
+          '<html><body><p>Hello</p><img src="pic.png"/></body></html>',
       'OPS/pic.png': _png,
     }));
 
@@ -265,9 +287,11 @@ void main() {
     testWidgets('a double-click selects, and is not a tap', (tester) async {
       var taps = 0;
       await pumpPage(tester, onPageTap: () => taps++);
-      final at = tester.getTopLeft(find.textContaining('Hello', findRichText: true)) +
-          const Offset(12, 10);
-      final gesture = await tester.startGesture(at, kind: PointerDeviceKind.mouse);
+      final at =
+          tester.getTopLeft(find.textContaining('Hello', findRichText: true)) +
+              const Offset(12, 10);
+      final gesture =
+          await tester.startGesture(at, kind: PointerDeviceKind.mouse);
       await tester.pump();
       await gesture.up();
       await tester.pump(const Duration(milliseconds: 50));
@@ -281,9 +305,11 @@ void main() {
     testWidgets('dragging across text is not a tap', (tester) async {
       var taps = 0;
       await pumpPage(tester, onPageTap: () => taps++);
-      final at = tester.getTopLeft(find.textContaining('Hello', findRichText: true)) +
-          const Offset(4, 10);
-      final gesture = await tester.startGesture(at, kind: PointerDeviceKind.mouse);
+      final at =
+          tester.getTopLeft(find.textContaining('Hello', findRichText: true)) +
+              const Offset(4, 10);
+      final gesture =
+          await tester.startGesture(at, kind: PointerDeviceKind.mouse);
       await tester.pump();
       await gesture.moveBy(const Offset(120, 0));
       await tester.pump();
@@ -303,9 +329,11 @@ void main() {
     testWidgets('double-clicking selects a word', (tester) async {
       String? selected;
       await pumpPage(tester, onSelected: (text) => selected = text);
-      final at = tester.getTopLeft(find.textContaining('Hello', findRichText: true)) +
-          const Offset(12, 10);
-      final gesture = await tester.startGesture(at, kind: PointerDeviceKind.mouse);
+      final at =
+          tester.getTopLeft(find.textContaining('Hello', findRichText: true)) +
+              const Offset(12, 10);
+      final gesture =
+          await tester.startGesture(at, kind: PointerDeviceKind.mouse);
       await tester.pump();
       await gesture.up();
       await tester.pump(const Duration(milliseconds: 50));
@@ -342,5 +370,66 @@ void main() {
     final uri = Uri.parse(tapped!);
     expect(uri.path, '/OPS/b.xhtml');
     expect(book.chapterIndexOf(Uri.decodeFull(uri.path)), 1);
+  });
+
+  testWidgets('indents paragraphs the book indents', (tester) async {
+    final book = EpubParser.parse(_epub({
+      'OPS/book.opf': _opf(['a.xhtml']),
+      'OPS/a.xhtml': '<html><head><style>p { margin: 0; text-indent: 1.5em }'
+          '.first { text-indent: 0 }</style></head><body>'
+          '<p class="first">Opening.</p><p>Following.</p></body></html>',
+    }));
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: BookChapterView(
+          book: book,
+          chapter: book.chapters[0],
+          textStyle: const TextStyle(fontSize: 16),
+          onTapLink: (_) {},
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('  Following.', findRichText: true),
+        findsOneWidget);
+    expect(find.textContaining(' Opening.', findRichText: true), findsNothing);
+  });
+
+  testWidgets('links take the text colour, not the app theme', (tester) async {
+    final book = EpubParser.parse(_epub({
+      'OPS/book.opf': _opf(['a.xhtml']),
+      'OPS/a.xhtml':
+          '<html><body><p><a href="a.xhtml">Chapter 1</a></p></body></html>',
+    }));
+    const ink = Color(0xFF3B2C1A);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.purple)),
+      home: Scaffold(
+        body: BookChapterView(
+          book: book,
+          chapter: book.chapters[0],
+          textStyle: const TextStyle(fontSize: 16, color: ink),
+          onTapLink: (_) {},
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    final text = tester.widget<RichText>(
+        find.textContaining('Chapter 1', findRichText: true).first);
+    final styles = <TextStyle>[];
+    text.text.visitChildren((span) {
+      if (span is TextSpan && (span.text?.contains('Chapter') ?? false)) {
+        styles.add(span.style!);
+      }
+      return true;
+    });
+    final link = styles.isEmpty ? text.text.style! : styles.first;
+    expect(link.color, ink);
+    expect(link.decoration, isNot(TextDecoration.underline));
   });
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:csslib/visitor.dart' as css;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SelectedContent;
@@ -17,6 +18,7 @@ import '../core/db/local_db_provider.dart';
 import '../core/download/download_manager.dart';
 import '../core/dictionary/word_forms.dart';
 import '../core/dictionary/wordnet_dictionary.dart';
+import '../core/epub/book_styles.dart';
 import '../core/epub/epub_parser.dart';
 import '../core/epub/reader_book.dart';
 import '../core/epub/remote_book.dart';
@@ -42,6 +44,10 @@ const _defineDelay = Duration(milliseconds: 350);
 /// How long a chapter gets to lay out before "nothing to scroll" means it's
 /// short. Large chapters build asynchronously, so this errs on the long side.
 const _shortChapterDelay = Duration(seconds: 5);
+
+/// The widest the text column gets, in ems of the reading font: around 75
+/// characters a line, past which lines get hard to follow on a wide window.
+const double kBookMeasureEms = 36;
 
 /// A book is finished once the reader is at the end of its last chapter. Merely
 /// opening the last chapter doesn't count, and neither does being a little short
@@ -308,7 +314,8 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   void _restorePosition(double fraction) {
     _pendingFraction = fraction;
     _restoreDeadline = DateTime.now().add(_restoreWindow);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _applyPendingPosition());
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _applyPendingPosition());
   }
 
   void _applyPendingPosition() {
@@ -401,7 +408,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
 
   Future<void> _define() async {
     final text = _selectedText;
-    if (text == null || !mounted || !ref.read(settingsProvider).defineOnSelect) {
+    if (text == null ||
+        !mounted ||
+        !ref.read(settingsProvider).defineOnSelect) {
       return;
     }
     // A sentence selected to copy isn't a word to look up.
@@ -428,9 +437,12 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   /// never off the side. Nothing else on the page moves.
   Widget _positionedDefinition(BoxConstraints area) {
     final definition = _definition!;
-    final left = (definition.at.dx - DefinitionPopup.width / 2)
-        .clamp(8.0, (area.maxWidth - DefinitionPopup.width - 8).clamp(8.0, double.infinity));
-    final below = definition.at.dy + DefinitionPopup.maxHeight + 32 < area.maxHeight;
+    final left = (definition.at.dx - DefinitionPopup.width / 2).clamp(
+        8.0,
+        (area.maxWidth - DefinitionPopup.width - 8)
+            .clamp(8.0, double.infinity));
+    final below =
+        definition.at.dy + DefinitionPopup.maxHeight + 32 < area.maxHeight;
     return Positioned(
       left: left,
       top: below ? definition.at.dy + 20 : null,
@@ -478,6 +490,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
         _Theme.sepia => const Color(0xFF3B2C1A),
       };
 
+  /// Separates the bars from the text beneath them.
+  Color get _hairline => _fgColor.withValues(alpha: 0.12);
+
   @override
   Widget build(BuildContext context) {
     final book = _book;
@@ -490,9 +505,13 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
       onKeyEvent: (event) {
         if (event is KeyDownEvent) {
           if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
-              event.logicalKey == LogicalKeyboardKey.keyD) { _nextChapter(); }
+              event.logicalKey == LogicalKeyboardKey.keyD) {
+            _nextChapter();
+          }
           if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
-              event.logicalKey == LogicalKeyboardKey.keyA) { _prevChapter(); }
+              event.logicalKey == LogicalKeyboardKey.keyA) {
+            _prevChapter();
+          }
           if (event.logicalKey == LogicalKeyboardKey.escape) {
             // The pop-up goes first, so closing it can't also close the book.
             if (_definition != null) {
@@ -550,33 +569,44 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                         onNotification: _onScrollNotification,
                         child: SingleChildScrollView(
                           controller: _scroll,
-                          padding:
-                              const EdgeInsets.fromLTRB(24, 80, 24, 100),
-                          child: _chapter == null
-                              ? _ChapterPlaceholder(
-                                  failed: _chapterFailed,
-                                  fgColor: _fgColor,
-                                  onRetry: () =>
-                                      _showChapter(_chapterIndex, _wantedFraction),
-                                )
-                              : SelectionArea(
-                                  onSelectionChanged: _onSelectionChanged,
-                                  child: BookChapterView(
-                                  book: book,
-                                  chapter: _chapter!,
-                                  textStyle: reading.bookFont.applyTo(TextStyle(
-                                    fontSize: reading.bookFontSize,
-                                    color: _fgColor,
-                                    height: 1.6,
-                                  )),
-                                  onTapLink: _onTapLink,
-                                ),
-                                ),
+                          padding: const EdgeInsets.fromLTRB(24, 80, 24, 100),
+                          // A column of comfortable line length, centred. The
+                          // scroll view stays full width so the whole window
+                          // scrolls and the scrollbar sits at its edge.
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth:
+                                    reading.bookFontSize * kBookMeasureEms,
+                              ),
+                              child: _chapter == null
+                                  ? _ChapterPlaceholder(
+                                      failed: _chapterFailed,
+                                      fgColor: _fgColor,
+                                      onRetry: () => _showChapter(
+                                          _chapterIndex, _wantedFraction),
+                                    )
+                                  : SelectionArea(
+                                      onSelectionChanged: _onSelectionChanged,
+                                      child: BookChapterView(
+                                        book: book,
+                                        chapter: _chapter!,
+                                        textStyle:
+                                            reading.bookFont.applyTo(TextStyle(
+                                          fontSize: reading.bookFontSize,
+                                          color: _fgColor,
+                                          height: 1.6,
+                                        )),
+                                        onTapLink: _onTapLink,
+                                      ),
+                                    ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-
                   if (_definition != null)
                     Positioned.fill(
                       child: LayoutBuilder(
@@ -585,7 +615,6 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                         ),
                       ),
                     ),
-
                   if (_showControls) ...[
                     // Top bar
                     Positioned(
@@ -593,16 +622,17 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                       left: 0,
                       right: 0,
                       child: Container(
-                        color: _bgColor.withValues(alpha: 0.95),
+                        decoration: BoxDecoration(
+                          color: _bgColor,
+                          border: Border(bottom: BorderSide(color: _hairline)),
+                        ),
                         child: SafeArea(
                           bottom: false,
                           child: Row(
                             children: [
                               IconButton(
-                                icon:
-                                    Icon(Icons.arrow_back, color: _fgColor),
-                                onPressed: () =>
-                                    Navigator.of(context).pop(),
+                                icon: Icon(Icons.arrow_back, color: _fgColor),
+                                onPressed: () => Navigator.of(context).pop(),
                               ),
                               Expanded(
                                 child: Text(
@@ -618,34 +648,31 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                                 icon: Icon(Icons.palette, color: _fgColor),
                                 tooltip: 'Cycle theme',
                                 onPressed: () => _reflow(() {
-                                  _theme = _Theme.values[
-                                      (_theme.index + 1) %
-                                          _Theme.values.length];
+                                  _theme = _Theme.values[(_theme.index + 1) %
+                                      _Theme.values.length];
                                 }),
                               ),
                               IconButton(
-                                icon: Icon(Icons.font_download,
-                                    color: _fgColor),
+                                icon:
+                                    Icon(Icons.font_download, color: _fgColor),
                                 tooltip: 'Font: ${reading.bookFont.label}',
                                 onPressed: () => _reflow(() => ref
                                     .read(settingsProvider.notifier)
                                     .setBookFont(reading.bookFont.next)),
                               ),
                               IconButton(
-                                icon: Icon(Icons.text_decrease,
-                                    color: _fgColor),
+                                icon:
+                                    Icon(Icons.text_decrease, color: _fgColor),
                                 onPressed: () => _reflow(() => ref
                                     .read(settingsProvider.notifier)
-                                    .setBookFontSize(
-                                        reading.bookFontSize - 1)),
+                                    .setBookFontSize(reading.bookFontSize - 1)),
                               ),
                               IconButton(
-                                icon: Icon(Icons.text_increase,
-                                    color: _fgColor),
+                                icon:
+                                    Icon(Icons.text_increase, color: _fgColor),
                                 onPressed: () => _reflow(() => ref
                                     .read(settingsProvider.notifier)
-                                    .setBookFontSize(
-                                        reading.bookFontSize + 1)),
+                                    .setBookFontSize(reading.bookFontSize + 1)),
                               ),
                             ],
                           ),
@@ -659,7 +686,10 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                       left: 0,
                       right: 0,
                       child: Container(
-                        color: _bgColor.withValues(alpha: 0.95),
+                        decoration: BoxDecoration(
+                          color: _bgColor,
+                          border: Border(top: BorderSide(color: _hairline)),
+                        ),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 8),
                         child: SafeArea(
@@ -667,11 +697,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                           child: Row(
                             children: [
                               IconButton(
-                                icon: Icon(Icons.chevron_left,
-                                    color: _fgColor),
-                                onPressed: _chapterIndex > 0
-                                    ? _prevChapter
-                                    : null,
+                                icon: Icon(Icons.chevron_left, color: _fgColor),
+                                onPressed:
+                                    _chapterIndex > 0 ? _prevChapter : null,
                               ),
                               Expanded(
                                 child: Text(
@@ -682,10 +710,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                                 ),
                               ),
                               IconButton(
-                                icon: Icon(Icons.chevron_right,
-                                    color: _fgColor),
-                                onPressed: _chapterIndex <
-                                        book.chapterCount - 1
+                                icon:
+                                    Icon(Icons.chevron_right, color: _fgColor),
+                                onPressed: _chapterIndex < book.chapterCount - 1
                                     ? _nextChapter
                                     : null,
                               ),
@@ -728,7 +755,8 @@ class _ChapterPlaceholder extends StatelessWidget {
                     style: TextStyle(color: fgColor),
                   ),
                   const SizedBox(height: 12),
-                  TextButton(onPressed: onRetry, child: const Text('Try again')),
+                  TextButton(
+                      onPressed: onRetry, child: const Text('Try again')),
                 ],
               )
             : const CircularProgressIndicator(),
@@ -755,22 +783,33 @@ class BookChapterView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return HtmlWidget(
-      chapter.html,
-      baseUrl: Uri(scheme: _bookScheme, host: 'book', path: '/${chapter.path}'),
-      factoryBuilder: () => _BookWidgetFactory(book),
-      textStyle: textStyle,
-      customStylesBuilder: (element) {
-        final styles = chapter.styles.stylesFor(
-          element.localName ?? '',
-          element.classes,
-        );
-        return styles.isEmpty ? null : styles;
-      },
-      onTapUrl: (url) {
-        onTapLink(url);
-        return true;
-      },
+    // The widget colours links with the app theme's primary colour, which reads
+    // as washed-out purple on a page. A book's links are its contents and
+    // cross-references, so they take the text's colour instead.
+    final theme = Theme.of(context);
+    return Theme(
+      data: theme.copyWith(
+        colorScheme: theme.colorScheme.copyWith(primary: textStyle.color),
+      ),
+      child: HtmlWidget(
+        chapter.html,
+        baseUrl:
+            Uri(scheme: _bookScheme, host: 'book', path: '/${chapter.path}'),
+        factoryBuilder: () => _BookWidgetFactory(book),
+        textStyle: textStyle,
+        customStylesBuilder: (element) {
+          final tag = element.localName ?? '';
+          final styles = chapter.styles.stylesFor(tag, element.classes);
+          if (tag == 'a' && !styles.containsKey('text-decoration')) {
+            return {...styles, 'text-decoration': 'none'};
+          }
+          return styles.isEmpty ? null : styles;
+        },
+        onTapUrl: (url) {
+          onTapLink(url);
+          return true;
+        },
+      ),
     );
   }
 }
@@ -781,6 +820,26 @@ class _BookWidgetFactory extends WidgetFactory {
   final ReaderBook book;
   _BookWidgetFactory(this.book);
 
+  /// Paragraph indents, which the widget otherwise drops, as em spaces at the
+  /// start of the block, so they scale with the text.
+  @override
+  void parseStyle(BuildTree tree, css.Declaration style) {
+    if (style.property == 'text-indent') {
+      final ems = BookStyles.indentEms(_cssLength(style.value));
+      if (ems > 0) {
+        tree.register(BuildOp.v2(
+          debugLabel: 'text-indent',
+          onParsed: (tree) {
+            tree.prepend(TextBit(tree, ' ' * ems));
+            return tree;
+          },
+        ));
+      }
+      return;
+    }
+    super.parseStyle(tree, style);
+  }
+
   @override
   ImageProvider<Object>? imageProviderFromNetwork(String url) {
     final uri = Uri.tryParse(url);
@@ -788,6 +847,15 @@ class _BookWidgetFactory extends WidgetFactory {
     return book.imageProvider(Uri.decodeFull(uri.path).replaceFirst('/', ''));
   }
 }
+
+/// A single CSS length as written, such as `1.2em` or `24px`. The parsed
+/// declaration doesn't keep its source text.
+String _cssLength(css.Expression? value) => switch (value) {
+      css.EmTerm(:final value) => '${value}em',
+      css.UnitTerm() => '${value.value}${value.unitToString() ?? ''}',
+      css.NumberTerm(:final value) => '$value',
+      _ => '',
+    };
 
 /// Shown when a downloaded EPUB can't be parsed (corrupt / no chapters).
 class _EpubLoadError extends StatelessWidget {
@@ -837,7 +905,8 @@ class _OfflineUnavailable extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.cloud_off, size: 64, color: fgColor.withValues(alpha: 0.5)),
+            Icon(Icons.cloud_off,
+                size: 64, color: fgColor.withValues(alpha: 0.5)),
             const SizedBox(height: 16),
             Text(
               "This book isn't available offline yet.",
@@ -848,8 +917,8 @@ class _OfflineUnavailable extends StatelessWidget {
             Text(
               'Connect to your server to download it for offline reading.',
               textAlign: TextAlign.center,
-              style:
-                  TextStyle(color: fgColor.withValues(alpha: 0.5), fontSize: 12),
+              style: TextStyle(
+                  color: fgColor.withValues(alpha: 0.5), fontSize: 12),
             ),
             const SizedBox(height: 20),
             TextButton(
