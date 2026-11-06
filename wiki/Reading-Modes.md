@@ -66,9 +66,9 @@ Books (EPUB, MOBI, AZW and AZW3) have their own reader, set up from the **Aa** b
 | **Scroll by chapter** | One chapter at a time, scrolled. The arrows move between chapters. The default. |
 | **Continuous scroll** | The whole book as one scroll: the next chapter follows the last, and earlier ones load above as you scroll back. |
 | **Single page** | A page at a time. Pages break between lines, never through one. |
-| **Two pages** | A spread of two pages side by side, for wide screens and landscape. |
+| **Two pages** | A spread of two pages side by side, for wide screens and landscape. Like a printed book, each chapter opens on a right-hand page, then pairs 2–3, 4–5 and so on. |
 
-In the page layouts, turn pages by tapping or clicking near either side of the page, with the arrow keys, Page Up/Down or Space, with the mouse wheel, by swiping (Android), or with the arrows in the bottom bar. Turning past a chapter's last page opens the next chapter, and turning back from its first opens the previous chapter's last page. The bottom bar shows the page within the chapter.
+In the page layouts, turn pages by tapping or clicking near either side of the page, with the arrow keys, Page Up/Down or Space, with the mouse wheel, by swiping (Android), or with the arrows in the bottom bar. Turning past a chapter's last page opens the next chapter, and turning back from its first opens the previous chapter's last page. The bottom bar shows the page within the chapter. On desktop, pages turn like paper: in a spread the right-hand page folds over the spine onto the left, and a single page lifts away from its left edge. Turn off **Page-turn animation** for pages that change at once.
 
 Your place is kept as a chapter and a position within it, so switching layout, or reading on another device in another layout, opens where you left off.
 

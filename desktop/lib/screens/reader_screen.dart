@@ -641,11 +641,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         focusNode: _focusNode,
         autofocus: true,
         onKeyEvent: (event) {
+          // Escape is left to the app, which goes back (EscapeGoesBack).
           if (event is! KeyDownEvent) return;
-          if (event.logicalKey == LogicalKeyboardKey.escape) {
-            Navigator.of(context).pop();
-            return;
-          }
           if (scrollMode) {
             if (event.logicalKey == LogicalKeyboardKey.arrowDown ||
                 event.logicalKey == LogicalKeyboardKey.pageDown) {

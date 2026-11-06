@@ -1,5 +1,6 @@
 package com.rekindle.app.ui.viewmodel
 
+import com.rekindle.app.core.update.TapToUnlock
 import android.content.Context
 import android.net.Uri
 import android.os.Build
@@ -47,6 +48,8 @@ data class SettingsState(
     val readingStyle: ReadingStyle = ReadingStyle(),
     /** Offer betas and release candidates when checking for updates. */
     val receivePreReleases: Boolean = false,
+    /** Taps still needed to turn pre-releases on, while counting down; else null. */
+    val preReleaseTapsLeft: Int? = null,
     val checkingForUpdates: Boolean = false,
     val updateCheck: UpdateCheck? = null,
 )
@@ -115,7 +118,29 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { prefs.setThemeMode(mode) }
     }
 
-    fun setReceivePreReleases(receive: Boolean) {
+    /**
+     * Pre-releases aren't recommended on Android, so turning them on takes three
+     * taps in quick succession; the first two only count down. Turning them off is
+     * one tap.
+     */
+    fun tapPreReleases() {
+        if (_state.value.receivePreReleases) {
+            preReleaseUnlock.reset()
+            _state.update { it.copy(preReleaseTapsLeft = null) }
+            setReceivePreReleases(false)
+            return
+        }
+        if (preReleaseUnlock.tap(System.currentTimeMillis())) {
+            _state.update { it.copy(preReleaseTapsLeft = null) }
+            setReceivePreReleases(true)
+        } else {
+            _state.update { it.copy(preReleaseTapsLeft = preReleaseUnlock.remaining) }
+        }
+    }
+
+    private val preReleaseUnlock = TapToUnlock(required = 3)
+
+    private fun setReceivePreReleases(receive: Boolean) {
         // The last answer was for the other channel.
         _state.update { it.copy(updateCheck = null) }
         viewModelScope.launch { prefs.setReceivePreReleases(receive) }

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -198,16 +199,29 @@ void main() {
 
   group('two pages', () {
     setUpAll(() => layout = BookLayout.spread);
-    testWidgets('two-page spreads show two pages at a time', (tester) async {
+    testWidgets('spreads pair pages like a book, the first page on the right',
+        (tester) async {
       final navigator = await pumpApp(tester);
       await openBook(tester, navigator);
 
-      expect(position(tester),
-          startsWith('Chapter 1 / $_chapters · Pages 1–2 of'));
+      // A chapter opens on a right-hand page, alone.
+      expect(
+          position(tester), startsWith('Chapter 1 / $_chapters · Page 1 of'));
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await settle(tester);
       expect(position(tester),
-          startsWith('Chapter 1 / $_chapters · Pages 3–4 of'));
+          startsWith('Chapter 1 / $_chapters · Pages 2–3 of'));
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await settle(tester);
+      expect(position(tester),
+          startsWith('Chapter 1 / $_chapters · Pages 4–5 of'));
+      // And back to the opening page.
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await settle(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await settle(tester);
+      expect(
+          position(tester), startsWith('Chapter 1 / $_chapters · Page 1 of'));
       await closeBook(tester, navigator);
     });
   });
@@ -277,39 +291,67 @@ void main() {
     });
   });
 
-  group('page-turn animation', () {
+  double maxTurn(WidgetTester tester) => tester
+      .widgetList<Transform>(find.descendant(
+          of: find.byType(PagedChapterView), matching: find.byType(Transform)))
+      // Rotation about the vertical axis shows in the matrix's x–z entry.
+      .map((t) => t.transform.entry(0, 2).abs())
+      .fold(0.0, math.max);
+
+  Future<void> turnAndWatch(WidgetTester tester, LogicalKeyboardKey key) async {
+    await tester.sendKeyEvent(key);
+    await tester.pump(); // The page changes.
+    await tester.pump(); // The arriving page is captured.
+    await tester.pump(const Duration(milliseconds: 150));
+  }
+
+  group('page turns in a single page', () {
     setUpAll(() {
       layout = BookLayout.page;
       animate = true;
     });
     tearDownAll(() => animate = false);
 
-    testWidgets('slides the old page out as the new one comes in',
-        (tester) async {
+    testWidgets('the page lifts from its edge, then lies flat', (tester) async {
       final navigator = await pumpApp(tester);
       await openBook(tester, navigator);
       expect(position(tester), contains('Page 1 of'));
 
-      final paged = find.byType(PagedChapterView);
-      double slideOffset() => tester
-          .widgetList<Transform>(
-              find.descendant(of: paged, matching: find.byType(Transform)))
-          .map((t) => t.transform.getTranslation().x)
-          .fold(0.0, (a, b) => a.abs() > b.abs() ? a : b);
-
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 120));
-      // Mid-turn: pages are moving, and the old page is there as an image.
-      expect(slideOffset().abs(), greaterThan(50));
-      expect(find.descendant(of: paged, matching: find.byType(RawImage)),
-          findsOneWidget);
+      await turnAndWatch(tester, LogicalKeyboardKey.arrowRight);
+      expect(maxTurn(tester), greaterThan(0.1), reason: 'a page mid-turn');
 
       await settle(tester);
       expect(position(tester), contains('Page 2 of'));
-      expect(slideOffset(), 0);
-      expect(find.descendant(of: paged, matching: find.byType(RawImage)),
-          findsNothing);
+      expect(maxTurn(tester), 0);
+
+      await turnAndWatch(tester, LogicalKeyboardKey.arrowLeft);
+      expect(maxTurn(tester), greaterThan(0.1));
+      await settle(tester);
+      expect(position(tester), contains('Page 1 of'));
+      await closeBook(tester, navigator);
+    });
+  });
+
+  group('page turns in a spread', () {
+    setUpAll(() {
+      layout = BookLayout.spread;
+      animate = true;
+    });
+    tearDownAll(() => animate = false);
+
+    testWidgets('the page folds over the spine', (tester) async {
+      final navigator = await pumpApp(tester);
+      await openBook(tester, navigator);
+
+      await turnAndWatch(tester, LogicalKeyboardKey.arrowRight);
+      expect(maxTurn(tester), greaterThan(0.1));
+      // Past halfway the leaf is the new left page, still turning.
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(maxTurn(tester), greaterThan(0.05));
+
+      await settle(tester);
+      expect(position(tester), contains('Pages 2–3 of'));
+      expect(maxTurn(tester), 0);
       await closeBook(tester, navigator);
     });
   });
