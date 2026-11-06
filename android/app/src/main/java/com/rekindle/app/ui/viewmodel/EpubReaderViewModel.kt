@@ -11,6 +11,7 @@ import com.rekindle.app.core.dictionary.WordNetDictionary
 import com.rekindle.app.core.epub.EpubParser
 import com.rekindle.app.core.epub.ReaderBook
 import com.rekindle.app.core.prefs.BookFont
+import com.rekindle.app.core.prefs.BookTheme
 import com.rekindle.app.core.prefs.DEFAULT_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.MAX_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.MIN_BOOK_FONT_SIZE
@@ -45,7 +46,9 @@ data class EpubReaderState(
     val startFraction: Float = 0f,
     val fontSize: Float = DEFAULT_BOOK_FONT_SIZE,
     val font: BookFont = BookFont.ORIGINAL,
-    val theme: EpubTheme = EpubTheme.LIGHT,
+    /** The theme from Settings, until the palette button picks one for this visit. */
+    val defaultTheme: BookTheme = BookTheme.MATCH_APP,
+    val themeOverride: EpubTheme? = null,
     val showControls: Boolean = true,
     /** The dictionary pop-up, when one is open. */
     val definition: BookDefinition? = null,
@@ -53,6 +56,14 @@ data class EpubReaderState(
 )
 
 enum class EpubTheme { LIGHT, DARK, SEPIA }
+
+/** The theme to read in, given whether the app itself is dark. */
+fun EpubReaderState.theme(appDark: Boolean): EpubTheme = themeOverride ?: when (defaultTheme) {
+    BookTheme.MATCH_APP -> if (appDark) EpubTheme.DARK else EpubTheme.LIGHT
+    BookTheme.LIGHT -> EpubTheme.LIGHT
+    BookTheme.DARK -> EpubTheme.DARK
+    BookTheme.SEPIA -> EpubTheme.SEPIA
+}
 
 data class BookDefinition(val word: String, val entries: List<DictionaryEntry>)
 
@@ -94,7 +105,8 @@ class EpubReaderViewModel @Inject constructor(
         viewModelScope.launch {
             val font = prefs.bookFont.first()
             val size = prefs.bookFontSize.first()
-            _state.update { it.copy(font = font, fontSize = size) }
+            val theme = prefs.bookTheme.first()
+            _state.update { it.copy(font = font, fontSize = size, defaultTheme = theme) }
             loadProgress()
             loadEpub()
         }
@@ -229,9 +241,9 @@ class EpubReaderViewModel @Inject constructor(
         viewModelScope.launch { prefs.setBookFont(next) }
     }
 
-    fun cycleTheme() = _state.update {
-        val next = EpubTheme.entries[(it.theme.ordinal + 1) % EpubTheme.entries.size]
-        it.copy(theme = next)
+    /** Moves on from [current], the theme on screen, for this visit only. */
+    fun cycleTheme(current: EpubTheme) = _state.update {
+        it.copy(themeOverride = EpubTheme.entries[(current.ordinal + 1) % EpubTheme.entries.size])
     }
 
     fun toggleControls() = _state.update { it.copy(showControls = !it.showControls) }

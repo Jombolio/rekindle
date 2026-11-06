@@ -118,6 +118,11 @@ class Prefs {
   Future<void> setBookFontSize(double size) =>
       _prefs.setDouble('book_font_size', size);
 
+  // The theme books open in.
+  String? get bookTheme => _prefs.getString('book_theme');
+  Future<void> setBookTheme(String theme) =>
+      _prefs.setString('book_theme', theme);
+
   // Whether "Check for updates" offers pre-releases (betas, release
   // candidates) as well as stable releases. Off by default.
   bool get receivePreReleases =>

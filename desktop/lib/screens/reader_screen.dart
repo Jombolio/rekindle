@@ -35,6 +35,8 @@ class ReaderScreen extends ConsumerStatefulWidget {
 }
 
 class _ReaderScreenState extends ConsumerState<ReaderScreen> {
+  /// For [dispose], where `ref` can no longer be used.
+  late final ProviderContainer _container;
   // ── Paged mode ────────────────────────────────────────────────────────────
   late final PageController _pageCtrl;
   bool _didJump = false;
@@ -95,6 +97,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     _pageCtrl = PageController();
     _transformCtrl = TransformationController();
     _transformCtrl.addListener(_onTransformChanged);
+    _container = ProviderScope.containerOf(context, listen: false);
     ref
         .read(nowReadingProvider.notifier)
         .open(widget.mediaId, libraryType: widget.libraryType);
@@ -112,17 +115,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     _scrollCtrl.dispose();
     _focusNode.dispose();
     _transformCtrl.dispose();
-    ref.read(nowReadingProvider.notifier).close(widget.mediaId);
+    // Through the container: `ref` throws once the widget is unmounting, which
+    // used to abort this method before the progress flush below.
+    _container.read(nowReadingProvider.notifier).close(widget.mediaId);
     // Reset the reader state so re-opening this media rebuilds fresh: a finished
     // chapter must restart at 0 and cross-device progress must be re-fetched.
     // Order matters: invalidating readerProvider first schedules the dispose-time
     // progress flush on sqflite's serial queue, so the badge re-query below reads
     // the row that flush wrote.
-    ref.invalidate(readerProvider((widget.mediaId, widget.libraryType)));
+    _container.invalidate(readerProvider((widget.mediaId, widget.libraryType)));
     // Refresh the chapter/grid badges: the list screen underneath stays mounted,
     // so localProgressProvider never auto-disposes and would keep showing the
     // pre-open progress.
-    ref.invalidate(localProgressProvider(widget.mediaId));
+    _container.invalidate(localProgressProvider(widget.mediaId));
     super.dispose();
   }
 

@@ -19,6 +19,7 @@ import '../core/download/download_manager.dart';
 import '../core/dictionary/word_forms.dart';
 import '../core/dictionary/wordnet_dictionary.dart';
 import '../core/epub/book_styles.dart';
+import '../core/epub/book_theme.dart';
 import '../core/epub/epub_parser.dart';
 import '../core/epub/reader_book.dart';
 import '../core/epub/remote_book.dart';
@@ -29,8 +30,6 @@ import '../providers/reader_provider.dart';
 import '../providers/settings_provider.dart';
 import 'widgets/definition_popup.dart';
 import 'widgets/page_tap_detector.dart';
-
-enum _Theme { light, dark, sepia }
 
 /// URL scheme for paths inside the open book.
 const _bookScheme = 'rekindle-book';
@@ -74,11 +73,16 @@ class EpubReaderScreen extends ConsumerStatefulWidget {
 }
 
 class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
+  /// For [dispose], where `ref` can no longer be used.
+  late final ProviderContainer _container;
   ReaderBook? _book;
   EpubChapter? _chapter;
   bool _chapterFailed = false;
   int _chapterIndex = 0;
-  _Theme _theme = _Theme.light;
+
+  /// The theme picked with the palette button, for this visit only. Until then
+  /// the reader follows the default in Settings.
+  BookTheme? _themeOverride;
   bool _showControls = true;
   bool _notDownloaded = false;
   String? _loadError;
@@ -103,6 +107,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   @override
   void initState() {
     super.initState();
+    _container = ProviderScope.containerOf(context, listen: false);
     ref.read(nowReadingProvider.notifier).open(
           widget.mediaId,
           libraryType: 'book',
@@ -115,25 +120,37 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     });
   }
 
+  /// A last save for scrolling still under way as the reader closes. Here, not
+  /// in [dispose]: by then the scroll view is gone, so this never ran.
+  /// Not while a chapter is still loading: there's no position to read yet, and
+  /// saving one would overwrite the saved place.
+  @override
+  void deactivate() {
+    if (_chapter != null && _activeRestore == null && _scroll.hasClients) {
+      _savePosition(_currentFraction);
+    }
+    super.deactivate();
+  }
+
   @override
   void dispose() {
     _focusNode.dispose();
     _shortChapterTimer?.cancel();
     _defineTimer?.cancel();
-    // A last save for scrolling still under way as the reader closes.
-    // Not while a chapter is still loading: there's no position to read yet, and
-    // saving one would overwrite the saved place.
-    if (_chapter != null && _activeRestore == null && _scroll.hasClients) {
-      _savePosition(_currentFraction);
-    }
     _scroll.dispose();
-    ref.read(nowReadingProvider.notifier).close(widget.mediaId);
+    // Through the container: `ref` throws once the widget is unmounting, which
+    // used to abort this method before the reader provider was invalidated. Its
+    // closing save never ran, and a still-pending debounced save would later
+    // write the position of the next time the book was opened over newer
+    // progress.
+    _container.read(nowReadingProvider.notifier).close(widget.mediaId);
     // Reset reader state so re-opening restarts a finished book at chapter 0.
-    ref.invalidate(readerProvider((widget.mediaId, null)));
+    // This also flushes the progress still waiting on the debounce.
+    _container.invalidate(readerProvider((widget.mediaId, null)));
     // Refresh the chapter/grid badges: the list screen underneath stays mounted,
     // so localProgressProvider never auto-disposes and would keep showing the
     // pre-open progress.
-    ref.invalidate(localProgressProvider(widget.mediaId));
+    _container.invalidate(localProgressProvider(widget.mediaId));
     super.dispose();
   }
 
@@ -478,17 +495,16 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
         .updatePosition(widget.mediaId, _chapterIndex, book.chapterCount);
   }
 
-  Color get _bgColor => switch (_theme) {
-        _Theme.light => Colors.white,
-        _Theme.dark => const Color(0xFF1A1A1A),
-        _Theme.sepia => const Color(0xFFF5ECD7),
-      };
+  BookTheme get _theme =>
+      _themeOverride ??
+      ref
+          .read(settingsProvider)
+          .bookTheme
+          .resolve(Theme.of(context).brightness);
 
-  Color get _fgColor => switch (_theme) {
-        _Theme.light => Colors.black87,
-        _Theme.dark => const Color(0xFFE0E0E0),
-        _Theme.sepia => const Color(0xFF3B2C1A),
-      };
+  Color get _bgColor => _theme.background;
+
+  Color get _fgColor => _theme.foreground;
 
   /// Separates the bars from the text beneath them.
   Color get _hairline => _fgColor.withValues(alpha: 0.12);
@@ -646,10 +662,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                               ),
                               IconButton(
                                 icon: Icon(Icons.palette, color: _fgColor),
-                                tooltip: 'Cycle theme',
+                                tooltip: 'Theme: ${_theme.label}',
                                 onPressed: () => _reflow(() {
-                                  _theme = _Theme.values[(_theme.index + 1) %
-                                      _Theme.values.length];
+                                  _themeOverride = _theme.next;
                                 }),
                               ),
                               IconButton(

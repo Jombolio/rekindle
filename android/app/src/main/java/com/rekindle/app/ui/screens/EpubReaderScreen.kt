@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.TextIncrease
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -37,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -45,6 +47,7 @@ import com.rekindle.app.core.prefs.BookFont
 import com.rekindle.app.ui.viewmodel.BookDefinition
 import com.rekindle.app.ui.viewmodel.EpubReaderViewModel
 import com.rekindle.app.ui.viewmodel.EpubTheme
+import com.rekindle.app.ui.viewmodel.theme
 
 @Composable
 fun EpubReaderScreen(
@@ -55,8 +58,9 @@ fun EpubReaderScreen(
 ) {
     val state by vm.state.collectAsState()
 
-    val bgColor = state.theme.bgColor
-    val fgColor = state.theme.fgColor
+    val theme = state.theme(appDark = MaterialTheme.colorScheme.background.luminance() < 0.5f)
+    val bgColor = theme.bgColor
+    val fgColor = theme.fgColor
 
     Box(
         modifier = Modifier
@@ -94,10 +98,10 @@ fun EpubReaderScreen(
                     },
                     update = { wv ->
                         wv.book = book
-                        wv.themeCss = themeCss(state.theme, state.font)
+                        wv.themeCss = themeCss(theme, state.font)
                         wv.setBackgroundColor(bgColor.toArgb())
                         wv.applyFontSize(state.fontSize)
-                        wv.show(chapter.path, "${state.theme.name}|${state.font.name}", state.startFraction)
+                        wv.show(chapter.path, "${theme.name}|${state.font.name}", state.startFraction)
                     },
                     // No padding for the HUD: the controls float over the page, because
                     // resizing the page on every tap moved the text being read. The
@@ -135,8 +139,8 @@ fun EpubReaderScreen(
                             maxLines = 1,
                             modifier = Modifier.weight(1f),
                         )
-                        IconButton(onClick = vm::cycleTheme) {
-                            Icon(Icons.Default.Palette, "Cycle theme", tint = fgColor)
+                        IconButton(onClick = { vm.cycleTheme(theme) }) {
+                            Icon(Icons.Default.Palette, "Theme", tint = fgColor)
                         }
                         IconButton(onClick = vm::cycleFont) {
                             Icon(Icons.Default.FontDownload, "Font: ${state.font.label}", tint = fgColor)
