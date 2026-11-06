@@ -11,6 +11,11 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -700,9 +705,16 @@ private fun PagedModeContent(
                 page = { pagerState.currentPage + pagerState.currentPageOffsetFraction },
                 reverse = state.isRtl,
                 slideCount = slideCount,
+                // Only a pair of two-page slides turns about a centre spine;
+                // anything else is one sheet bound at its outer edge.
+                spreadAt = { leaf ->
+                    (slides.getOrNull(leaf)?.size ?: 0) > 1 &&
+                        (slides.getOrNull(leaf + 1)?.size ?: 0) > 1
+                },
                 slide = { index ->
-                    val slide = slides.getOrNull(index)
-                    if (slide != null) CurlSlide(slide, state.isRtl, state.spineGap, imageModelFn)
+                    slides.getOrNull(index)?.let {
+                        CurlSlide(it, state.isRtl, state.spineGap, imageModelFn)
+                    }
                 },
             )
         }
@@ -734,24 +746,28 @@ private fun CurlSlide(
     }
     val left = if (isRtl) slide[1] else slide[0]
     val right = if (isRtl) slide[0] else slide[1]
-    Row(Modifier.fillMaxSize()) {
-        AsyncImage(
-            model = imageModelFn(left),
-            contentDescription = null,
-            contentScale = ContentScale.Fit,
-            alignment = androidx.compose.ui.Alignment.CenterEnd,
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-        )
-        if (spineGap > 0f) {
-            Box(Modifier.fillMaxHeight().padding(horizontal = (spineGap / 2).dp))
+    // The printed spread and nothing else: each page as wide as it draws,
+    // within its half, so the sheet that turns carries no letterbox and its
+    // middle is the spine.
+    BoxWithConstraints {
+        val gap = if (spineGap > 0f) spineGap.dp else 0.dp
+        val half = (maxWidth - gap) / 2
+        val tall = maxHeight
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AsyncImage(
+                model = imageModelFn(left),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.widthIn(max = half).heightIn(max = tall),
+            )
+            if (gap > 0.dp) Spacer(Modifier.width(gap))
+            AsyncImage(
+                model = imageModelFn(right),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.widthIn(max = half).heightIn(max = tall),
+            )
         }
-        AsyncImage(
-            model = imageModelFn(right),
-            contentDescription = null,
-            contentScale = ContentScale.Fit,
-            alignment = androidx.compose.ui.Alignment.CenterStart,
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-        )
     }
 }
 

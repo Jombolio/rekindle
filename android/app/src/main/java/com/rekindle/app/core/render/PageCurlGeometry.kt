@@ -37,6 +37,14 @@ object PageCurl {
     data class Strip(
         val srcLeft: Float,
         val srcRight: Float,
+        /**
+         * The band of the page printed on the sheet's *back*, which in a
+         * spread is the facing page of the slide being turned to. It lands
+         * across the spine from the front's, so it is the front's band
+         * mirrored about the spine.
+         */
+        val backSrcLeft: Float,
+        val backSrcRight: Float,
         val dstLeft: Float,
         val dstRight: Float,
         /** How far to darken it, 0 to 1, for facing away from the light. */
@@ -105,22 +113,30 @@ object PageCurl {
             if (dstRight - dstLeft <= 0.6f) continue
             val sa = screen(ua)
             val sb = screen(ub)
+            val ba = spine - direction * ua
+            val bb = spine - direction * ub
             out += if (angle <= PI / 2f) {
                 // The printed side, still facing up, darker as it turns away.
                 Strip(
                     srcLeft = min(sa, sb),
                     srcRight = max(sa, sb),
+                    backSrcLeft = min(ba, bb),
+                    backSrcRight = max(ba, bb),
                     dstLeft = dstLeft,
                     dstRight = dstRight,
                     shade = 0.3f * (1f - cos(angle)),
                     turned = false,
                 )
             } else {
-                // The back, now facing up: the front showing faintly through,
-                // reversed. Lit at the top of the roll, settling as it lies flat.
+                // The back, now facing up. With a page printed there it is
+                // that page; otherwise the front showing faintly through,
+                // reversed. Lit at the top of the roll, settling as it lies
+                // flat.
                 Strip(
                     srcLeft = min(sa, sb),
                     srcRight = max(sa, sb),
+                    backSrcLeft = min(ba, bb),
+                    backSrcRight = max(ba, bb),
                     dstLeft = dstLeft,
                     dstRight = dstRight,
                     shade = (0.16f * (1f + cos(angle)) + 0.04f) * (1f - t),

@@ -907,8 +907,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 controller: _pageCtrl,
                 reverse: isRtl,
                 slideCount: slides.length,
+                // Only a pair of two-page slides turns about a centre spine;
+                // anything else is one sheet bound at its outer edge.
+                spreadAt: (leaf) =>
+                    leaf + 1 < slides.length &&
+                    slides[leaf].length > 1 &&
+                    slides[leaf + 1].length > 1,
                 slideBuilder: (index) => _buildSlideContent(
-                    index, extractedPages, client, isRtl, slides, pageGap),
+                    index, extractedPages, client, isRtl, slides, pageGap,
+                    measured: true),
               ),
             ])
           : pager,
@@ -917,22 +924,26 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
   /// One slide: a single page, or a two-page spread.
   ///
-  /// Given room to choose, a single page takes only the size it is drawn at,
-  /// letterbox excluded, so [ComicPageCurl] curls the page itself rather than
-  /// the whole window. In the pager it is given the viewport outright and
-  /// letterboxes itself inside it as before.
+  /// A single page takes only the size it is drawn at whenever it is given the
+  /// choice, so [ComicPageCurl] curls the page itself and not the whole
+  /// window. A spread has to be asked: [measured] builds it at the printed
+  /// size, the two pages and the gap between them and nothing else, which is
+  /// the sheet that turns. The pager wants the other one, which fills the
+  /// viewport and keeps the spine at its centre whatever the pages measure.
   Widget _buildSlideContent(
     int viewIndex,
     List<String>? extractedPages,
     dynamic client,
     bool isRtl,
     List<List<int>> slides,
-    double pageGap,
-  ) {
+    double pageGap, {
+    bool measured = false,
+  }) {
     final slide = slides[viewIndex];
     if (slide.length > 1) {
       return _buildDoublePageSlide(
-          slide[0], slide[1], isRtl, extractedPages, client, pageGap);
+          slide[0], slide[1], isRtl, extractedPages, client, pageGap,
+          measured: measured);
     }
     return Image(
       image: _buildImageProvider(slide[0], extractedPages, client),
@@ -956,35 +967,48 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     bool isRtl,
     List<String>? extractedPages,
     dynamic client,
-    double gap,
-  ) {
+    double gap, {
+    bool measured = false,
+  }) {
     // In RTL: pageA (lower number, read first) goes on the right; pageB on left.
     final leftContent = isRtl ? pageB : pageA;
     final rightContent = isRtl ? pageA : pageB;
 
     // Alignment is determined by physical position relative to the spine.
     // Left Expanded → anchor right (flush to spine); right Expanded → anchor left.
-    Widget pageWidget(int pageIndex, Alignment spineAlignment) {
-      return ClipRect(
-        child: Align(
-          alignment: spineAlignment,
-          child: Image(
-            image: _buildImageProvider(pageIndex, extractedPages, client),
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.medium,
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return const Center(
-                child: CircularProgressIndicator(color: Colors.white54),
-              );
-            },
-            errorBuilder: (_, __, ___) => const Center(
-              child: Icon(Icons.broken_image, color: Colors.white54, size: 48),
-            ),
+    Widget page(int pageIndex) => Image(
+          image: _buildImageProvider(pageIndex, extractedPages, client),
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.medium,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return const Center(
+              child: CircularProgressIndicator(color: Colors.white54),
+            );
+          },
+          errorBuilder: (_, __, ___) => const Center(
+            child: Icon(Icons.broken_image, color: Colors.white54, size: 48),
           ),
-        ),
+        );
+
+    if (measured) {
+      // The printed spread and nothing else: each page as wide as it draws,
+      // within its half, so the sheet that turns carries no letterbox.
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(child: page(leftContent)),
+          if (gap > 0) SizedBox(width: gap),
+          Flexible(child: page(rightContent)),
+        ],
       );
     }
+
+    // Alignment is determined by physical position relative to the spine.
+    // Left Expanded → anchor right (flush to spine); right Expanded → anchor left.
+    Widget pageWidget(int pageIndex, Alignment spineAlignment) => ClipRect(
+          child: Align(alignment: spineAlignment, child: page(pageIndex)),
+        );
 
     return Row(
       children: [

@@ -66,17 +66,21 @@ fun ComicPageCurl(
     page: () -> Float,
     reverse: Boolean,
     slideCount: Int,
+    spreadAt: (leaf: Int) -> Boolean,
     slide: @Composable (index: Int) -> Unit,
 ) {
     if (slideCount < 2) return
-    val layer = rememberGraphicsLayer()
+    val frontLayer = rememberGraphicsLayer()
+    val backLayer = rememberGraphicsLayer()
     val last = slideCount - 2
     // The slide being turned, kept composed and recorded even at rest, so its
     // picture is ready the moment a turn starts.
     var leaf by remember { mutableIntStateOf(page().toInt().coerceIn(0, last)) }
     var sheet by remember { mutableStateOf<ImageBitmap?>(null) }
+    var backSheet by remember { mutableStateOf<ImageBitmap?>(null) }
     // The size the sheet was last recorded at, reported from the draw phase.
     var recorded by remember { mutableStateOf(IntSize.Zero) }
+    val spread = spreadAt(leaf)
 
     // Follow the pager without recomposing on every frame of a turn: only a
     // change of sheet rebuilds anything.
@@ -86,53 +90,123 @@ fun ComicPageCurl(
             .collect {
                 leaf = it
                 sheet = null
+                backSheet = null
             }
     }
 
-    // Take the sheet's picture once the layer has recorded it. The layer records
-    // in the draw phase, so let a frame go by first.
-    LaunchedEffect(leaf, recorded) {
+    // Take the sheets' pictures once the layers have recorded them. They
+    // record in the draw phase, so let a frame go by first.
+    LaunchedEffect(leaf, recorded, spread) {
         if (recorded.width <= 0 || recorded.height <= 0) return@LaunchedEffect
         withFrameNanos { }
-        sheet = layer.toImageBitmap()
+        sheet = frontLayer.toImageBitmap()
+        backSheet = if (spread) backLayer.toImageBitmap() else null
     }
 
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        if (spread) {
+            // Recorded and never drawn: the pager is already showing this
+            // slide beneath the overlay. Its picture is wanted only for the
+            // facing page printed on the back of the turning sheet.
+            Box(
+                Modifier.drawWithContent {
+                    backLayer.record { this@drawWithContent.drawContent() }
+                },
+            ) {
+                slide(leaf + 1)
+            }
+        }
         Box(
             Modifier.drawWithContent {
-                layer.record { this@drawWithContent.drawContent() }
+                frontLayer.record { this@drawWithContent.drawContent() }
                 val measured = IntSize(size.width.roundToInt(), size.height.roundToInt())
                 if (measured != recorded) recorded = measured
                 val width = size.width
                 if (width <= 0f) return@drawWithContent
                 val progress = (page() - leaf).coerceIn(0f, 1f)
                 if (progress <= 0f || progress >= 1f) return@drawWithContent
-                val bitmap = sheet?.asAndroidBitmap()
-                if (bitmap == null) {
+                val front = sheet?.asAndroidBitmap()
+                if (front == null) {
                     // No picture yet: show the page flat, rather than letting
                     // the slide beneath flash through for a frame.
-                    drawLayer(layer)
+                    drawLayer(frontLayer)
                     return@drawWithContent
                 }
                 // Paper that has turned right over lands past the bound edge,
                 // where there is no page any more: clipped off, as the book
                 // clips it to the page rather than into the margin.
                 clipRect(0f, 0f, width, size.height) {
-                    drawPageCurl(
-                        front = bitmap,
-                        // Bound at the edge the reader turns away from, reaching
-                        // across the page to the free edge it is lifted by.
-                        spine = if (reverse) width else 0f,
-                        direction = if (reverse) -1 else 1,
-                        progress = progress,
-                        paper = ReaderPaper,
-                    )
+                    if (spread) {
+                        drawSpreadCurl(front, backSheet?.asAndroidBitmap(), reverse, progress)
+                    } else {
+                        drawPageCurl(
+                            front = front,
+                            // Bound at the edge the reader turns away from,
+                            // reaching across the page to the free edge it is
+                            // lifted by.
+                            spine = if (reverse) width else 0f,
+                            direction = if (reverse) -1 else 1,
+                            width = width,
+                            progress = progress,
+                            paper = ReaderPaper,
+                        )
+                    }
                 }
             },
         ) {
             slide(leaf)
         }
     }
+}
+
+/**
+ * A spread turns about the spine down its middle, a half-page at a time.
+ *
+ * The sheet carries two pages, as a printed one does: the half being left on
+ * its front, and the next slide's facing page on its [back], which is how the
+ * new page arrives. The other half of the slide being left stays down until
+ * the sheet lands on top of it, so it has to be painted over the next slide,
+ * which the pager is already showing beneath the overlay. The next slide's far
+ * page needs nothing: it is meant to show.
+ */
+private fun DrawScope.drawSpreadCurl(
+    front: Bitmap,
+    back: Bitmap?,
+    reverse: Boolean,
+    progress: Float,
+) {
+    val spine = size.width / 2f
+    // The half the reader is turning towards, whose page stays down.
+    val stayingLeft = if (reverse) spine else 0f
+    val stayingRight = if (reverse) size.width else spine
+    val scaleX = front.width / size.width
+    val canvas = drawContext.canvas.nativeCanvas
+    canvas.drawRect(
+        stayingLeft, 0f, stayingRight, size.height,
+        Paint().apply { color = ReaderBackdrop.toArgb() },
+    )
+    canvas.drawBitmap(
+        front,
+        Rect(
+            (stayingLeft * scaleX).roundToInt().coerceIn(0, front.width),
+            0,
+            (stayingRight * scaleX).roundToInt().coerceIn(0, front.width),
+            front.height,
+        ),
+        RectF(stayingLeft, 0f, stayingRight, size.height),
+        Paint().apply { isFilterBitmap = true },
+    )
+    drawPageCurl(
+        front = front,
+        back = back,
+        spine = spine,
+        direction = if (reverse) -1 else 1,
+        width = spine,
+        progress = progress,
+        // Only ever seen in the letterbox around the pages, so the reader's
+        // own background rather than a paper tone.
+        paper = ReaderBackdrop,
+    )
 }
 
 /**
@@ -147,16 +221,18 @@ fun DrawScope.drawPageCurl(
     front: Bitmap,
     spine: Float,
     direction: Int,
+    width: Float,
     progress: Float,
     paper: Color,
+    /** What is printed on the sheet's back; plain paper when null. */
+    back: Bitmap? = null,
 ) {
-    val width = size.width
     val height = size.height
     val curl = PageCurl.layout(spine, direction, width, progress) ?: return
 
     val canvas = drawContext.canvas.nativeCanvas
-    // The picture is of the whole sheet, so a sheet x maps straight onto it.
-    val scaleX = front.width / width
+    // The pictures are of the whole sheet, so a sheet x maps straight onto them.
+    val scaleX = front.width / size.width
     val paperPaint = Paint().apply { color = paper.toArgb() }
     val imagePaint = Paint().apply { isFilterBitmap = true }
     // Show-through: the front, mirrored and faint, on the back of the sheet.
@@ -165,22 +241,29 @@ fun DrawScope.drawPageCurl(
     val src = Rect()
     val dst = RectF()
 
-    fun band(srcLeft: Float, srcRight: Float, dstLeft: Float, dstRight: Float, paint: Paint) {
+    fun band(
+        bitmap: Bitmap,
+        srcLeft: Float,
+        srcRight: Float,
+        dstLeft: Float,
+        dstRight: Float,
+        paint: Paint,
+    ) {
         src.set(
-            (srcLeft * scaleX).roundToInt().coerceIn(0, front.width),
+            (srcLeft * scaleX).roundToInt().coerceIn(0, bitmap.width),
             0,
-            (srcRight * scaleX).roundToInt().coerceIn(0, front.width),
-            front.height,
+            (srcRight * scaleX).roundToInt().coerceIn(0, bitmap.width),
+            bitmap.height,
         )
         if (src.width() <= 0) return
         dst.set(dstLeft, 0f, dstRight, height)
-        canvas.drawBitmap(front, src, dst, paint)
+        canvas.drawBitmap(bitmap, src, dst, paint)
     }
 
     // The part before the fold is still flat: one piece, so it has no seams.
     if (curl.flatRight > curl.flatLeft) {
         canvas.drawRect(curl.flatLeft, 0f, curl.flatRight, height, paperPaint)
-        band(curl.flatLeft, curl.flatRight, curl.flatLeft, curl.flatRight, imagePaint)
+        band(front, curl.flatLeft, curl.flatRight, curl.flatLeft, curl.flatRight, imagePaint)
     }
 
     // Each set is painted paper first, then print, then shade, so no strip's
@@ -189,14 +272,18 @@ fun DrawScope.drawPageCurl(
         for (s in strips) canvas.drawRect(s.dstLeft, 0f, s.dstRight, height, paperPaint)
         for (s in strips) {
             if (!s.turned) {
-                band(s.srcLeft, s.srcRight, s.dstLeft, s.dstRight, imagePaint)
+                band(front, s.srcLeft, s.srcRight, s.dstLeft, s.dstRight, imagePaint)
+            } else if (back != null) {
+                // A page is printed on this side, where it will lie once the
+                // sheet has turned right over.
+                band(back, s.backSrcLeft, s.backSrcRight, s.dstLeft, s.dstRight, imagePaint)
             } else {
                 val centre = (s.dstLeft + s.dstRight) / 2f
                 canvas.save()
                 canvas.translate(centre, 0f)
                 canvas.scale(-1f, 1f)
                 canvas.translate(-centre, 0f)
-                band(s.srcLeft, s.srcRight, s.dstLeft, s.dstRight, ghostPaint)
+                band(front, s.srcLeft, s.srcRight, s.dstLeft, s.dstRight, ghostPaint)
                 canvas.restore()
             }
         }
