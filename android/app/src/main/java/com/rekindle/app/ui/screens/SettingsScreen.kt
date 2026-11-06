@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.rekindle.app.domain.model.ServerSource
 import com.rekindle.app.BuildConfig
+import com.rekindle.app.core.prefs.BUNDLED_FONT_LICENCES
 import com.rekindle.app.core.prefs.BookFont
 import com.rekindle.app.core.prefs.BookTheme
 import com.rekindle.app.core.update.UpdateCheck
@@ -86,6 +87,7 @@ fun SettingsScreen(
     val context = LocalContext.current
 
     var renameTarget by remember { mutableStateOf<ServerSource?>(null) }
+    var showLicences by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<ServerSource?>(null) }
 
     // SAF folder picker — launched when the user taps "Choose folder".
@@ -243,63 +245,16 @@ fun SettingsScreen(
                 // ── Books ──────────────────────────────────────────────
                 SectionHeader("Books")
 
-                Text("Font", style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    "Anything but \"Book's own\" replaces the fonts a book asks for.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    BookFont.entries.forEach { font ->
-                        FilterChip(
-                            selected = state.bookFont == font,
-                            onClick = { vm.setBookFont(font) },
-                            label = { Text(font.label) },
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-                Text("Reading theme", style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    "The colours books open in. The palette button in a book changes them for that visit.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    BookTheme.entries.forEach { bookTheme ->
-                        FilterChip(
-                            selected = state.bookTheme == bookTheme,
-                            onClick = { vm.setBookTheme(bookTheme) },
-                            label = { Text(bookTheme.label) },
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Text size",
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        state.bookFontSize.toInt().toString(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-                Slider(
-                    value = state.bookFontSize,
-                    onValueChange = { vm.setBookFontSize(it.roundToInt().toFloat()) },
-                    valueRange = MIN_BOOK_FONT_SIZE..MAX_BOOK_FONT_SIZE,
-                    steps = (MAX_BOOK_FONT_SIZE - MIN_BOOK_FONT_SIZE).toInt() - 1,
+                // The same options as the reader's Aa sheet.
+                ReadingOptions(
+                    style = state.readingStyle,
+                    font = state.bookFont,
+                    fontSize = state.bookFontSize,
+                    theme = state.bookTheme,
+                    onStyle = vm::setReadingStyle,
+                    onFont = vm::setBookFont,
+                    onFontSize = vm::setBookFontSize,
+                    onTheme = vm::setBookTheme,
                 )
 
                 // ── Updates ────────────────────────────────────────────
@@ -309,6 +264,7 @@ fun SettingsScreen(
                     "Version ${BuildConfig.VERSION_NAME}",
                     style = MaterialTheme.typography.bodyLarge,
                 )
+                TextButton(onClick = { showLicences = true }) { Text("Licences") }
                 if (vm.installedFromFdroid) {
                     Text(
                         "Installed from F-Droid, which updates this app itself and only offers " +
@@ -437,6 +393,30 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showLicences) {
+        // The bundled reading fonts' licences, which must travel with them.
+        val licences = remember {
+            BUNDLED_FONT_LICENCES.joinToString("\n\n") { (name, asset) ->
+                val text = runCatching {
+                    context.assets.open(asset).bufferedReader().use { it.readText() }
+                }.getOrDefault("")
+                "$name\n\n$text"
+            }
+        }
+        AlertDialog(
+            onDismissRequest = { showLicences = false },
+            title = { Text("Licences") },
+            text = {
+                Text(
+                    licences,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                )
+            },
+            confirmButton = { TextButton(onClick = { showLicences = false }) { Text("Close") } },
+        )
     }
 
     // Rename dialog

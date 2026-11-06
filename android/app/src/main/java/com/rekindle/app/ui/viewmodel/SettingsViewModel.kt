@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rekindle.app.core.prefs.BookFont
 import com.rekindle.app.core.prefs.BookTheme
+import com.rekindle.app.core.prefs.ReadingStyle
 import com.rekindle.app.core.prefs.DEFAULT_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.DEFAULT_CHAPTER_CONFIRM_MS
 import com.rekindle.app.BuildConfig
@@ -42,6 +43,8 @@ data class SettingsState(
     val bookFontSize: Float = DEFAULT_BOOK_FONT_SIZE,
     /** The theme books open in. */
     val bookTheme: BookTheme = BookTheme.MATCH_APP,
+    /** Book layout and readability options. */
+    val readingStyle: ReadingStyle = ReadingStyle(),
     /** Offer betas and release candidates when checking for updates. */
     val receivePreReleases: Boolean = false,
     val checkingForUpdates: Boolean = false,
@@ -97,6 +100,9 @@ class SettingsViewModel @Inject constructor(
             prefs.bookTheme.collect { theme -> _state.update { it.copy(bookTheme = theme) } }
         }
         viewModelScope.launch {
+            prefs.readingStyle.collect { style -> _state.update { it.copy(readingStyle = style) } }
+        }
+        viewModelScope.launch {
             combine(prefs.bookFont, prefs.bookFontSize) { font, size ->
                 font to size
             }.collect { (font, size) ->
@@ -131,6 +137,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setBookTheme(theme: BookTheme) {
         viewModelScope.launch { prefs.setBookTheme(theme) }
+    }
+
+    fun setReadingStyle(style: ReadingStyle) {
+        viewModelScope.launch { prefs.setReadingStyle(style) }
     }
 
     fun setBookFontSize(size: Float) {

@@ -122,4 +122,26 @@ class EpubParserTest {
         val latin = "<?xml version=\"1.0\" encoding=\"iso-8859-1\"?>".toByteArray() + 0xE9.toByte()
         assertTrue(EpubParser.decodeText(latin).endsWith("é"))
     }
+
+    @Test
+    fun `continuous chapters point their links and images at absolute addresses`() {
+        val html = """<img src="../images/a.png"/><a href="c2.xhtml#n1">note</a>""" +
+            """<a href="#here">here</a><a href="https://example.com/">out</a>"""
+        val out = EpubParser.absoluteUrls(html, "OPS/text/c1.xhtml", "book.test")
+        assertTrue("src=\"https://book.test/OPS/images/a.png\"" in out)
+        assertTrue("href=\"https://book.test/OPS/text/c2.xhtml#n1\"" in out)
+        assertTrue("href=\"#here\"" in out)
+        assertTrue("href=\"https://example.com/\"" in out)
+    }
+
+    @Test
+    fun `a continuous chapter is a section that keeps its stylesheets`() {
+        val html = """<html><head><link rel="stylesheet" href="s.css"/><script>x()</script></head>""" +
+            """<body><p>Hi</p><script>bad()</script></body></html>"""
+        val section = EpubParser.flowSection(3, "OPS/c3.xhtml", html, "book.test")
+        assertTrue(section.startsWith("<section data-chapter=\"3\">"))
+        assertTrue("https://book.test/OPS/s.css" in section)
+        assertTrue("<p>Hi</p>" in section)
+        assertFalse("bad()" in section)
+    }
 }

@@ -1,5 +1,3 @@
-import '../core/epub/book_font.dart';
-import '../core/epub/book_theme.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -12,6 +10,7 @@ import '../core/update/update_service.dart';
 import '../providers/discord_presence_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/update_provider.dart';
+import 'widgets/reading_options.dart';
 import 'widgets/update_flow.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -222,89 +221,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text('Font', style: theme.textTheme.bodyLarge),
-                      ),
-                      DropdownButton<BookFont>(
-                        value: settings.bookFont,
-                        items: [
-                          for (final font in BookFont.values)
-                            DropdownMenuItem(
-                              value: font,
-                              child: Text(font.label),
-                            ),
-                        ],
-                        onChanged: (font) {
-                          if (font == null) return;
-                          ref.read(settingsProvider.notifier).setBookFont(font);
-                        },
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 32),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Reading theme',
-                                style: theme.textTheme.bodyLarge),
-                            const SizedBox(height: 4),
-                            Text(
-                              'The colours books open in. The palette button '
-                              'in a book changes them for that visit.',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      DropdownButton<BookTheme>(
-                        value: settings.bookTheme,
-                        items: [
-                          for (final bookTheme in BookTheme.values)
-                            DropdownMenuItem(
-                              value: bookTheme,
-                              child: Text(bookTheme.label),
-                            ),
-                        ],
-                        onChanged: (bookTheme) {
-                          if (bookTheme == null) return;
-                          ref
-                              .read(settingsProvider.notifier)
-                              .setBookTheme(bookTheme);
-                        },
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 32),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text('Text size',
-                            style: theme.textTheme.bodyLarge),
-                      ),
-                      Text(
-                        settings.bookFontSize.round().toString(),
-                        style: theme.textTheme.bodyMedium
-                            ?.copyWith(color: theme.colorScheme.primary),
-                      ),
-                    ],
-                  ),
-                  Slider(
-                    value: settings.bookFontSize,
-                    min: kMinBookFontSize,
-                    max: kMaxBookFontSize,
-                    divisions: (kMaxBookFontSize - kMinBookFontSize).round(),
-                    label: settings.bookFontSize.round().toString(),
-                    onChanged: (v) => ref
-                        .read(settingsProvider.notifier)
-                        .setBookFontSize(v.roundToDouble()),
-                  ),
+                  // The same options as the reader's Aa panel.
+                  const ReadingOptionsForm(),
                   const Divider(height: 32),
                   Row(
                     children: [
@@ -461,7 +379,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         ),
                       ],
                     ),
-                    const Divider(height: 32),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton(
+                        // Includes the bundled reading fonts' licences.
+                        onPressed: () => showLicensePage(
+                          context: context,
+                          applicationName: 'Rekindle',
+                          applicationVersion: _appVersion,
+                        ),
+                        child: const Text('Licences'),
+                      ),
+                    ),
+                    const Divider(height: 24),
                     Row(
                       children: [
                         Expanded(

@@ -1,14 +1,21 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
+import 'package:flutter/services.dart';
 
-/// The typefaces offered for reading. Each is a font already on the system, with
-/// fallbacks, so choosing one downloads nothing and adds nothing to the app.
+/// The typefaces offered for reading. The first four are fonts already on the
+/// system. The last three are bundled for readability, under the SIL Open Font
+/// License: OpenDyslexic for dyslexia, Atkinson Hyperlegible for low vision, and
+/// Lexend for reading fluency.
 enum BookFont {
   standard('Default'),
   serif('Serif'),
   sans('Sans-serif'),
-  mono('Monospace');
+  mono('Monospace'),
+  openDyslexic('OpenDyslexic'),
+  atkinson('Atkinson Hyperlegible'),
+  lexend('Lexend');
 
   final String label;
   const BookFont(this.label);
@@ -28,6 +35,9 @@ enum BookFont {
         BookFont.serif => isWindows ? 'Georgia' : 'serif',
         BookFont.sans => isWindows ? 'Segoe UI' : 'sans-serif',
         BookFont.mono => isWindows ? 'Consolas' : 'monospace',
+        BookFont.openDyslexic => 'OpenDyslexic',
+        BookFont.atkinson => 'AtkinsonHyperlegible',
+        BookFont.lexend => 'Lexend',
       };
 
   /// Applies this choice to a reading style.
@@ -40,3 +50,18 @@ enum BookFont {
 const double kDefaultBookFontSize = 16;
 const double kMinBookFontSize = 10;
 const double kMaxBookFontSize = 32;
+
+/// The bundled reading fonts' licences, for the app's licence page. The OFL asks
+/// for its text to travel with the fonts.
+void registerFontLicences() {
+  const fonts = {
+    'OpenDyslexic': 'assets/fonts/OFL-OpenDyslexic.txt',
+    'Atkinson Hyperlegible': 'assets/fonts/OFL-AtkinsonHyperlegible.txt',
+    'Lexend': 'assets/fonts/OFL-Lexend.txt',
+  };
+  LicenseRegistry.addLicense(() async* {
+    for (final MapEntry(key: name, value: path) in fonts.entries) {
+      yield LicenseEntryWithLineBreaks([name], await rootBundle.loadString(path));
+    }
+  });
+}

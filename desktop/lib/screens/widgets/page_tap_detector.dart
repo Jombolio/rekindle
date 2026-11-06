@@ -12,7 +12,8 @@ class PageTapDetector extends StatefulWidget {
   static const _maxHold = Duration(milliseconds: 500);
   static const _maxTravel = 8.0;
 
-  final VoidCallback onTap;
+  /// Where the tap landed, in global coordinates.
+  final void Function(Offset position) onTap;
   final Widget child;
 
   const PageTapDetector({super.key, required this.onTap, required this.child});
@@ -49,9 +50,10 @@ class _PageTapDetectorState extends State<PageTapDetector> {
     if (downAt == null) return;
     if ((event.position - downAt).distance > PageTapDetector._maxTravel) return;
     if (event.timeStamp - _downTime! > PageTapDetector._maxHold) return;
+    final at = event.position;
     _pending = Timer(PageTapDetector.secondTapWindow, () {
       _pending = null;
-      if (mounted) widget.onTap();
+      if (mounted) widget.onTap(at);
     });
   }
 

@@ -212,6 +212,9 @@ class PrefsStore @Inject constructor(
     /** The theme books open in. */
     val bookTheme: Flow<BookTheme> = store.data.map { BookTheme.parse(it[Keys.BOOK_THEME]) }
 
+    /** Book layout and readability options. */
+    val readingStyle: Flow<ReadingStyle> = store.data.map { ReadingStyle.fromJson(it[Keys.READING_STYLE]) }
+
     /**
      * Content URI string granted via ACTION_OPEN_DOCUMENT_TREE.
      * Empty = use app-private external storage (no permission needed).
@@ -239,6 +242,9 @@ class PrefsStore @Inject constructor(
     suspend fun setBookFont(font: BookFont) = store.edit { it[Keys.BOOK_FONT] = font.name }
 
     suspend fun setBookTheme(theme: BookTheme) = store.edit { it[Keys.BOOK_THEME] = theme.name }
+
+    suspend fun setReadingStyle(style: ReadingStyle) =
+        store.edit { it[Keys.READING_STYLE] = style.clamped().toJson() }
 
     suspend fun setBookFontSize(size: Float) = store.edit {
         it[Keys.BOOK_FONT_SIZE] = size.coerceIn(MIN_BOOK_FONT_SIZE, MAX_BOOK_FONT_SIZE)
@@ -292,6 +298,7 @@ class PrefsStore @Inject constructor(
         val BOOK_FONT = stringPreferencesKey("book_font")
         val BOOK_FONT_SIZE = floatPreferencesKey("book_font_size")
         val BOOK_THEME = stringPreferencesKey("book_theme")
+        val READING_STYLE = stringPreferencesKey("reading_style")
         val CONFIRM_CHAPTER_CHANGE = booleanPreferencesKey("confirm_chapter_change")
         val CHAPTER_CONFIRM_MS = intPreferencesKey("chapter_confirm_ms")
         val SOURCES_JSON = stringPreferencesKey("sources_json")

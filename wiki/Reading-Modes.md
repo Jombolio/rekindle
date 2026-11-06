@@ -55,6 +55,43 @@ The default is set automatically based on the library type when you open an arch
 
 ---
 
+## Text books
+
+Books (EPUB, MOBI, AZW and AZW3) have their own reader, set up from the **Aa** button in its top bar or from **Settings → Books**. Both change the same settings, which apply to every book and take effect straight away.
+
+### Layout
+
+| Layout | What it does |
+|--------|--------------|
+| **Scroll by chapter** | One chapter at a time, scrolled. The arrows move between chapters. The default. |
+| **Continuous scroll** | The whole book as one scroll: the next chapter follows the last, and earlier ones load above as you scroll back. |
+| **Single page** | A page at a time. Pages break between lines, never through one. |
+| **Two pages** | A spread of two pages side by side, for wide screens and landscape. |
+
+In the page layouts, turn pages by tapping or clicking near either side of the page, with the arrow keys, Page Up/Down or Space, with the mouse wheel, by swiping (Android), or with the arrows in the bottom bar. Turning past a chapter's last page opens the next chapter, and turning back from its first opens the previous chapter's last page. The bottom bar shows the page within the chapter.
+
+Your place is kept as a chapter and a position within it, so switching layout, or reading on another device in another layout, opens where you left off.
+
+### Fonts
+
+Besides the system's serif, sans-serif and monospace fonts, three readability fonts come with the apps, free under the SIL Open Font License (their licences are under **Licences** in Settings):
+
+- **OpenDyslexic**, with weighted letter bottoms, designed for readers with dyslexia.
+- **Atkinson Hyperlegible**, from the Braille Institute, with letters that are hard to mistake for one another, for low vision.
+- **Lexend**, with wider letters and spacing, designed to make reading more fluent.
+
+### Readability and accessibility
+
+- **Spacing:** line, letter, word and paragraph spacing. Paragraph spacing at zero keeps the book's own.
+- **Line width:** how long lines get before wrapping, about 50 to 120 characters.
+- **Alignment:** the book's own, left-aligned or justified. Text a book deliberately centres, such as title pages, stays centred.
+- **Theme:** Match app, Light, Dark, Sepia, and two high-contrast themes: white on black and black on white. The palette button in a book changes it for that visit only.
+- **Bold text:** sets all text in bold.
+- **Page-turn animation:** turn it off for pages that change at once.
+- **Reading ruler:** a band that keeps your eye on the lines you're reading, with the rest of the page dimmed. On desktop it follows the pointer; on Android it stays put while the text moves under it, and the handle at its right edge moves it.
+
+---
+
 ## Dictionary
 
 Text books have a built-in English dictionary that works offline.

@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../core/discord/discord_activity.dart';
 import '../core/epub/book_font.dart';
 import '../core/epub/book_theme.dart';
+import '../core/epub/reading_style.dart';
 import '../core/storage/prefs.dart';
 
 class SettingsState {
@@ -29,6 +30,9 @@ class SettingsState {
   /// that visit.
   final BookTheme bookTheme;
 
+  /// Layout, spacing and the other readability options for books.
+  final ReadingStyle readingStyle;
+
   /// Show a word's definition when it's selected in a book.
   final bool defineOnSelect;
 
@@ -46,6 +50,7 @@ class SettingsState {
     this.bookFont = BookFont.standard,
     this.bookFontSize = kDefaultBookFontSize,
     this.bookTheme = BookTheme.matchApp,
+    this.readingStyle = const ReadingStyle(),
     this.defineOnSelect = true,
     this.receivePreReleases = false,
     this.autoCheckUpdates = true,
@@ -60,6 +65,7 @@ class SettingsState {
     BookFont? bookFont,
     double? bookFontSize,
     BookTheme? bookTheme,
+    ReadingStyle? readingStyle,
     bool? defineOnSelect,
     bool? receivePreReleases,
     bool? autoCheckUpdates,
@@ -73,6 +79,7 @@ class SettingsState {
         bookFont: bookFont ?? this.bookFont,
         bookFontSize: bookFontSize ?? this.bookFontSize,
         bookTheme: bookTheme ?? this.bookTheme,
+        readingStyle: readingStyle ?? this.readingStyle,
         defineOnSelect: defineOnSelect ?? this.defineOnSelect,
         receivePreReleases: receivePreReleases ?? this.receivePreReleases,
         autoCheckUpdates: autoCheckUpdates ?? this.autoCheckUpdates,
@@ -101,6 +108,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
       bookFontSize: (prefs.bookFontSize ?? kDefaultBookFontSize)
           .clamp(kMinBookFontSize, kMaxBookFontSize),
       bookTheme: BookTheme.parse(prefs.bookTheme),
+      readingStyle: ReadingStyle.fromJson(prefs.readingStyle),
       defineOnSelect: prefs.defineOnSelect,
       receivePreReleases: prefs.receivePreReleases,
       autoCheckUpdates: prefs.autoCheckUpdates,
@@ -149,6 +157,11 @@ class SettingsNotifier extends Notifier<SettingsState> {
   Future<void> setBookTheme(BookTheme theme) async {
     await Prefs.instance.setBookTheme(theme.name);
     state = state.copyWith(bookTheme: theme);
+  }
+
+  Future<void> setReadingStyle(ReadingStyle style) async {
+    state = state.copyWith(readingStyle: style);
+    await Prefs.instance.setReadingStyle(style.toJson());
   }
 
   Future<void> setDefineOnSelect({required bool enabled}) async {

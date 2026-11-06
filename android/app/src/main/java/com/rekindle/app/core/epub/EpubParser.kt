@@ -201,6 +201,52 @@ object EpubParser {
         }
     }
 
+    /**
+     * One chapter as a section of the continuous layout's document. Its links and
+     * images point at absolute addresses on [host], since the document's own address
+     * belongs to none of its chapters. Its stylesheets come along inside the section,
+     * where browsers apply them as they would in the head.
+     */
+    fun flowSection(index: Int, path: String, html: String, host: String): String {
+        val body = BODY.find(html)
+        val head = html.substring(0, body?.range?.first ?: 0)
+        val links = LINK.findAll(head).map { it.value }.filter { "stylesheet" in it.lowercase() }
+        val styles = STYLE.findAll(head).map { it.value }.map { expandSelfClosingStyle(it) }
+        val content = expandSelfClosingTags(body?.groupValues?.get(2) ?: html).replace(SCRIPT, "")
+        return buildString {
+            append("<section data-chapter=\"").append(index).append("\">")
+            links.forEach { append(absoluteUrls(it, path, host)) }
+            styles.forEach { append(it) }
+            append(absoluteUrls(content, path, host))
+            append("</section>")
+        }
+    }
+
+    /** The continuous layout's document, opening with [firstSection]. */
+    fun renderFlow(firstSection: String, themeCss: String): String = buildString {
+        append("<!DOCTYPE html><html><head><meta charset=\"utf-8\">")
+        append("<meta http-equiv=\"Content-Security-Policy\" content=\"").append(CONTENT_SECURITY_POLICY).append("\">")
+        append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">")
+        append("<style>section[data-chapter]{display:block;padding-bottom:3em;}</style>")
+        append("<style>").append(themeCss).append("</style></head><body>")
+        append(firstSection)
+        append("</body></html>")
+    }
+
+    /**
+     * Rewrites relative `src` and `href` values against [path], as absolute addresses
+     * on [host]. Fragments within the chapter, and addresses with a scheme, are left
+     * as they are.
+     */
+    fun absoluteUrls(html: String, path: String, host: String): String = URL_ATTRIBUTE.replace(html) { m ->
+        val (name, quote, value) = m.destructured
+        val trimmed = value.trim()
+        if (trimmed.isEmpty() || trimmed.startsWith("#") || SCHEME.containsMatchIn(trimmed)) return@replace m.value
+        val fragment = trimmed.substringAfter('#', "").let { if (it.isEmpty()) "" else "#$it" }
+        val resolved = resolve(path, trimmed)
+        "$name=$quote" + "https://$host/$resolved$fragment" + quote
+    }
+
     private fun expandSelfClosingStyle(style: String) =
         if (style.trimEnd().endsWith("/>")) "" else style
 
@@ -227,4 +273,6 @@ object EpubParser {
     private val STYLE = Regex("<style\\b[^>]*?(?:/>|>.*?</style\\s*>)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     private val SELF_CLOSING = Regex("<([a-zA-Z][\\w:-]*)((?:[^<>\"]|\"[^\"]*\")*?)/>")
     private val VOID_TAGS = setOf("img", "br", "hr", "input", "meta", "link", "col")
+    private val URL_ATTRIBUTE = Regex("""\b((?:xlink:)?href|src|poster)\s*=\s*(["'])(.*?)\2""", RegexOption.IGNORE_CASE)
+    private val SCHEME = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:")
 }

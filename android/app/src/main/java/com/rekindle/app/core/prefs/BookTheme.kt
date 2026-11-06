@@ -8,7 +8,9 @@ enum class BookTheme(val label: String) {
     MATCH_APP("Match app"),
     LIGHT("Light"),
     DARK("Dark"),
-    SEPIA("Sepia");
+    SEPIA("Sepia"),
+    CONTRAST_DARK("High contrast dark"),
+    CONTRAST_LIGHT("High contrast light");
 
     companion object {
         /** Prefs store the name, so an unknown value from another version is harmless. */

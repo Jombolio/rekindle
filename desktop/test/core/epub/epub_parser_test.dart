@@ -259,7 +259,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: PageTapDetector(
-            onTap: onPageTap ?? () {},
+            onTap: (_) => onPageTap?.call(),
             child: SelectionArea(
               onSelectionChanged: (c) => onSelected?.call(c?.plainText),
               child: BookChapterView(

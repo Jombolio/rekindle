@@ -123,6 +123,11 @@ class Prefs {
   Future<void> setBookTheme(String theme) =>
       _prefs.setString('book_theme', theme);
 
+  // Book layout and readability options, as JSON (see ReadingStyle).
+  String? get readingStyle => _prefs.getString('reading_style');
+  Future<void> setReadingStyle(String json) =>
+      _prefs.setString('reading_style', json);
+
   // Whether "Check for updates" offers pre-releases (betas, release
   // candidates) as well as stable releases. Off by default.
   bool get receivePreReleases =>
