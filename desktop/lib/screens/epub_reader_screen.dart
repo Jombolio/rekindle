@@ -4,6 +4,8 @@ import 'dart:isolate';
 
 import 'package:csslib/visitor.dart' as css;
 import 'package:dio/dio.dart';
+import 'package:flutter/gestures.dart'
+    show PointerScrollEvent, PointerSignalEvent;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SelectedContent;
 import 'package:flutter/services.dart';
@@ -20,6 +22,7 @@ import '../core/dictionary/word_forms.dart';
 import '../core/dictionary/wordnet_dictionary.dart';
 import '../core/epub/book_styles.dart';
 import '../core/epub/book_theme.dart';
+import '../core/epub/reading_style.dart';
 import '../core/epub/epub_parser.dart';
 import '../core/epub/reader_book.dart';
 import '../core/epub/remote_book.dart';
@@ -29,7 +32,10 @@ import '../providers/discord_presence_provider.dart';
 import '../providers/reader_provider.dart';
 import '../providers/settings_provider.dart';
 import 'widgets/definition_popup.dart';
+import 'book/continuous_book_view.dart';
+import 'book/paged_chapter_view.dart';
 import 'widgets/page_tap_detector.dart';
+import 'widgets/reading_options.dart';
 
 /// URL scheme for paths inside the open book.
 const _bookScheme = 'rekindle-book';
@@ -43,10 +49,6 @@ const _defineDelay = Duration(milliseconds: 350);
 /// How long a chapter gets to lay out before "nothing to scroll" means it's
 /// short. Large chapters build asynchronously, so this errs on the long side.
 const _shortChapterDelay = Duration(seconds: 5);
-
-/// The widest the text column gets, in ems of the reading font: around 75
-/// characters a line, past which lines get hard to follow on a wide window.
-const double kBookMeasureEms = 36;
 
 /// A book is finished once the reader is at the end of its last chapter. Merely
 /// opening the last chapter doesn't count, and neither does being a little short
@@ -94,6 +96,19 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   int _chapterRequest = 0;
   double _wantedFraction = 0;
 
+  // The paged and continuous layouts keep their own place and report it here.
+  GlobalKey<PagedChapterViewState> _pagedKey = GlobalKey();
+  PagePosition? _pagePosition;
+  double _layoutFraction = 0;
+  int _continuousStart = 0;
+  double _continuousFraction = 0;
+  int _continuousEpoch = 0;
+  DateTime _lastWheelTurn = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Where the reading ruler sits, following the pointer.
+  final ValueNotifier<double?> _rulerY = ValueNotifier(null);
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey();
+
   // The dictionary pop-up. It appears once a selection has settled and the pointer
   // is up, so dragging across a passage doesn't flash definitions along the way.
   String? _selectedText;
@@ -126,7 +141,10 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   /// saving one would overwrite the saved place.
   @override
   void deactivate() {
-    if (_chapter != null && _activeRestore == null && _scroll.hasClients) {
+    if (_layout == BookLayout.scroll &&
+        _chapter != null &&
+        _activeRestore == null &&
+        _scroll.hasClients) {
       _savePosition(_currentFraction);
     }
     super.deactivate();
@@ -138,6 +156,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     _shortChapterTimer?.cancel();
     _defineTimer?.cancel();
     _scroll.dispose();
+    _rulerY.dispose();
     // Through the container: `ref` throws once the widget is unmounting, which
     // used to abort this method before the reader provider was invalidated. Its
     // closing save never ran, and a still-pending debounced save would later
@@ -185,6 +204,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     setState(() {
       _book = book;
       _chapterIndex = chapter;
+      _continuousStart = chapter;
+      _continuousFraction = saved.fraction ?? 0;
+      _layoutFraction = saved.fraction ?? 0;
     });
 
     ref.read(readerProvider((widget.mediaId, null)).notifier).openBook(
@@ -245,13 +267,17 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     setState(() {
       _chapter = null;
       _chapterFailed = false;
+      _pagedKey = GlobalKey();
+      _pagePosition = null;
     });
     try {
       final chapter = await book.loadChapter(index);
       if (!mounted || request != _chapterRequest) return;
       setState(() => _chapter = chapter);
-      _restorePosition(fraction);
-      _scheduleShortChapterCheck();
+      if (_layout == BookLayout.scroll) {
+        _restorePosition(fraction);
+        _scheduleShortChapterCheck();
+      }
     } catch (_) {
       if (mounted && request == _chapterRequest) {
         setState(() => _chapterFailed = true);
@@ -316,11 +342,129 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     }
   }
 
-  void _goToChapter(int index) {
-    setState(() => _chapterIndex = index);
-    _savePosition(0);
-    _showChapter(index, 0);
+  /// Opens chapter [index] at [fraction]: 0 is its start, 1 its last page.
+  void _goToChapter(int index, {double fraction = 0}) {
+    setState(() {
+      _chapterIndex = index;
+      _layoutFraction = fraction;
+    });
+    _savePosition(fraction);
+    if (_layout == BookLayout.continuous) {
+      setState(() {
+        _continuousStart = index;
+        _continuousFraction = fraction;
+        _continuousEpoch++;
+      });
+    } else {
+      _showChapter(index, fraction);
+    }
     _reportChapter();
+  }
+
+  BookLayout get _layout => ref.read(settingsProvider).readingStyle.layout;
+
+  /// Forward a page in the paged layouts, otherwise a chapter.
+  void _forward() {
+    final paged = _pagedKey.currentState;
+    if (_layout.paged && paged != null) {
+      paged.next();
+    } else {
+      _nextChapter();
+    }
+  }
+
+  void _back() {
+    final paged = _pagedKey.currentState;
+    if (_layout.paged && paged != null) {
+      paged.previous();
+    } else {
+      _prevChapter();
+    }
+  }
+
+  /// Where the reader is in the current chapter, whichever the layout.
+  double _fractionIn(BookLayout layout) =>
+      layout == BookLayout.scroll ? _currentFraction : _layoutFraction;
+
+  /// Carries the reader's place across a change of layout or of anything that
+  /// reflows the text.
+  void _onSettingsChanged(SettingsState? before, SettingsState after) {
+    if (before == null || _book == null) return;
+    final from = before.readingStyle.layout;
+    final to = after.readingStyle.layout;
+    final fraction = _fractionIn(from);
+    if (from != to) {
+      _layoutFraction = fraction;
+      if (to == BookLayout.continuous) {
+        setState(() {
+          _continuousStart = _chapterIndex;
+          _continuousFraction = fraction;
+          _continuousEpoch++;
+        });
+      } else {
+        // The continuous layout loads chapters itself; the others need the
+        // current one, and a fresh paged view.
+        _showChapter(_chapterIndex, fraction);
+      }
+      return;
+    }
+    final reflows = before.bookFont != after.bookFont ||
+        before.bookFontSize != after.bookFontSize ||
+        before.readingStyle != after.readingStyle;
+    if (reflows && from == BookLayout.scroll) _restorePosition(fraction);
+  }
+
+  void _onPage(PagePosition position, {required bool turned}) {
+    final book = _book;
+    if (!mounted || book == null) return;
+    // The last page counts as the end of the chapter, so a book read page by
+    // page can be finished.
+    final step = _layout == BookLayout.spread ? 2 : 1;
+    final atEnd = position.page + step >= position.count;
+    final fraction = atEnd ? 1.0 : position.fraction;
+    setState(() {
+      _pagePosition = position;
+      _layoutFraction = position.fraction;
+    });
+    if (turned) _savePosition(fraction);
+  }
+
+  void _onContinuousPosition(int chapter, double fraction,
+      {required bool settled}) {
+    _layoutFraction = fraction;
+    if (chapter != _chapterIndex) {
+      setState(() => _chapterIndex = chapter);
+      _reportChapter();
+    }
+    if (settled) _savePosition(fraction);
+  }
+
+  /// A tap near either side of a page turns it, in the paged layouts.
+  bool _turnByTap(Offset position) {
+    if (!_layout.paged) return false;
+    final width = MediaQuery.sizeOf(context).width;
+    if (position.dx < width * 0.3) {
+      _back();
+      return true;
+    }
+    if (position.dx > width * 0.7) {
+      _forward();
+      return true;
+    }
+    return false;
+  }
+
+  /// One page per wheel gesture: a trackpad sends a stream of small scrolls.
+  void _turnByWheel(PointerSignalEvent event) {
+    if (!_layout.paged || event is! PointerScrollEvent) return;
+    final now = DateTime.now();
+    if (now.difference(_lastWheelTurn) < const Duration(milliseconds: 350)) {
+      return;
+    }
+    final dy = event.scrollDelta.dy;
+    if (dy.abs() < 1) return;
+    _lastWheelTurn = now;
+    dy > 0 ? _forward() : _back();
   }
 
   // ── Position within a chapter ────────────────────────────────────────────
@@ -509,25 +653,172 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   /// Separates the bars from the text beneath them.
   Color get _hairline => _fgColor.withValues(alpha: 0.12);
 
+  /// Room the layouts keep clear for the top and bottom bars.
+  static const _topInset = 72.0;
+  static const _bottomInset = 80.0;
+
+  bool get _canGoBack =>
+      _chapterIndex > 0 || (_layout.paged && (_pagePosition?.page ?? 0) > 0);
+
+  bool _canGoForward(ReaderBook book) {
+    if (_chapterIndex < book.chapterCount - 1) return true;
+    final position = _pagePosition;
+    if (!_layout.paged || position == null) return false;
+    final step = _layout == BookLayout.spread ? 2 : 1;
+    return position.page + step < position.count;
+  }
+
+  String _positionLabel(ReaderBook book, BookLayout layout) {
+    final chapter = 'Chapter ${_chapterIndex + 1} / ${book.chapterCount}';
+    final position = _pagePosition;
+    if (!layout.paged || position == null || position.count == 0) {
+      return chapter;
+    }
+    final first = position.page + 1;
+    final last = layout == BookLayout.spread
+        ? (position.page + 2).clamp(1, position.count)
+        : first;
+    final pages = first == last ? 'Page $first' : 'Pages $first–$last';
+    return '$chapter · $pages of ${position.count}';
+  }
+
+  /// The chapter text as the reading options ask for it.
+  TextStyle _textStyle(SettingsState reading) =>
+      reading.readingStyle.applyTo(reading.bookFont.applyTo(TextStyle(
+        fontSize: reading.bookFontSize,
+        color: _fgColor,
+      )));
+
+  Widget _chapterView(
+          ReaderBook book, EpubChapter chapter, SettingsState reading) =>
+      BookChapterView(
+        book: book,
+        chapter: chapter,
+        textStyle: _textStyle(reading),
+        style: reading.readingStyle,
+        onTapLink: _onTapLink,
+      );
+
+  /// The book, laid out as the reading options ask.
+  Widget _readingBody(ReaderBook book, SettingsState reading) {
+    final style = reading.readingStyle;
+    final columnWidth = reading.bookFontSize * style.measure;
+
+    if (style.layout == BookLayout.continuous) {
+      return SelectionArea(
+        onSelectionChanged: _onSelectionChanged,
+        child: ContinuousBookView(
+          key: ValueKey(('continuous', _continuousEpoch)),
+          book: book,
+          startChapter: _continuousStart,
+          startFraction: _continuousFraction,
+          topInset: _topInset,
+          bottomInset: _bottomInset,
+          onPosition: _onContinuousPosition,
+          buildChapter: (chapter) => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: columnWidth),
+                child: _chapterView(book, chapter, reading),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final chapter = _chapter;
+    if (chapter == null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: _topInset),
+        child: _ChapterPlaceholder(
+          failed: _chapterFailed,
+          fgColor: _fgColor,
+          onRetry: () => _showChapter(_chapterIndex, _wantedFraction),
+        ),
+      );
+    }
+
+    if (style.layout.paged) {
+      return SelectionArea(
+        onSelectionChanged: _onSelectionChanged,
+        child: PagedChapterView(
+          key: _pagedKey,
+          content: _chapterView(book, chapter, reading),
+          startFraction: _wantedFraction,
+          spread: style.layout == BookLayout.spread,
+          animate: style.animations,
+          columnWidth: columnWidth,
+          topInset: _topInset,
+          bottomInset: _bottomInset,
+          onPage: _onPage,
+          onPastEnd: () {
+            if (_chapterIndex < book.chapterCount - 1) {
+              _goToChapter(_chapterIndex + 1);
+            }
+          },
+          onBeforeStart: () {
+            if (_chapterIndex > 0) {
+              _goToChapter(_chapterIndex - 1, fraction: 1);
+            }
+          },
+        ),
+      );
+    }
+
+    return NotificationListener<Notification>(
+      onNotification: _onScrollNotification,
+      child: SingleChildScrollView(
+        controller: _scroll,
+        padding: const EdgeInsets.fromLTRB(24, 80, 24, 100),
+        // A column of comfortable line length, centred. The scroll view stays
+        // full width so the whole window scrolls and the scrollbar sits at its
+        // edge.
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: columnWidth),
+            child: SelectionArea(
+              onSelectionChanged: _onSelectionChanged,
+              child: _chapterView(book, chapter, reading),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final book = _book;
     // Watched, so a change here or in Settings applies straight away.
     final reading = ref.watch(settingsProvider);
+    ref.listen(settingsProvider, _onSettingsChanged);
+    final style = reading.readingStyle;
 
     return KeyboardListener(
       focusNode: _focusNode,
       autofocus: true,
       onKeyEvent: (event) {
+        if (event is KeyDownEvent || event is KeyRepeatEvent) {
+          final key = event.logicalKey;
+          final paged = style.layout.paged;
+          if (key == LogicalKeyboardKey.arrowRight ||
+              key == LogicalKeyboardKey.keyD ||
+              (paged &&
+                  (key == LogicalKeyboardKey.pageDown ||
+                      key == LogicalKeyboardKey.space))) {
+            _forward();
+          }
+          if (key == LogicalKeyboardKey.arrowLeft ||
+              key == LogicalKeyboardKey.keyA ||
+              (paged && key == LogicalKeyboardKey.pageUp)) {
+            _back();
+          }
+        }
         if (event is KeyDownEvent) {
-          if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
-              event.logicalKey == LogicalKeyboardKey.keyD) {
-            _nextChapter();
-          }
-          if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
-              event.logicalKey == LogicalKeyboardKey.keyA) {
-            _prevChapter();
-          }
           if (event.logicalKey == LogicalKeyboardKey.escape) {
             // The pop-up goes first, so closing it can't also close the book.
             if (_definition != null) {
@@ -539,7 +830,18 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
         }
       },
       child: Scaffold(
+        key: _scaffoldKey,
         backgroundColor: _bgColor,
+        endDrawer: Drawer(
+          width: 380,
+          child: ReadingOptionsPanel(
+            onThemePicked: () => setState(() => _themeOverride = null),
+          ),
+        ),
+        // Keeps the keyboard on the page once the options close.
+        onEndDrawerChanged: (open) {
+          if (!open) _focusNode.requestFocus();
+        },
         body: book == null
             ? (_notDownloaded
                 ? _OfflineUnavailable(fgColor: _fgColor)
@@ -549,10 +851,11 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
             : Stack(
                 children: [
                   PageTapDetector(
-                    onTap: () {
+                    onTap: (position) {
                       // A tap that closes the pop-up, clears a selection or follows
                       // a link shouldn't also toggle the HUD.
                       if (_ignoreNextTap) return;
+                      if (_turnByTap(position)) return;
                       setState(() => _showControls = !_showControls);
                     },
                     // Any direct input means the reader has taken over from a
@@ -577,52 +880,34 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                         }
                       },
                       onPointerCancel: (_) => _pointerDown = false,
-                      onPointerSignal: (_) {
+                      onPointerSignal: (event) {
                         _cancelRestore();
                         _dismissDefinition();
+                        _turnByWheel(event);
                       },
-                      child: NotificationListener<Notification>(
-                        onNotification: _onScrollNotification,
-                        child: SingleChildScrollView(
-                          controller: _scroll,
-                          padding: const EdgeInsets.fromLTRB(24, 80, 24, 100),
-                          // A column of comfortable line length, centred. The
-                          // scroll view stays full width so the whole window
-                          // scrolls and the scrollbar sits at its edge.
-                          child: Align(
-                            alignment: Alignment.topCenter,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth:
-                                    reading.bookFontSize * kBookMeasureEms,
-                              ),
-                              child: _chapter == null
-                                  ? _ChapterPlaceholder(
-                                      failed: _chapterFailed,
-                                      fgColor: _fgColor,
-                                      onRetry: () => _showChapter(
-                                          _chapterIndex, _wantedFraction),
-                                    )
-                                  : SelectionArea(
-                                      onSelectionChanged: _onSelectionChanged,
-                                      child: BookChapterView(
-                                        book: book,
-                                        chapter: _chapter!,
-                                        textStyle:
-                                            reading.bookFont.applyTo(TextStyle(
-                                          fontSize: reading.bookFontSize,
-                                          color: _fgColor,
-                                          height: 1.6,
-                                        )),
-                                        onTapLink: _onTapLink,
-                                      ),
-                                    ),
+                      onPointerHover: style.ruler
+                          ? (event) => _rulerY.value = event.localPosition.dy
+                          : null,
+                      child: _readingBody(book, reading),
+                    ),
+                  ),
+                  if (style.ruler)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: ValueListenableBuilder<double?>(
+                          valueListenable: _rulerY,
+                          builder: (context, y, _) => CustomPaint(
+                            painter: ReadingRulerPainter(
+                              y: y,
+                              band:
+                                  reading.bookFontSize * style.lineHeight * 1.5,
+                              shade: _bgColor,
+                              edge: _fgColor,
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
                   if (_definition != null)
                     Positioned.fill(
                       child: LayoutBuilder(
@@ -669,25 +954,25 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                               ),
                               IconButton(
                                 icon:
-                                    Icon(Icons.font_download, color: _fgColor),
-                                tooltip: 'Font: ${reading.bookFont.label}',
-                                onPressed: () => _reflow(() => ref
-                                    .read(settingsProvider.notifier)
-                                    .setBookFont(reading.bookFont.next)),
-                              ),
-                              IconButton(
-                                icon:
                                     Icon(Icons.text_decrease, color: _fgColor),
-                                onPressed: () => _reflow(() => ref
+                                tooltip: 'Smaller text',
+                                onPressed: () => ref
                                     .read(settingsProvider.notifier)
-                                    .setBookFontSize(reading.bookFontSize - 1)),
+                                    .setBookFontSize(reading.bookFontSize - 1),
                               ),
                               IconButton(
                                 icon:
                                     Icon(Icons.text_increase, color: _fgColor),
-                                onPressed: () => _reflow(() => ref
+                                tooltip: 'Larger text',
+                                onPressed: () => ref
                                     .read(settingsProvider.notifier)
-                                    .setBookFontSize(reading.bookFontSize + 1)),
+                                    .setBookFontSize(reading.bookFontSize + 1),
+                              ),
+                              IconButton(
+                                icon: Icon(Icons.text_format, color: _fgColor),
+                                tooltip: 'Reading options',
+                                onPressed: () =>
+                                    _scaffoldKey.currentState?.openEndDrawer(),
                               ),
                             ],
                           ),
@@ -713,13 +998,14 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                             children: [
                               IconButton(
                                 icon: Icon(Icons.chevron_left, color: _fgColor),
-                                onPressed:
-                                    _chapterIndex > 0 ? _prevChapter : null,
+                                tooltip: style.layout.paged
+                                    ? 'Previous page'
+                                    : 'Previous chapter',
+                                onPressed: _canGoBack ? _back : null,
                               ),
                               Expanded(
                                 child: Text(
-                                  'Chapter ${_chapterIndex + 1}'
-                                  ' / ${book.chapterCount}',
+                                  _positionLabel(book, style.layout),
                                   style: TextStyle(color: _fgColor),
                                   textAlign: TextAlign.center,
                                 ),
@@ -727,9 +1013,11 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                               IconButton(
                                 icon:
                                     Icon(Icons.chevron_right, color: _fgColor),
-                                onPressed: _chapterIndex < book.chapterCount - 1
-                                    ? _nextChapter
-                                    : null,
+                                tooltip: style.layout.paged
+                                    ? 'Next page'
+                                    : 'Next chapter',
+                                onPressed:
+                                    _canGoForward(book) ? _forward : null,
                               ),
                             ],
                           ),
@@ -786,6 +1074,7 @@ class BookChapterView extends StatelessWidget {
   final ReaderBook book;
   final EpubChapter chapter;
   final TextStyle textStyle;
+  final ReadingStyle style;
   final void Function(String url) onTapLink;
 
   const BookChapterView({
@@ -793,6 +1082,7 @@ class BookChapterView extends StatelessWidget {
     required this.book,
     required this.chapter,
     required this.textStyle,
+    this.style = const ReadingStyle(),
     required this.onTapLink,
   });
 
@@ -814,9 +1104,10 @@ class BookChapterView extends StatelessWidget {
         textStyle: textStyle,
         customStylesBuilder: (element) {
           final tag = element.localName ?? '';
-          final styles = chapter.styles.stylesFor(tag, element.classes);
+          final book = chapter.styles.stylesFor(tag, element.classes);
+          final styles = {...book, ...style.overridesFor(tag, book)};
           if (tag == 'a' && !styles.containsKey('text-decoration')) {
-            return {...styles, 'text-decoration': 'none'};
+            styles['text-decoration'] = 'none';
           }
           return styles.isEmpty ? null : styles;
         },

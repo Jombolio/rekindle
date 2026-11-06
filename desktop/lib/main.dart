@@ -6,11 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
 import 'core/db/local_db_provider.dart';
+import 'core/epub/book_font.dart';
 import 'core/storage/prefs.dart';
 import 'core/update/app_updater.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  registerFontLicences();
   await Prefs.init();
   await initLocalDb();
 

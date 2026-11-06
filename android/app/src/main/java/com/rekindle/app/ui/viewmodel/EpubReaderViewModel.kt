@@ -11,11 +11,13 @@ import com.rekindle.app.core.dictionary.WordNetDictionary
 import com.rekindle.app.core.epub.EpubParser
 import com.rekindle.app.core.epub.ReaderBook
 import com.rekindle.app.core.prefs.BookFont
+import com.rekindle.app.core.prefs.BookLayout
 import com.rekindle.app.core.prefs.BookTheme
 import com.rekindle.app.core.prefs.DEFAULT_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.MAX_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.MIN_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.PrefsStore
+import com.rekindle.app.core.prefs.ReadingStyle
 import com.rekindle.app.data.repository.DownloadRepository
 import com.rekindle.app.data.repository.MediaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,6 +30,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -49,13 +52,24 @@ data class EpubReaderState(
     /** The theme from Settings, until the palette button picks one for this visit. */
     val defaultTheme: BookTheme = BookTheme.MATCH_APP,
     val themeOverride: EpubTheme? = null,
+    /** Layout and readability options. */
+    val style: ReadingStyle = ReadingStyle(),
+    /**
+     * Where the continuous layout's document starts. It changes only when the reader
+     * jumps to a chapter; scrolling into the next one moves [chapterIndex] alone.
+     */
+    val flowStart: Int = 0,
+    /** In the paged layouts: the page shown (the left one of a spread), and how many. */
+    val page: Int = 0,
+    val pageCount: Int = 0,
+    val showOptions: Boolean = false,
     val showControls: Boolean = true,
     /** The dictionary pop-up, when one is open. */
     val definition: BookDefinition? = null,
     val error: String? = null,
 )
 
-enum class EpubTheme { LIGHT, DARK, SEPIA }
+enum class EpubTheme { LIGHT, DARK, SEPIA, CONTRAST_DARK, CONTRAST_LIGHT }
 
 /** The theme to read in, given whether the app itself is dark. */
 fun EpubReaderState.theme(appDark: Boolean): EpubTheme = themeOverride ?: when (defaultTheme) {
@@ -63,6 +77,8 @@ fun EpubReaderState.theme(appDark: Boolean): EpubTheme = themeOverride ?: when (
     BookTheme.LIGHT -> EpubTheme.LIGHT
     BookTheme.DARK -> EpubTheme.DARK
     BookTheme.SEPIA -> EpubTheme.SEPIA
+    BookTheme.CONTRAST_DARK -> EpubTheme.CONTRAST_DARK
+    BookTheme.CONTRAST_LIGHT -> EpubTheme.CONTRAST_LIGHT
 }
 
 data class BookDefinition(val word: String, val entries: List<DictionaryEntry>)
@@ -106,11 +122,39 @@ class EpubReaderViewModel @Inject constructor(
             val font = prefs.bookFont.first()
             val size = prefs.bookFontSize.first()
             val theme = prefs.bookTheme.first()
-            _state.update { it.copy(font = font, fontSize = size, defaultTheme = theme) }
+            val style = prefs.readingStyle.first()
+            _state.update { it.copy(font = font, fontSize = size, defaultTheme = theme, style = style) }
             loadProgress()
             loadEpub()
+            followSettings()
         }
     }
+
+    /**
+     * Applies changes from the options panel or Settings as they're made. A change
+     * that reflows the text reopens it at the current spot.
+     */
+    private fun followSettings() {
+        viewModelScope.launch {
+            combine(prefs.bookFont, prefs.bookFontSize, prefs.bookTheme, prefs.readingStyle) { font, size, theme, style ->
+                Settings(font, size, theme, style)
+            }.collect { next ->
+                _state.update {
+                    val reflows = it.font != next.font || it.style != next.style || it.defaultTheme != next.theme
+                    it.copy(
+                        font = next.font,
+                        fontSize = next.size,
+                        defaultTheme = next.theme,
+                        style = next.style,
+                        startFraction = if (reflows) fraction else it.startFraction,
+                        flowStart = if (reflows) it.chapterIndex else it.flowStart,
+                    )
+                }
+            }
+        }
+    }
+
+    private data class Settings(val font: BookFont, val size: Float, val theme: BookTheme, val style: ReadingStyle)
 
     private suspend fun loadProgress() {
         val progress = mediaRepo.getProgress(mediaId)
@@ -134,7 +178,9 @@ class EpubReaderViewModel @Inject constructor(
             }
             val chapter = savedChapter.coerceIn(0, book.chapters.size - 1)
             fraction = savedFraction
-            _state.update { it.copy(book = book, chapterIndex = chapter, startFraction = savedFraction) }
+            _state.update {
+                it.copy(book = book, chapterIndex = chapter, flowStart = chapter, startFraction = savedFraction)
+            }
             // Lets the server record the chapter count, which it needs to show a
             // percentage on the cover. Purely informational, so failure is fine.
             runCatching { mediaRepo.getPageCount(mediaId) }
@@ -188,14 +234,64 @@ class EpubReaderViewModel @Inject constructor(
         if (_state.value.chapterIndex > 0) goToChapter(_state.value.chapterIndex - 1)
     }
 
-    fun goToChapter(index: Int) {
+    /** Opens chapter [index] at [at]: 0 is its start, 1 its last page. */
+    fun goToChapter(index: Int) = goToChapter(index, at = 0f)
+
+    fun goToChapter(index: Int, at: Float) {
         val book = _state.value.book ?: return
-        if (index !in book.chapters.indices || index == _state.value.chapterIndex) return
-        fraction = 0f
+        if (index !in book.chapters.indices) return
+        // In the continuous layout the chapter being read can already be [index]
+        // while the document starts elsewhere, so a jump there still moves.
+        val s = _state.value
+        val continuous = s.style.layout == BookLayout.CONTINUOUS
+        if (index == s.chapterIndex && (!continuous || index == s.flowStart)) return
+        fraction = at
         moved = true
-        _state.update { it.copy(chapterIndex = index, startFraction = 0f) }
+        _state.update { it.copy(chapterIndex = index, flowStart = index, startFraction = at, page = 0, pageCount = 0) }
         saveSoon(immediately = true)
     }
+
+    /** Paged layouts: the page shown changed. [turned] is the reader turning it. */
+    fun onPage(page: Int, count: Int, pageFraction: Float, turned: Boolean) {
+        _state.update { if (it.page == page && it.pageCount == count) it else it.copy(page = page, pageCount = count) }
+        if (!turned) return
+        fraction = pageFraction
+        moved = true
+        saveSoon(immediately = false)
+    }
+
+    /** Continuous layout: the chapter under the reading line, and how far into it. */
+    fun onFlowPosition(chapter: Int, chapterFraction: Float) {
+        if (chapter != _state.value.chapterIndex) _state.update { it.copy(chapterIndex = chapter) }
+        onPositionChanged(chapterFraction)
+    }
+
+    /** Turned past a chapter's last page. */
+    fun onPastEnd() = nextChapter()
+
+    /** Turned back from a chapter's first page: the previous chapter's last. */
+    fun onBeforeStart() {
+        val index = _state.value.chapterIndex
+        if (index > 0) goToChapter(index - 1, at = 1f)
+    }
+
+    fun setStyle(style: ReadingStyle) {
+        viewModelScope.launch { prefs.setReadingStyle(style) }
+    }
+
+    fun setFont(font: BookFont) {
+        viewModelScope.launch { prefs.setBookFont(font) }
+    }
+
+    fun setFontSizeTo(size: Float) = setFontSize(size.coerceIn(MIN_BOOK_FONT_SIZE, MAX_BOOK_FONT_SIZE))
+
+    /** Changes the default theme, and drops one picked with the palette for this visit. */
+    fun setDefaultTheme(theme: BookTheme) {
+        _state.update { it.copy(themeOverride = null) }
+        viewModelScope.launch { prefs.setBookTheme(theme) }
+    }
+
+    fun showOptions(show: Boolean) = _state.update { it.copy(showOptions = show) }
 
     /** Called as the reader scrolls. Saves once scrolling has paused. */
     fun onPositionChanged(newFraction: Float) {
@@ -235,15 +331,14 @@ class EpubReaderViewModel @Inject constructor(
         viewModelScope.launch { prefs.setBookFontSize(size) }
     }
 
-    fun cycleFont() {
-        val next = _state.value.font.next
-        _state.update { it.copy(font = next) }
-        viewModelScope.launch { prefs.setBookFont(next) }
-    }
-
     /** Moves on from [current], the theme on screen, for this visit only. */
     fun cycleTheme(current: EpubTheme) = _state.update {
-        it.copy(themeOverride = EpubTheme.entries[(current.ordinal + 1) % EpubTheme.entries.size])
+        it.copy(
+            themeOverride = EpubTheme.entries[(current.ordinal + 1) % EpubTheme.entries.size],
+            // The page reloads in the new colours, at the current spot.
+            startFraction = fraction,
+            flowStart = it.chapterIndex,
+        )
     }
 
     fun toggleControls() = _state.update { it.copy(showControls = !it.showControls) }

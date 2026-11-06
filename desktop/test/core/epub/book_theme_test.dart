@@ -22,6 +22,8 @@ void main() {
   test('the palette button cycles through the real themes', () {
     expect(BookTheme.light.next, BookTheme.dark);
     expect(BookTheme.dark.next, BookTheme.sepia);
-    expect(BookTheme.sepia.next, BookTheme.light);
+    expect(BookTheme.sepia.next, BookTheme.contrastDark);
+    expect(BookTheme.contrastDark.next, BookTheme.contrastLight);
+    expect(BookTheme.contrastLight.next, BookTheme.light);
   });
 }

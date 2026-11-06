@@ -1,6 +1,6 @@
 name: rekindle
 description: Self-hosted comic, manga, and book reader.
-version: 1.5.1-beta.4
+version: 1.5.1-beta.5
 publish_to: none
 
 environment:
@@ -66,3 +66,32 @@ flutter:
   assets:
     - assets/dictionary/wordnet.db.gz
     - assets/dictionary/LICENSE-WordNet.txt
+    # Licences of the bundled reading fonts, which must ship with them.
+    - assets/fonts/OFL-OpenDyslexic.txt
+    - assets/fonts/OFL-AtkinsonHyperlegible.txt
+    - assets/fonts/OFL-Lexend.txt
+  # Reading fonts for books, all under the SIL Open Font License 1.1.
+  fonts:
+    - family: OpenDyslexic
+      fonts:
+        - asset: assets/fonts/OpenDyslexic-Regular.otf
+        - asset: assets/fonts/OpenDyslexic-Bold.otf
+          weight: 700
+        - asset: assets/fonts/OpenDyslexic-Italic.otf
+          style: italic
+        - asset: assets/fonts/OpenDyslexic-BoldItalic.otf
+          weight: 700
+          style: italic
+    - family: AtkinsonHyperlegible
+      fonts:
+        - asset: assets/fonts/AtkinsonHyperlegible-Regular.ttf
+        - asset: assets/fonts/AtkinsonHyperlegible-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/AtkinsonHyperlegible-Italic.ttf
+          style: italic
+        - asset: assets/fonts/AtkinsonHyperlegible-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: Lexend
+      fonts:
+        - asset: assets/fonts/Lexend-Variable.ttf
