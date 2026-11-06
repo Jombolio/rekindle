@@ -1,5 +1,7 @@
 package com.rekindle.app.ui.screens
 
+import androidx.compose.material3.DropdownMenuItem
+import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -74,8 +76,12 @@ fun MediaGridScreen(
     val searchLoading by vm.searchLoading.collectAsState()
     val canDownload by vm.canDownload.collectAsState()
     val summaries by vm.summaries.collectAsState()
+    val showExtensions by vm.showFileExtensions.collectAsState()
     var seriesToDownload by remember { mutableStateOf<Media?>(null) }
     var seriesToCancel by remember { mutableStateOf<Media?>(null) }
+    // The item whose long-press menu is open.
+    var menuFor by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
     val gridCellSize = when (currentWindowWidthClass()) {
         WindowWidthClass.Expanded -> 180.dp
         WindowWidthClass.Medium -> 160.dp
@@ -198,6 +204,7 @@ fun MediaGridScreen(
                             items(state.items, key = { it.id }) { media ->
                                 val dlState = downloadStates[media.id] ?: vm.downloadStateFor(media.id)
                                 val folderDlState = folderDownloadStates[media.id]
+                              Box {
                                 MediaCard(
                                     media = media,
                                     coverUrl = vm.coverUrl(media.id),
@@ -206,26 +213,49 @@ fun MediaGridScreen(
                                     folderDownloadState = folderDlState
                                         ?: com.rekindle.app.core.download.FolderDownloadState(),
                                     progressSummary = summaries[media.id],
+                                    showExtension = showExtensions,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .aspectRatio(2f / 3f)
                                         .padding(4.dp)
                                         .combinedClickable(
                                             onClick = { onItemClick(media) },
-                                            onLongClick = {
-                                                if (media.isFolder && canDownload) {
-                                                    val st = folderDownloadStates[media.id]?.status
-                                                    if (st == FolderDownloadStatus.FETCHING ||
-                                                        st == FolderDownloadStatus.DOWNLOADING
-                                                    ) {
-                                                        seriesToCancel = media
-                                                    } else {
-                                                        seriesToDownload = media
-                                                    }
-                                                }
-                                            },
+                                            onLongClick = { menuFor = media.id },
                                         ),
                                 )
+                                // Long-press: read marks for everyone, and for a series
+                                // the download choice that long-press used to open.
+                                ReadMarkMenu(
+                                    expanded = menuFor == media.id,
+                                    onDismiss = { menuFor = null },
+                                    markedRead = summaries[media.id]?.markedRead == true,
+                                    isSeries = media.isFolder,
+                                    onSetReadMark = { marked ->
+                                        vm.setReadMark(media, marked) { message ->
+                                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    ignored = summaries[media.id]?.ignored == true,
+                                    onSetIgnored = { ignored ->
+                                        vm.setTrackingIgnored(media, ignored) { message ->
+                                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                ) {
+                                    if (media.isFolder && canDownload) {
+                                        val st = folderDownloadStates[media.id]?.status
+                                        val running = st == FolderDownloadStatus.FETCHING ||
+                                            st == FolderDownloadStatus.DOWNLOADING
+                                        DropdownMenuItem(
+                                            text = { Text(if (running) "Cancel download" else "Download series") },
+                                            onClick = {
+                                                menuFor = null
+                                                if (running) seriesToCancel = media else seriesToDownload = media
+                                            },
+                                        )
+                                    }
+                                }
+                              }
                             }
 
                             // Full-width bottom spinner while fetching the next page

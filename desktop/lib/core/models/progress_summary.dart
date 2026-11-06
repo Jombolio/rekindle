@@ -15,12 +15,22 @@ class ProgressSummary {
   /// Chapters only: added since the user last read the series, not opened yet.
   final bool isNew;
 
+  /// The user marked it as read (a series: every chapter in it). It then counts
+  /// as read while they reread, and their reading progress is kept.
+  final bool markedRead;
+
+  /// The user left it out of the series' progress (a folder: everything in
+  /// it), like an annual they skip. Its own progress still shows.
+  final bool ignored;
+
   const ProgressSummary({
     required this.mediaId,
     required this.progress,
     required this.isCompleted,
     this.newCount = 0,
     this.isNew = false,
+    this.markedRead = false,
+    this.ignored = false,
   });
 
   factory ProgressSummary.fromJson(Map<String, dynamic> j) => ProgressSummary(
@@ -29,6 +39,8 @@ class ProgressSummary {
         isCompleted: (j['isCompleted'] ?? false) as bool,
         newCount: (j['newCount'] ?? 0) as int,
         isNew: (j['isNew'] ?? false) as bool,
+        markedRead: (j['markedRead'] ?? false) as bool,
+        ignored: (j['ignored'] ?? false) as bool,
       );
 
   /// Builds a summary from this device's local progress, for when the server

@@ -91,9 +91,21 @@ Cover generation runs as a background job after the scan. Give it a minute, then
 
 Go to **Admin Panel → Libraries** and tap **Scan** next to the library. Only new and changed files are processed, it is safe to scan at any time.
 
+To have the server do this on its own, open **Admin Panel → Scans** and choose how often to scan each library: every hour, every 6 or 12 hours, daily or weekly. Scheduled scans run one at a time, and a library already being scanned is left until the next check. The tab shows when each library was last scanned and when it will be next. Only admins (level 4) can see or change schedules.
+
 ---
 
 ## Reading
+
+### Can I mark a chapter as read without reading it?
+
+Yes. Right-click a chapter or series (desktop), or press and hold it (Android), and choose **Mark as read**. On a series, the mark applies to every chapter in it.
+
+A read mark is kept apart from your reading progress. The chapter counts as read however far into it you are, and stays read while you reread the series or catch up. Your place in it isn't changed, so opening it still resumes where you were. It stays until you choose **Remove read mark** from the same menu. Marks are your own: other users don't see them.
+
+### A series says I'm behind because of an annual I skipped
+
+Some series bundle annuals, specials or volumes in with the issues. If you don't mean to read one, right-click it (desktop) or press and hold it (Android), and choose **Ignore archive tracking**. It's then left out of the series' progress: it no longer counts as unread or new, so the series shows as finished or up to date without it. Its row says **Not tracked**, and its own progress is kept if you do open it. On a folder, such as an "Annuals" folder, it applies to everything inside. Choose **Track archive again** to count it once more. Like read marks, this only affects you.
 
 ### My reading progress isn't syncing
 

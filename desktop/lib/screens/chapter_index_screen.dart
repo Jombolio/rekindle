@@ -5,11 +5,13 @@ import 'package:go_router/go_router.dart';
 
 import '../core/download/download_state.dart';
 import '../core/models/media.dart';
+import '../providers/settings_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chapter_provider.dart';
 import '../providers/download_provider.dart';
 import '../providers/progress_summary_provider.dart';
 import 'widgets/cover_image.dart';
+import 'widgets/read_mark_menu.dart';
 import 'widgets/download_button.dart';
 import 'widgets/error_view.dart';
 import 'widgets/about_section.dart';
@@ -39,8 +41,7 @@ class ChapterIndexScreen extends ConsumerWidget {
     final client = ref.watch(apiClientProvider);
     // Resolved once here — avoids one authProvider watch per tile.
     final authState = ref.watch(authProvider).valueOrNull;
-    final canDownload =
-        authState is AuthAuthenticated && authState.canDownload;
+    final canDownload = authState is AuthAuthenticated && authState.canDownload;
 
     return Scaffold(
       appBar: AppBar(
@@ -55,9 +56,8 @@ class ChapterIndexScreen extends ConsumerWidget {
           ),
         ],
       ),
-      bottomNavigationBar: canDownload
-          ? _DownloadProgressBar(folderId: folderId)
-          : null,
+      bottomNavigationBar:
+          canDownload ? _DownloadProgressBar(folderId: folderId) : null,
       body: chaptersAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => ErrorView(
@@ -218,68 +218,72 @@ class _SubfolderTile extends ConsumerWidget {
       if (newCount > 0) '$newCount new',
     ];
 
-    return SizedBox(
-      height: _kTileHeight,
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: Stack(
-          children: [
-            SizedBox(
-              width: 48,
-              height: 68,
-              child: CoverImage(
-                url: coverUrl,
-                headers: authHeaders,
-                cacheKey: folder.coverCachePath ?? folder.id,
-              ),
-            ),
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .primary
-                      .withValues(alpha: 0.85),
-                  borderRadius: BorderRadius.circular(3),
+    return ReadMarkMenuArea(
+      media: folder,
+      summary: summary,
+      child: SizedBox(
+        height: _kTileHeight,
+        child: ListTile(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          leading: Stack(
+            children: [
+              SizedBox(
+                width: 48,
+                height: 68,
+                child: CoverImage(
+                  url: coverUrl,
+                  headers: authHeaders,
+                  cacheKey: folder.coverCachePath ?? folder.id,
                 ),
-                child: Icon(Icons.folder,
-                    size: 10,
-                    color: Theme.of(context).colorScheme.onPrimary),
               ),
-            ),
-            ReadProgressRing(summary: summary, size: 18, inset: 2),
-          ],
-        ),
-        title: MarqueeText(
-          text: folder.displayTitle,
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-        subtitle: subtitleParts.isNotEmpty
-            ? Text(
-                subtitleParts.join(' · '),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: newCount > 0
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurfaceVariant,
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Icon(Icons.folder,
+                      size: 10, color: Theme.of(context).colorScheme.onPrimary),
                 ),
-              )
-            : null,
-        trailing: canDownload
-            ? SizedBox(
-                width: 40,
-                height: 40,
-                child: FolderDownloadButton(folderId: folder.id),
-              )
-            : const Icon(Icons.chevron_right),
-        onTap: () => context.push(
-          '/series/${folder.id}',
-          extra: <String, String?>{
-            'title': folder.displayTitle,
-            'libraryType': libraryType
-          },
+              ),
+              ReadProgressRing(summary: summary, size: 18, inset: 2),
+            ],
+          ),
+          title: MarqueeText(
+            text: folder.displayTitle,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          subtitle: subtitleParts.isNotEmpty
+              ? Text(
+                  subtitleParts.join(' · '),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: newCount > 0
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                )
+              : null,
+          trailing: canDownload
+              ? SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: FolderDownloadButton(folderId: folder.id),
+                )
+              : const Icon(Icons.chevron_right),
+          onTap: () => context.push(
+            '/series/${folder.id}',
+            extra: <String, String?>{
+              'title': folder.displayTitle,
+              'libraryType': libraryType
+            },
+          ),
         ),
       ),
     );
@@ -328,77 +332,82 @@ class _ChapterTile extends ConsumerWidget {
     final inProgress = !completed && (summary?.isStarted ?? false);
     final isNew = summary?.isNew ?? false;
     final subtitleParts = [
+      if (summary?.ignored ?? false) 'Not tracked',
       if (isNew) 'New',
-      if (completed)
-        'Read'
-      else if (inProgress)
-        '${summary!.percent}% read',
+      if (completed) 'Read' else if (inProgress) '${summary!.percent}% read',
       if (isOffline) 'Downloaded',
     ];
 
-    return SizedBox(
-      height: _kTileHeight,
-      child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: Stack(
-          children: [
-            SizedBox(
-              width: 48,
-              height: 68,
-              child: CoverImage(
-                url: coverUrl,
-                headers: authHeaders,
-                cacheKey: chapter.coverCachePath ?? chapter.id,
+    return ReadMarkMenuArea(
+      media: chapter,
+      summary: summary,
+      child: SizedBox(
+        height: _kTileHeight,
+        child: ListTile(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          leading: Stack(
+            children: [
+              SizedBox(
+                width: 48,
+                height: 68,
+                child: CoverImage(
+                  url: coverUrl,
+                  headers: authHeaders,
+                  cacheKey: chapter.coverCachePath ?? chapter.id,
+                ),
               ),
-            ),
-            if (isOffline)
-              Positioned(
-                bottom: 0,
-                right: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.9),
-                    borderRadius: BorderRadius.circular(3),
+              if (isOffline)
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                    child: const Icon(Icons.offline_bolt,
+                        size: 10, color: Colors.white),
                   ),
-                  child: const Icon(Icons.offline_bolt,
-                      size: 10, color: Colors.white),
                 ),
-              ),
-            ReadProgressRing(summary: summary, size: 18, inset: 2),
-          ],
-        ),
-        title: MarqueeText(
-          text: chapter.title,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: completed
-                ? theme.colorScheme.onSurface.withValues(alpha: 0.5)
-                : null,
+              ReadProgressRing(summary: summary, size: 18, inset: 2),
+            ],
           ),
+          title: MarqueeText(
+            text: chapter.label(
+                showExtension: ref.watch(
+                    settingsProvider.select((s) => s.showFileExtensions)),
+                name: chapter.title),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: completed
+                  ? theme.colorScheme.onSurface.withValues(alpha: 0.5)
+                  : null,
+            ),
+          ),
+          subtitle: subtitleParts.isNotEmpty
+              ? Text(
+                  subtitleParts.join(' · '),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: isNew
+                        ? theme.colorScheme.primary
+                        : completed
+                            ? Colors.green.shade600
+                            : inProgress
+                                ? Colors.orange.shade700
+                                : theme.colorScheme.onSurfaceVariant,
+                  ),
+                )
+              : null,
+          trailing: canDownload
+              ? SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: DownloadButton(media: chapter),
+                )
+              : null,
+          onTap: () => _open(context),
         ),
-        subtitle: subtitleParts.isNotEmpty
-            ? Text(
-                subtitleParts.join(' · '),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: isNew
-                      ? theme.colorScheme.primary
-                      : completed
-                          ? Colors.green.shade600
-                          : inProgress
-                              ? Colors.orange.shade700
-                              : theme.colorScheme.onSurfaceVariant,
-                ),
-              )
-            : null,
-        trailing: canDownload
-            ? SizedBox(
-                width: 40,
-                height: 40,
-                child: DownloadButton(media: chapter),
-              )
-            : null,
-        onTap: () => _open(context),
       ),
     );
   }
@@ -424,7 +433,9 @@ class _DownloadProgressBar extends ConsumerWidget {
     return AnimatedSize(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeInOut,
-      child: visible ? _buildBar(context, ref, dl, scheme) : const SizedBox.shrink(),
+      child: visible
+          ? _buildBar(context, ref, dl, scheme)
+          : const SizedBox.shrink(),
     );
   }
 
@@ -476,9 +487,8 @@ class _DownloadProgressBar extends ConsumerWidget {
                   child: Text(
                     label,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: isError
-                              ? scheme.error
-                              : scheme.onSurfaceVariant,
+                          color:
+                              isError ? scheme.error : scheme.onSurfaceVariant,
                         ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

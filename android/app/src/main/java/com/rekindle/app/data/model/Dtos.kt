@@ -51,6 +51,8 @@ data class ProgressSummaryDto(
     val isCompleted: Boolean = false,
     val newCount: Int = 0,
     val isNew: Boolean = false,
+    val markedRead: Boolean = false,
+    val ignored: Boolean = false,
 )
 
 data class PagedResponseDto<T>(
@@ -102,6 +104,8 @@ fun ProgressSummaryDto.toDomain() = ProgressSummary(
     isCompleted = isCompleted,
     newCount = newCount,
     isNew = isNew,
+    markedRead = markedRead,
+    ignored = ignored,
 )
 fun <T, R> PagedResponseDto<T>.toDomain(mapper: (T) -> R) = PagedResponse(
     items = items.map(mapper),
@@ -119,6 +123,16 @@ data class AdminUserDto(
     val permissionLevel: Int,
     val createdAt: String,
 )
+
+data class ScanScheduleDto(
+    val libraryId: String,
+    val libraryName: String = "",
+    val intervalHours: Int = 0,
+    val lastRunAt: String? = null,
+    val nextRunAt: String? = null,
+)
+
+data class SetScanScheduleRequest(val intervalHours: Int)
 
 data class AdminStatsDto(
     val userCount: Int,

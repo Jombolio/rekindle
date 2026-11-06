@@ -1,5 +1,8 @@
 package com.rekindle.app.ui.screens
 
+import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
@@ -82,7 +85,7 @@ import com.rekindle.app.ui.components.DownloadButton
 import com.rekindle.app.ui.components.ReadProgressRing
 import com.rekindle.app.ui.viewmodel.ChapterIndexViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChapterIndexScreen(
     folderId: String,
@@ -95,9 +98,13 @@ fun ChapterIndexScreen(
     val downloadStates by vm.downloadStates.collectAsState()
     val folderDlState by vm.folderDownloadState.collectAsState()
     val canDownload by vm.canDownload.collectAsState()
+    val showExtensions by vm.showFileExtensions.collectAsState()
     val isAdmin        by vm.isAdmin.collectAsState()
     val canManageMedia by vm.canManageMedia.collectAsState()
     val showAbout = vm.libraryType == "manga" || vm.libraryType == "comic"
+    val context = LocalContext.current
+    // The chapter whose long-press menu is open.
+    var readMarkMenuFor by remember { mutableStateOf<String?>(null) }
 
     // ── Metadata dialogs ──────────────────────────────────────────────────────
 
@@ -240,6 +247,7 @@ fun ChapterIndexScreen(
                 }
 
                 items(state.chapters, key = { it.id }) { chapter ->
+                  Box {
                     val dlState = downloadStates[chapter.id] ?: vm.downloadStateFor(chapter.id)
                     val progress = state.readProgress[chapter.id]
                     val summary = vm.summaryFor(chapter, state)
@@ -257,6 +265,7 @@ fun ChapterIndexScreen(
                         else -> chapter.pageCount?.let { "$it pages" }
                     }
                     val readLabel = listOfNotNull(
+                        "Not tracked".takeIf { summary?.ignored == true },
                         "New".takeIf { isNew },
                         progressLabel,
                         "$newCount new".takeIf { newCount > 0 },
@@ -290,7 +299,7 @@ fun ChapterIndexScreen(
                         },
                         headlineContent = {
                             Text(
-                                text = chapter.displayTitle,
+                                text = chapter.label(showExtensions),
                                 maxLines = 1,
                                 modifier = Modifier.basicMarquee(),
                             )
@@ -311,8 +320,29 @@ fun ChapterIndexScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 4.dp)
-                            .clickable { onChapterClick(chapter) },
+                            .combinedClickable(
+                                onClick = { onChapterClick(chapter) },
+                                onLongClick = { readMarkMenuFor = chapter.id },
+                            ),
                     )
+                    ReadMarkMenu(
+                        expanded = readMarkMenuFor == chapter.id,
+                        onDismiss = { readMarkMenuFor = null },
+                        markedRead = summary?.markedRead == true,
+                        isSeries = chapter.isFolder,
+                        onSetReadMark = { marked ->
+                            vm.setReadMark(chapter, marked) { message ->
+                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        ignored = summary?.ignored == true,
+                        onSetIgnored = { ignored ->
+                            vm.setTrackingIgnored(chapter, ignored) { message ->
+                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                    )
+                  }
                 }
             }
         }

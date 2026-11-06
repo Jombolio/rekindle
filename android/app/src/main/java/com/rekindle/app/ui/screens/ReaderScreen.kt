@@ -63,9 +63,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
@@ -514,18 +517,25 @@ private fun PagedModeContent(
     val zoom = remember { ZoomState() }
     val isZoomed by remember { derivedStateOf { zoom.scale.floatValue > 1f } }
 
+    // A page turn takes as long as the book reader's, from the same setting, so
+    // the two read the same. A sliding page is quicker: there is no paper to
+    // follow.
+    val turnMs = if (state.comicPageTurns) state.pageTurnMs else state.pageTurnMs * 2 / 7
+
     // Advance one slide forward, or navigate to next chapter at the last slide.
     fun goForward() = scope.launch {
+        if (pagerState.isScrollInProgress) return@launch
         if (pagerState.currentPage < slideCount - 1)
-            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+            pagerState.animateScrollToPage(pagerState.currentPage + 1, animationSpec = tween(turnMs))
         else
             onNextChapter()
     }
 
     // Advance one slide backward, or navigate to prev chapter at the first slide.
     fun goBack() = scope.launch {
+        if (pagerState.isScrollInProgress) return@launch
         if (pagerState.currentPage > 0)
-            pagerState.animateScrollToPage(pagerState.currentPage - 1)
+            pagerState.animateScrollToPage(pagerState.currentPage - 1, animationSpec = tween(turnMs))
         else
             onPrevChapter()
     }
@@ -572,88 +582,177 @@ private fun PagedModeContent(
         }
     }
 
-    HorizontalPager(
-        state = pagerState,
-        reverseLayout = state.isRtl,
-        userScrollEnabled = !isZoomed,
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(state.isRtl) {
-                detectTapGestures(
-                    // Double-tap toggles between the fit view and a fixed zoom, and is
-                    // the reliable way back to the original view once zoomed in.
-                    onDoubleTap = {
-                        if (zoom.scale.floatValue > 1f) {
-                            zoom.reset()
-                        } else {
-                            zoom.scale.floatValue = 2.5f
-                        }
-                    },
-                    onTap = { offset ->
-                        val width = size.width.toFloat()
-                        when {
-                            // While zoomed, a tap only toggles the HUD — never flips
-                            // pages, so panning isn't interrupted by a stray page turn.
-                            zoom.scale.floatValue > 1f -> onTap()
-                            // Left third: prev in LTR, next in RTL
-                            offset.x < width / 3f -> if (state.isRtl) goForward() else goBack()
-                            // Right third: next in LTR, prev in RTL
-                            offset.x > width * 2f / 3f -> if (state.isRtl) goBack() else goForward()
-                            // Centre: toggle HUD
-                            else -> onTap()
-                        }
-                    },
-                )
-            },
-        beyondViewportPageCount = 4,
-    ) { viewIndex ->
-        val slide = slides.getOrNull(viewIndex) ?: return@HorizontalPager
-        // Only the settled slide owns the shared zoom; neighbours (kept alive by
-        // beyondViewportPageCount) render at the fit view so a leftover zoom never
-        // bleeds onto the next page mid-swipe.
-        val isCurrent = viewIndex == pagerState.currentPage
+    // The turning sheet is drawn above the pager, so it lies over the slide
+    // being turned to rather than under it: the pager draws slides in index
+    // order, which would put the next one on top.
+    Box(Modifier.fillMaxSize()) {
+        HorizontalPager(
+            state = pagerState,
+            reverseLayout = state.isRtl,
+            userScrollEnabled = !isZoomed,
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(state.isRtl, state.comicPageTurns, slideCount) {
+                    detectTapGestures(
+                        // Double-tap toggles between the fit view and a fixed zoom, and is
+                        // the reliable way back to the original view once zoomed in.
+                        onDoubleTap = {
+                            if (zoom.scale.floatValue > 1f) {
+                                zoom.reset()
+                            } else {
+                                zoom.scale.floatValue = 2.5f
+                            }
+                        },
+                        onTap = { offset ->
+                            val width = size.width.toFloat()
+                            when {
+                                // While zoomed, a tap only toggles the HUD — never flips
+                                // pages, so panning isn't interrupted by a stray page turn.
+                                zoom.scale.floatValue > 1f -> onTap()
+                                // Left third: prev in LTR, next in RTL
+                                offset.x < width / 3f -> if (state.isRtl) goForward() else goBack()
+                                // Right third: next in LTR, prev in RTL
+                                offset.x > width * 2f / 3f -> if (state.isRtl) goBack() else goForward()
+                                // Centre: toggle HUD
+                                else -> onTap()
+                            }
+                        },
+                    )
+                },
+            beyondViewportPageCount = 4,
+        ) { viewIndex ->
+            val slide = slides.getOrNull(viewIndex) ?: return@HorizontalPager
+            // Only the settled slide owns the shared zoom; neighbours (kept alive by
+            // beyondViewportPageCount) render at the fit view so a leftover zoom never
+            // bleeds onto the next page mid-swipe.
+            val isCurrent = viewIndex == pagerState.currentPage
 
-        if (slide.size == 1) {
-            ZoomablePageImage(
-                model = imageModelFn(slide[0]),
-                modifier = Modifier.fillMaxSize(),
-                zoom = zoom,
-                applyTransform = isCurrent,
-            )
-        } else {
-            val left = if (state.isRtl) slide[1] else slide[0]
-            val right = if (state.isRtl) slide[0] else slide[1]
-            // graphicsLayer is on the Row (spread centre = W/2) so both pages zoom
-            // around the same origin instead of each zooming around their own centre.
-            Row(
-                Modifier.fillMaxSize().graphicsLayer {
-                    val s = if (isCurrent) zoom.scale.floatValue else 1f
-                    scaleX = s; scaleY = s
-                    translationX = if (isCurrent) zoom.offsetX.floatValue else 0f
-                    translationY = if (isCurrent) zoom.offsetY.floatValue else 0f
-                }
+            // A pager slides its pages sideways; a book does not. Cancel that
+            // translation so each slide stays put, and let ComicPageCurl draw the
+            // sheet being turned over the top. A slide a whole page away draws
+            // nothing, so at rest only the slide being read shows, and during a
+            // turn only the slide being turned to — which the curling sheet covers
+            // until the turn uncovers it. Read the pager position in the draw
+            // phase, keeping image loading out of ticks.
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    // Say the draw order outright rather than leaning on the
+                    // pager's: the slide being turned to has to lie over the
+                    // one being turned away from, which the sheet above then
+                    // covers.
+                    .zIndex(viewIndex.toFloat())
+                    .graphicsLayer {
+                        if (state.comicPageTurns && !isZoomed) {
+                            val offset = (pagerState.currentPage - viewIndex +
+                                pagerState.currentPageOffsetFraction).coerceIn(-1f, 1f)
+                            val physical = if (state.isRtl) -offset else offset
+                            translationX = physical * size.width
+                            alpha = if (kotlin.math.abs(offset) >= 1f) 0f else 1f
+                        }
+                    }
+                    .background(ReaderBackdrop)
             ) {
-                ZoomablePageImage(
-                    model = imageModelFn(left),
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    alignment = androidx.compose.ui.Alignment.CenterEnd,
-                    zoom = zoom,
-                    applyTransform = false,
-                )
-                if (state.spineGap > 0f) {
-                    Box(Modifier.fillMaxHeight().padding(horizontal = (state.spineGap / 2).dp))
+                if (slide.size == 1) {
+                    ZoomablePageImage(
+                        model = imageModelFn(slide[0]),
+                        modifier = Modifier.fillMaxSize(),
+                        zoom = zoom,
+                        applyTransform = isCurrent,
+                    )
+                } else {
+                    val left = if (state.isRtl) slide[1] else slide[0]
+                    val right = if (state.isRtl) slide[0] else slide[1]
+                    // graphicsLayer is on the Row (spread centre = W/2) so both pages zoom
+                    // around the same origin instead of each zooming around their own centre.
+                    Row(
+                        Modifier.fillMaxSize().graphicsLayer {
+                            val s = if (isCurrent) zoom.scale.floatValue else 1f
+                            scaleX = s; scaleY = s
+                            translationX = if (isCurrent) zoom.offsetX.floatValue else 0f
+                            translationY = if (isCurrent) zoom.offsetY.floatValue else 0f
+                        }
+                    ) {
+                        ZoomablePageImage(
+                            model = imageModelFn(left),
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            alignment = androidx.compose.ui.Alignment.CenterEnd,
+                            zoom = zoom,
+                            applyTransform = false,
+                        )
+                        if (state.spineGap > 0f) {
+                            Box(Modifier.fillMaxHeight().padding(horizontal = (state.spineGap / 2).dp))
+                        }
+                        ZoomablePageImage(
+                            model = imageModelFn(right),
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            alignment = androidx.compose.ui.Alignment.CenterStart,
+                            zoom = zoom,
+                            applyTransform = false,
+                        )
+                    }
                 }
-                ZoomablePageImage(
-                    model = imageModelFn(right),
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    alignment = androidx.compose.ui.Alignment.CenterStart,
-                    zoom = zoom,
-                    applyTransform = false,
-                )
             }
         }
-    }
 
+        if (state.comicPageTurns && !isZoomed) {
+            ComicPageCurl(
+                page = { pagerState.currentPage + pagerState.currentPageOffsetFraction },
+                reverse = state.isRtl,
+                slideCount = slideCount,
+                slide = { index ->
+                    val slide = slides.getOrNull(index)
+                    if (slide != null) CurlSlide(slide, state.isRtl, state.spineGap, imageModelFn)
+                },
+            )
+        }
+    }
+}
+
+/**
+ * One slide as the sheet that turns: the page alone, with none of the reader's
+ * gestures or zoom on it.
+ *
+ * A single page takes only the size it is drawn at, letterbox excluded, so the
+ * sheet is the page itself. A spread keeps the whole viewport, which is close
+ * to what two pages side by side already fill.
+ */
+@Composable
+private fun CurlSlide(
+    slide: List<Int>,
+    isRtl: Boolean,
+    spineGap: Float,
+    imageModelFn: (Int) -> Any,
+) {
+    if (slide.size == 1) {
+        AsyncImage(
+            model = imageModelFn(slide[0]),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+        )
+        return
+    }
+    val left = if (isRtl) slide[1] else slide[0]
+    val right = if (isRtl) slide[0] else slide[1]
+    Row(Modifier.fillMaxSize()) {
+        AsyncImage(
+            model = imageModelFn(left),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            alignment = androidx.compose.ui.Alignment.CenterEnd,
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+        )
+        if (spineGap > 0f) {
+            Box(Modifier.fillMaxHeight().padding(horizontal = (spineGap / 2).dp))
+        }
+        AsyncImage(
+            model = imageModelFn(right),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            alignment = androidx.compose.ui.Alignment.CenterStart,
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+        )
+    }
 }
 
 // ── Shared zoom state ─────────────────────────────────────────────────────────

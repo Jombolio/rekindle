@@ -102,8 +102,11 @@ builder.Services.AddScoped<DbInitializer>();
 // ------------------------------------------------------------------
 builder.Services.AddScoped<UserRepository>();
 builder.Services.AddScoped<LibraryRepository>();
+builder.Services.AddScoped<ScanScheduleRepository>();
 builder.Services.AddScoped<MediaRepository>();
 builder.Services.AddScoped<ProgressRepository>();
+builder.Services.AddScoped<ReadMarkRepository>();
+builder.Services.AddScoped<TrackingIgnoreRepository>();
 builder.Services.AddScoped<ProgressSummaryService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddSingleton<SetupTokenService>();
@@ -120,6 +123,11 @@ builder.Services.AddScoped<MetadataScraperService>();
 var coverChannel = Channel.CreateUnbounded<CoverJob>(new UnboundedChannelOptions { SingleReader = true });
 builder.Services.AddSingleton(coverChannel);
 builder.Services.AddHostedService<CoverGenerationService>();
+
+// Scheduled library scans. Registered as itself too, so tests can run a check.
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<ScheduledScanService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ScheduledScanService>());
 
 // ------------------------------------------------------------------
 // Authentication

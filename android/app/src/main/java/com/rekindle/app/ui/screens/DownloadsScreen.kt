@@ -1,5 +1,6 @@
 package com.rekindle.app.ui.screens
 
+import com.rekindle.app.domain.model.withExtension
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -72,6 +73,7 @@ fun DownloadsScreen(
 ) {
     val folders by vm.folders.collectAsState()
     val authHeader by vm.authHeader.collectAsState()
+    val showExtensions by vm.showFileExtensions.collectAsState()
     var selectedSeries by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteTarget by remember { mutableStateOf<DownloadItem?>(null) }
     var showPurgeConfirm by remember { mutableStateOf(false) }
@@ -135,6 +137,7 @@ fun DownloadsScreen(
                     DownloadGridItem(
                         item = item,
                         authHeader = authHeader,
+                        showExtension = showExtensions,
                         onClick = { onOpen(item.mediaId, item.format) },
                         onLongClick = { deleteTarget = item },
                     )
@@ -291,6 +294,7 @@ private fun FolderGridItem(
 private fun DownloadGridItem(
     item: DownloadItem,
     authHeader: String,
+    showExtension: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
@@ -324,7 +328,7 @@ private fun DownloadGridItem(
             )
         }
         Text(
-            text = item.title,
+            text = withExtension(item.title, item.format, showExtension),
             style = MaterialTheme.typography.labelSmall,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,

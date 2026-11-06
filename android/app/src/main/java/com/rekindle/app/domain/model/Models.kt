@@ -33,6 +33,21 @@ data class Media(
 ) {
     val displayTitle: String get() = title.ifBlank { sortTitle }
     val isFolder: Boolean get() = mediaType == "folder"
+
+    /**
+     * The file's extension as on disk ("cbz", "epub"), or empty for a folder. From
+     * the file name when it has one, otherwise the format.
+     */
+    val extension: String get() {
+        if (isFolder) return ""
+        val name = relativePath.substringAfterLast('/')
+        val dot = name.lastIndexOf('.')
+        return if (dot > 0 && dot < name.length - 1) name.substring(dot + 1) else format
+    }
+
+    /** [name] (by default [displayTitle]) with the extension added when [showExtension] is on. */
+    fun label(showExtension: Boolean, name: String = displayTitle): String =
+        withExtension(name, extension, showExtension)
     val isImageBased: Boolean get() = format in listOf("cbz", "cbr", "pdf")
 }
 
@@ -59,6 +74,16 @@ data class ProgressSummary(
     val isCompleted: Boolean,
     val newCount: Int = 0,
     val isNew: Boolean = false,
+    /**
+     * Marked as read by the user (a series: every chapter in it). It counts as read
+     * while they reread, and their reading progress is kept.
+     */
+    val markedRead: Boolean = false,
+    /**
+     * Left out of the series' progress by the user (a folder: everything in it),
+     * like an annual they skip. Its own progress still shows.
+     */
+    val ignored: Boolean = false,
 ) {
     /** Whether there is anything to draw: started reading, or finished. */
     val isStarted: Boolean get() = isCompleted || progress > 0f
@@ -155,4 +180,12 @@ data class AdminStats(
         return if (mb < 1024) "%.1f MB".format(mb)
         else "%.2f GB".format(mb / 1024.0)
     }
+}
+
+/** [name] with [extension] added, when [show] is on and there is one. */
+fun withExtension(name: String, extension: String, show: Boolean): String {
+    if (!show || extension.isEmpty()) return name
+    val suffix = ".$extension"
+    // Titles taken straight from a file name may already end with it.
+    return if (name.endsWith(suffix, ignoreCase = true)) name else name + suffix
 }

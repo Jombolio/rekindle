@@ -11,6 +11,13 @@ const int kMinChapterConfirmMs = 250;
 const int kMaxChapterConfirmMs = 5000;
 const int kDefaultChapterConfirmMs = 2000;
 
+/// How long a page takes to turn, in milliseconds. The default is the book
+/// reader's own turn, which the comic reader matches; the bounds keep a value
+/// written by another build inside what still reads as a page turning.
+const int kMinPageTurnMs = 200;
+const int kMaxPageTurnMs = 1400;
+const int kDefaultPageTurnMs = 700;
+
 /// Thin wrapper around SharedPreferences for typed, named access.
 class Prefs {
   Prefs._(this._prefs);
@@ -64,6 +71,7 @@ class Prefs {
 
   // Per-series reading direction (key = series name or mediaId)
   bool isRtl(String key) => _prefs.getBool('rtl_$key') ?? false;
+
   /// Returns null when the user has never explicitly set a direction for [key].
   bool? isRtlExplicit(String key) => _prefs.getBool('rtl_$key');
   Future<void> setRtl(String key, {required bool rtl}) =>
@@ -108,6 +116,20 @@ class Prefs {
 
   // Whether selecting a word in a book shows its definition.
   bool get defineOnSelect => _prefs.getBool('define_on_select') ?? true;
+
+  // Whether archive names show their file extension (".cbz"). Off by default.
+  bool get comicPageTurns => _prefs.getBool('comic_page_turns') ?? true;
+  Future<void> setComicPageTurns(bool enabled) =>
+      _prefs.setBool('comic_page_turns', enabled);
+
+  // How long one page turn takes, in milliseconds (both readers).
+  int get pageTurnMs => _prefs.getInt('page_turn_ms') ?? kDefaultPageTurnMs;
+  Future<void> setPageTurnMs(int ms) => _prefs.setInt('page_turn_ms', ms);
+
+  bool get showFileExtensions =>
+      _prefs.getBool('show_file_extensions') ?? false;
+  Future<void> setShowFileExtensions({required bool show}) =>
+      _prefs.setBool('show_file_extensions', show);
   Future<void> setDefineOnSelect({required bool enabled}) =>
       _prefs.setBool('define_on_select', enabled);
 
@@ -151,7 +173,8 @@ class Prefs {
 
   // A version the user chose to skip: the automatic check won't offer it
   // again (a manual check still does).
-  String? get skippedUpdateVersion => _prefs.getString('skipped_update_version');
+  String? get skippedUpdateVersion =>
+      _prefs.getString('skipped_update_version');
   Future<void> setSkippedUpdateVersion(String version) =>
       _prefs.setString('skipped_update_version', version);
 

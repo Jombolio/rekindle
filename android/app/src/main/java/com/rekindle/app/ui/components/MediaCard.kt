@@ -41,6 +41,8 @@ fun MediaCard(
     folderDownloadState: FolderDownloadState = FolderDownloadState(),
     modifier: Modifier = Modifier,
     progressSummary: ProgressSummary? = null,
+    /** Settings → Show file extensions. */
+    showExtension: Boolean = false,
 ) {
     // Determine which badge (if any) to show:
     //  ALL  = green  → everything is available offline
@@ -120,7 +122,7 @@ fun MediaCard(
         }
 
         Text(
-            text = media.displayTitle,
+            text = media.label(showExtension),
             style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
             textAlign = TextAlign.Center,

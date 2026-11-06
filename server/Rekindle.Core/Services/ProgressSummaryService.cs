@@ -11,7 +11,8 @@ namespace Rekindle.Core.Services;
 /// count. For a folder, the average over every archive beneath it.
 /// </param>
 /// <param name="IsCompleted">
-/// The archive is finished, or every archive beneath the folder is.
+/// The archive is finished or marked as read, or every archive beneath the
+/// folder is.
 /// </param>
 /// <param name="NewCount">
 /// Folders only: archives beneath it added after the user last read anything
@@ -21,12 +22,22 @@ namespace Rekindle.Core.Services;
 /// Archives inside a series only: added after the user last read anything in
 /// that series, and not opened since.
 /// </param>
+/// <param name="MarkedRead">
+/// The user marked the archive as read, or every archive beneath the folder.
+/// The mark makes it count as read, while its reading progress is kept.
+/// </param>
+/// <param name="Ignored">
+/// The user left the archive out of their series progress (a folder: every
+/// archive beneath it), as with an annual they don't mean to read.
+/// </param>
 public record ProgressSummary(
     string MediaId,
     double Progress,
     bool IsCompleted,
     int NewCount,
-    bool IsNew);
+    bool IsNew,
+    bool MarkedRead = false,
+    bool Ignored = false);
 
 /// The parts of a media row the summary needs.
 public record MediaNode(
@@ -39,7 +50,11 @@ public record MediaNode(
     public bool IsFolder => MediaType == "folder";
 }
 
-public class ProgressSummaryService(MediaRepository mediaRepository, ProgressRepository progressRepository)
+public class ProgressSummaryService(
+    MediaRepository mediaRepository,
+    ProgressRepository progressRepository,
+    ReadMarkRepository readMarkRepository,
+    TrackingIgnoreRepository trackingIgnoreRepository)
 {
     /// Upper bound on ids per request; a grid page or chapter list is far below it.
     public const int MaxIds = 500;
@@ -54,8 +69,10 @@ public class ProgressSummaryService(MediaRepository mediaRepository, ProgressRep
         var nodes = await mediaRepository.GetNodesInLibrariesOfAsync(mediaIds);
         var progress = (await progressRepository.GetAllForUserAsync(userId))
             .ToDictionary(p => p.MediaId);
+        var marks = await readMarkRepository.GetAllForUserAsync(userId);
+        var ignored = await trackingIgnoreRepository.GetAllForUserAsync(userId);
 
-        return Summarize(nodes, progress, mediaIds);
+        return Summarize(nodes, progress, mediaIds, marks, ignored);
     }
 
     /// <summary>
@@ -66,9 +83,11 @@ public class ProgressSummaryService(MediaRepository mediaRepository, ProgressRep
     public static IReadOnlyList<ProgressSummary> Summarize(
         IEnumerable<MediaNode> nodes,
         IReadOnlyDictionary<string, ReadingProgress> progress,
-        IEnumerable<string> ids)
+        IEnumerable<string> ids,
+        IReadOnlySet<string>? readMarks = null,
+        IReadOnlySet<string>? ignored = null)
     {
-        var tree = new Tree(nodes, progress);
+        var tree = new Tree(nodes, progress, readMarks ?? new HashSet<string>(), ignored ?? new HashSet<string>());
         var result = new List<ProgressSummary>();
 
         foreach (var id in ids.Distinct())
@@ -82,13 +101,18 @@ public class ProgressSummaryService(MediaRepository mediaRepository, ProgressRep
 
             if (node.IsFolder)
             {
-                var archives = tree.ArchivesUnder(node.Id);
+                // Ignored archives, like an annual the user won't read, don't
+                // hold the series back.
+                var all = tree.ArchivesUnder(node.Id);
+                var archives = all.Where(a => !tree.IsIgnored(a)).ToList();
                 result.Add(new ProgressSummary(
                     node.Id,
                     archives.Count == 0 ? 0 : archives.Average(tree.Fraction),
                     archives.Count > 0 && archives.All(tree.IsCompleted),
                     seriesLastRead is { } since ? archives.Count(a => a.AddedAt > since) : 0,
-                    IsNew: false));
+                    IsNew: false,
+                    MarkedRead: archives.Count > 0 && archives.All(tree.IsMarked),
+                    Ignored: all.Count > 0 && all.All(tree.IsIgnored)));
             }
             else
             {
@@ -99,7 +123,11 @@ public class ProgressSummaryService(MediaRepository mediaRepository, ProgressRep
                     NewCount: 0,
                     IsNew: seriesLastRead is { } since
                            && node.AddedAt > since
-                           && !progress.ContainsKey(node.Id)));
+                           && !progress.ContainsKey(node.Id)
+                           && !tree.IsMarked(node)
+                           && !tree.IsIgnored(node),
+                    MarkedRead: tree.IsMarked(node),
+                    Ignored: tree.IsIgnored(node)));
             }
         }
 
@@ -110,12 +138,20 @@ public class ProgressSummaryService(MediaRepository mediaRepository, ProgressRep
     {
         public readonly Dictionary<string, MediaNode> Nodes;
         private readonly IReadOnlyDictionary<string, ReadingProgress> _progress;
+        private readonly IReadOnlySet<string> _marks;
+        private readonly IReadOnlySet<string> _ignored;
         private readonly Dictionary<string, List<MediaNode>> _children = [];
         private readonly Dictionary<string, List<MediaNode>> _archivesUnder = [];
         private readonly Dictionary<string, DateTime?> _lastReadUnder = [];
 
-        public Tree(IEnumerable<MediaNode> nodes, IReadOnlyDictionary<string, ReadingProgress> progress)
+        public Tree(
+            IEnumerable<MediaNode> nodes,
+            IReadOnlyDictionary<string, ReadingProgress> progress,
+            IReadOnlySet<string> marks,
+            IReadOnlySet<string> ignored)
         {
+            _marks = marks;
+            _ignored = ignored;
             // Database timestamps come back without a kind; they are all
             // written as UTC, so restore that before comparing them.
             Nodes = nodes
@@ -132,11 +168,19 @@ public class ProgressSummaryService(MediaRepository mediaRepository, ProgressRep
             }
         }
 
+        public bool IsMarked(MediaNode archive) => _marks.Contains(archive.Id);
+
+        public bool IsIgnored(MediaNode archive) => _ignored.Contains(archive.Id);
+
         public bool IsCompleted(MediaNode archive) =>
-            _progress.TryGetValue(archive.Id, out var p) && p.IsCompleted;
+            IsMarked(archive) || (_progress.TryGetValue(archive.Id, out var p) && p.IsCompleted);
 
         public double Fraction(MediaNode archive)
         {
+            // Marked as read counts as all of it. The progress itself is left
+            // alone, so opening the chapter still resumes where the user was.
+            if (IsMarked(archive))
+                return 1;
             if (!_progress.TryGetValue(archive.Id, out var p))
                 return 0;
             if (p.IsCompleted)

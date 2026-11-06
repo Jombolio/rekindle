@@ -1,5 +1,7 @@
 package com.rekindle.app.data.api
 
+import com.rekindle.app.data.model.SetScanScheduleRequest
+import com.rekindle.app.data.model.ScanScheduleDto
 import com.rekindle.app.data.model.AdminStatsDto
 import com.rekindle.app.data.model.BookManifestDto
 import com.rekindle.app.data.model.MangaMetadataDto
@@ -97,6 +99,20 @@ interface RekindleApi {
     ): ReadingProgressDto
 
     /** Cover reading state for up to 500 ids; unknown ids are left out. */
+    /** Marks a chapter, or every chapter in a series, as read. Progress is kept. */
+    @PUT("api/media/{id}/read-mark")
+    suspend fun markRead(@Path("id") mediaId: String): retrofit2.Response<Unit>
+
+    @DELETE("api/media/{id}/read-mark")
+    suspend fun unmarkRead(@Path("id") mediaId: String): retrofit2.Response<Unit>
+
+    /** Leaves an archive, or everything in a folder, out of the series' progress. */
+    @PUT("api/media/{id}/tracking-ignore")
+    suspend fun ignoreTracking(@Path("id") mediaId: String): retrofit2.Response<Unit>
+
+    @DELETE("api/media/{id}/tracking-ignore")
+    suspend fun trackAgain(@Path("id") mediaId: String): retrofit2.Response<Unit>
+
     @POST("api/media/progress-summary")
     suspend fun getProgressSummaries(@Body request: ProgressSummaryRequest): List<ProgressSummaryDto>
 
@@ -150,6 +166,16 @@ interface RekindleApi {
 
     @DELETE("api/admin/cache")
     suspend fun clearCache(): ClearCacheResponseDto
+
+    // ── Scheduled scans (admins) ──────────────────────────────────────────────
+    @GET("api/admin/scan-schedules")
+    suspend fun getScanSchedules(): List<ScanScheduleDto>
+
+    @PUT("api/admin/scan-schedules/{libraryId}")
+    suspend fun setScanSchedule(
+        @Path("libraryId") libraryId: String,
+        @Body request: SetScanScheduleRequest,
+    ): ScanScheduleDto
 
     // ── Admin upload ──────────────────────────────────────────────────────────
     @Multipart

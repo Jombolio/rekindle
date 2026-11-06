@@ -12,6 +12,7 @@ import com.rekindle.app.core.prefs.BookTheme
 import com.rekindle.app.core.prefs.ReadingStyle
 import com.rekindle.app.core.prefs.DEFAULT_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.DEFAULT_CHAPTER_CONFIRM_MS
+import com.rekindle.app.core.prefs.DEFAULT_PAGE_TURN_MS
 import com.rekindle.app.BuildConfig
 import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.core.update.AppUpdateChecker
@@ -48,6 +49,11 @@ data class SettingsState(
     val readingStyle: ReadingStyle = ReadingStyle(),
     /** Offer betas and release candidates when checking for updates. */
     val receivePreReleases: Boolean = false,
+    /** Show archives' file extensions after their names. */
+    val comicPageTurns: Boolean = true,
+    /** How long one page turn takes, in milliseconds. */
+    val pageTurnMs: Int = DEFAULT_PAGE_TURN_MS,
+    val showFileExtensions: Boolean = false,
     /** Taps still needed to turn pre-releases on, while counting down; else null. */
     val preReleaseTapsLeft: Int? = null,
     val checkingForUpdates: Boolean = false,
@@ -77,6 +83,12 @@ class SettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            prefs.comicPageTurns.collect { enabled -> _state.update { it.copy(comicPageTurns = enabled) } }
+        }
+        viewModelScope.launch {
+            prefs.pageTurnMs.collect { ms -> _state.update { it.copy(pageTurnMs = ms) } }
+        }
+        viewModelScope.launch {
             combine(
                 prefs.themeMode,
                 prefs.downloadSafUri,
@@ -93,6 +105,9 @@ class SettingsViewModel @Inject constructor(
                     )
                 }
             }.collect { change -> _state.update(change) }
+        }
+        viewModelScope.launch {
+            prefs.showFileExtensions.collect { show -> _state.update { it.copy(showFileExtensions = show) } }
         }
         viewModelScope.launch {
             prefs.receivePreReleases.collect { receive ->
@@ -112,6 +127,18 @@ class SettingsViewModel @Inject constructor(
                 _state.update { it.copy(bookFont = font, bookFontSize = size) }
             }
         }
+    }
+
+    fun setComicPageTurns(enabled: Boolean) {
+        viewModelScope.launch { prefs.setComicPageTurns(enabled) }
+    }
+
+    fun setPageTurnMs(ms: Int) {
+        viewModelScope.launch { prefs.setPageTurnMs(ms) }
+    }
+
+    fun setShowFileExtensions(show: Boolean) {
+        viewModelScope.launch { prefs.setShowFileExtensions(show) }
     }
 
     fun setThemeMode(mode: String) {

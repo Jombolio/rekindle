@@ -6,6 +6,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../core/epub/page_breaks.dart';
+import '../widgets/page_curl.dart';
 
 /// Where a paged chapter is, for the reader to show and save. In a spread,
 /// [page] is the left-hand page, which is -1 on a chapter's opening spread,
@@ -31,6 +32,9 @@ class PagedChapterView extends StatefulWidget {
 
   final bool spread;
   final bool animate;
+
+  /// How long one page takes to turn.
+  final Duration turnDuration;
 
   /// The widest a page's text column gets.
   final double columnWidth;
@@ -65,6 +69,7 @@ class PagedChapterView extends StatefulWidget {
     required this.startFraction,
     required this.spread,
     required this.animate,
+    required this.turnDuration,
     required this.columnWidth,
     required this.pageColor,
     required this.topInset,
@@ -85,7 +90,6 @@ class PagedChapterViewState extends State<PagedChapterView>
     with SingleTickerProviderStateMixin {
   static const _gap = 56.0;
   static const _sideMargin = 24.0;
-  static const _turnDuration = Duration(milliseconds: 520);
 
   PageBreaks? _breaks;
   RenderBox? _laidOut;
@@ -101,7 +105,7 @@ class PagedChapterViewState extends State<PagedChapterView>
 
   late final AnimationController _turn = AnimationController(
     vsync: this,
-    duration: _turnDuration,
+    duration: widget.turnDuration,
     value: 1,
   );
   int _turnDirection = 1;
@@ -121,6 +125,15 @@ class PagedChapterViewState extends State<PagedChapterView>
       _from = widget.arrivingFrom;
       _turnDirection = widget.arrivalDirection < 0 ? -1 : 1;
       _turn.value = 0;
+    }
+  }
+
+  @override
+  void didUpdateWidget(PagedChapterView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The reader can change how long a turn takes while a chapter is open.
+    if (widget.turnDuration != oldWidget.turnDuration) {
+      _turn.duration = widget.turnDuration;
     }
   }
 
@@ -334,87 +347,112 @@ class PagedChapterViewState extends State<PagedChapterView>
 
   /// What's drawn over the live pages during a turn.
   ///
-  /// Forward in a spread, the right-hand page lifts about the spine and folds
-  /// over: for the first half of the turn it's the old right page, seen edge-on
-  /// at the middle; for the second half it's the new left page, landing on the
-  /// old left page, which stays down until it's covered. The new right page lies
-  /// beneath from the start. Back is the mirror. A single page lifts from its
-  /// left edge going forward, and the previous page drops back onto it going
-  /// back.
+  /// The turning page curls like paper (see [PageCurlPainter]): a soft roll
+  /// sweeps from its outer edge to the spine, and the page folds over it,
+  /// showing its back.
+  ///
+  /// - Forward in a spread, the right-hand page curls over onto the left, and
+  ///   its back is the new left page. The new right page lies beneath it from
+  ///   the start, and the old left page stays down until it's covered.
+  /// - Back in a spread is the mirror: the left page curls over to the right.
+  /// - A single page curls away to its left edge, revealing the next one.
+  ///   Going back, the previous page uncurls onto the current one.
   List<Widget> _turnLayers(Size size, double pageWidth) {
     final from = _from;
     if (from == null) return const [];
     final to = _to;
     final whole = Offset.zero & size;
+    final paper = widget.pageColor;
     if (to == null) {
       // Waiting for the arriving pages to paint: keep the old ones up.
-      return [
-        _Part(image: from, area: whole, rect: whole, paper: widget.pageColor)
-      ];
+      return [_Part(image: from, area: whole, rect: whole, paper: paper)];
     }
 
     final t = Curves.easeInOut.transform(_turn.value);
     final forward = _turnDirection > 0;
-    final paper = widget.pageColor;
+
+    Widget curl({
+      required ui.Image front,
+      ui.Image? back,
+      required double spine,
+      required int direction,
+      required double width,
+      required double progress,
+      Rect? clip,
+    }) =>
+        Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(
+              painter: PageCurlPainter(
+                front: front,
+                back: back,
+                area: size,
+                spine: spine,
+                direction: direction,
+                width: width,
+                progress: progress,
+                paper: paper,
+                clip: clip,
+              ),
+            ),
+          ),
+        );
 
     if (!widget.spread) {
-      final left = (size.width - pageWidth) / 2;
-      final page = Rect.fromLTWH(left - 8, 0, pageWidth + 16, size.height);
+      final left = (size.width - pageWidth) / 2 - 8;
+      final page = Rect.fromLTWH(left, 0, pageWidth + 16, size.height);
       return forward
           ? [
-              // The old page lifts away; the new one lies beneath.
-              _leaf(from, page, size, math.pi / 2 * t, pivotLeft: true),
+              // The old page curls away over its left edge; the next lies beneath.
+              curl(
+                front: from,
+                spine: left,
+                direction: 1,
+                width: page.width,
+                progress: t,
+                clip: page,
+              ),
             ]
           : [
-              // The old page stays down while the previous one drops onto it.
+              // The previous page uncurls back over the current one.
               _Part(image: from, area: whole, rect: page, paper: paper),
-              _leaf(to, page, size, math.pi / 2 * (1 - t), pivotLeft: true),
+              curl(
+                front: to,
+                spine: left,
+                direction: 1,
+                width: page.width,
+                progress: 1 - t,
+                clip: page,
+              ),
             ];
     }
 
     final spine = size.width / 2;
     final leftHalf = Rect.fromLTRB(0, 0, spine, size.height);
     final rightHalf = Rect.fromLTRB(spine, 0, size.width, size.height);
-    final firstHalf = t < 0.5;
-    if (forward) {
-      return [
-        _Part(image: from, area: whole, rect: leftHalf, paper: paper),
-        firstHalf
-            ? _leaf(from, rightHalf, size, math.pi * t, pivotLeft: true)
-            : _leaf(to, leftHalf, size, -math.pi * (1 - t), pivotLeft: false),
-      ];
-    }
-    return [
-      _Part(image: from, area: whole, rect: rightHalf, paper: paper),
-      firstHalf
-          ? _leaf(from, leftHalf, size, -math.pi * t, pivotLeft: false)
-          : _leaf(to, rightHalf, size, math.pi * (1 - t), pivotLeft: true),
-    ];
-  }
-
-  /// [rect] of [image], turned [angle] about its left or right edge, with the
-  /// near edge coming towards the reader as paper does.
-  Widget _leaf(ui.Image image, Rect rect, Size size, double angle,
-      {required bool pivotLeft}) {
-    // Darker as it stands up, lit again as it lies flat.
-    final shade = 0.3 * math.sin(angle.abs().clamp(0.0, math.pi));
-    return Positioned.fromRect(
-      rect: rect,
-      child: Transform(
-        alignment: pivotLeft ? Alignment.centerLeft : Alignment.centerRight,
-        transform: Matrix4.identity()
-          ..setEntry(3, 2, 0.0012)
-          ..rotateY(angle),
-        child: _Part(
-          image: image,
-          area: Offset.zero & size,
-          rect: rect,
-          paper: widget.pageColor,
-          shade: shade,
-          positioned: false,
-        ),
-      ),
-    );
+    return forward
+        ? [
+            _Part(image: from, area: whole, rect: leftHalf, paper: paper),
+            curl(
+              front: from,
+              back: to,
+              spine: spine,
+              direction: 1,
+              width: size.width - spine,
+              progress: t,
+            ),
+          ]
+        : [
+            _Part(image: from, area: whole, rect: rightHalf, paper: paper),
+            curl(
+              front: from,
+              back: to,
+              spine: spine,
+              direction: -1,
+              width: spine,
+              progress: t,
+            ),
+          ];
   }
 
   /// One page: a window onto the laid-out chapter, from the page's start to its
@@ -466,37 +504,32 @@ class PagedChapterViewState extends State<PagedChapterView>
   }
 }
 
-/// Part of a page image: [rect] of an image of [area], on paper, optionally
-/// shaded. Positioned at [rect] unless [positioned] is false, when it fills its
-/// parent.
+/// Part of a page image: [rect] of an image of [area], on paper, positioned
+/// at [rect].
 class _Part extends StatelessWidget {
   final ui.Image image;
   final Rect area;
   final Rect rect;
   final Color paper;
-  final double shade;
-  final bool positioned;
 
   const _Part({
     required this.image,
     required this.area,
     required this.rect,
     required this.paper,
-    this.shade = 0,
-    this.positioned = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    final painted = IgnorePointer(
-      child: CustomPaint(
-        size: rect.size,
-        painter: _PartPainter(image, area, rect, paper, shade),
+    return Positioned.fromRect(
+      rect: rect,
+      child: IgnorePointer(
+        child: CustomPaint(
+          size: rect.size,
+          painter: _PartPainter(image, area, rect, paper),
+        ),
       ),
     );
-    return positioned
-        ? Positioned.fromRect(rect: rect, child: painted)
-        : painted;
   }
 }
 
@@ -505,9 +538,8 @@ class _PartPainter extends CustomPainter {
   final Rect area;
   final Rect rect;
   final Color paper;
-  final double shade;
 
-  _PartPainter(this.image, this.area, this.rect, this.paper, this.shade);
+  _PartPainter(this.image, this.area, this.rect, this.paper);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -527,18 +559,11 @@ class _PartPainter extends CustomPainter {
       canvas.drawImageRect(
           image, src, dst, Paint()..filterQuality = FilterQuality.medium);
     }
-    if (shade > 0) {
-      canvas.drawRect(dst,
-          Paint()..color = const Color(0xFF000000).withValues(alpha: shade));
-    }
   }
 
   @override
   bool shouldRepaint(_PartPainter old) =>
-      !identical(old.image, image) ||
-      old.rect != rect ||
-      old.shade != shade ||
-      old.paper != paper;
+      !identical(old.image, image) || old.rect != rect || old.paper != paper;
 }
 
 /// Reports its child's render box after each layout that changes its size, such

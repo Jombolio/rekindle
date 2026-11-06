@@ -129,6 +129,7 @@ fun EpubReaderScreen(
                         wv.book = book
                         wv.layout = layout
                         wv.animations = state.style.animations
+                        wv.turnMs = state.pageTurnMs
                         wv.themeCss = themeCss(theme, state.font) + ReadingCss.css(state.style)
                         wv.setBackgroundColor(bgColor.toArgb())
                         wv.applyFontSize(state.fontSize)

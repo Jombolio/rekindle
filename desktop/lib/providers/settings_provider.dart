@@ -36,6 +36,13 @@ class SettingsState {
   /// Show a word's definition when it's selected in a book.
   final bool defineOnSelect;
 
+  /// Show archives' file extensions after their names. Off by default.
+  final bool comicPageTurns;
+
+  /// How long one page turn takes, in both readers.
+  final Duration pageTurn;
+  final bool showFileExtensions;
+
   /// Offer pre-releases (betas, release candidates) when checking for updates.
   final bool receivePreReleases;
 
@@ -52,6 +59,9 @@ class SettingsState {
     this.bookTheme = BookTheme.matchApp,
     this.readingStyle = const ReadingStyle(),
     this.defineOnSelect = true,
+    this.comicPageTurns = true,
+    this.pageTurn = const Duration(milliseconds: kDefaultPageTurnMs),
+    this.showFileExtensions = false,
     this.receivePreReleases = false,
     this.autoCheckUpdates = true,
     this.discord = const DiscordPresenceSettings(),
@@ -67,6 +77,9 @@ class SettingsState {
     BookTheme? bookTheme,
     ReadingStyle? readingStyle,
     bool? defineOnSelect,
+    bool? comicPageTurns,
+    Duration? pageTurn,
+    bool? showFileExtensions,
     bool? receivePreReleases,
     bool? autoCheckUpdates,
     DiscordPresenceSettings? discord,
@@ -81,6 +94,9 @@ class SettingsState {
         bookTheme: bookTheme ?? this.bookTheme,
         readingStyle: readingStyle ?? this.readingStyle,
         defineOnSelect: defineOnSelect ?? this.defineOnSelect,
+        comicPageTurns: comicPageTurns ?? this.comicPageTurns,
+        pageTurn: pageTurn ?? this.pageTurn,
+        showFileExtensions: showFileExtensions ?? this.showFileExtensions,
         receivePreReleases: receivePreReleases ?? this.receivePreReleases,
         autoCheckUpdates: autoCheckUpdates ?? this.autoCheckUpdates,
         discord: discord ?? this.discord,
@@ -110,6 +126,9 @@ class SettingsNotifier extends Notifier<SettingsState> {
       bookTheme: BookTheme.parse(prefs.bookTheme),
       readingStyle: ReadingStyle.fromJson(prefs.readingStyle),
       defineOnSelect: prefs.defineOnSelect,
+      comicPageTurns: prefs.comicPageTurns,
+      pageTurn: Duration(milliseconds: _clampPageTurnMs(prefs.pageTurnMs)),
+      showFileExtensions: prefs.showFileExtensions,
       receivePreReleases: prefs.receivePreReleases,
       autoCheckUpdates: prefs.autoCheckUpdates,
       discord: DiscordPresenceSettings(
@@ -164,6 +183,22 @@ class SettingsNotifier extends Notifier<SettingsState> {
     await Prefs.instance.setReadingStyle(style.toJson());
   }
 
+  Future<void> setComicPageTurns(bool enabled) async {
+    await Prefs.instance.setComicPageTurns(enabled);
+    state = state.copyWith(comicPageTurns: enabled);
+  }
+
+  Future<void> setPageTurn(Duration turn) async {
+    final ms = _clampPageTurnMs(turn.inMilliseconds);
+    await Prefs.instance.setPageTurnMs(ms);
+    state = state.copyWith(pageTurn: Duration(milliseconds: ms));
+  }
+
+  Future<void> setShowFileExtensions({required bool show}) async {
+    await Prefs.instance.setShowFileExtensions(show: show);
+    state = state.copyWith(showFileExtensions: show);
+  }
+
   Future<void> setDefineOnSelect({required bool enabled}) async {
     await Prefs.instance.setDefineOnSelect(enabled: enabled);
     state = state.copyWith(defineOnSelect: enabled);
@@ -193,6 +228,8 @@ class SettingsNotifier extends Notifier<SettingsState> {
 
 int _clampConfirmMs(int ms) =>
     ms.clamp(kMinChapterConfirmMs, kMaxChapterConfirmMs);
+
+int _clampPageTurnMs(int ms) => ms.clamp(kMinPageTurnMs, kMaxPageTurnMs);
 
 final settingsProvider = NotifierProvider<SettingsNotifier, SettingsState>(
   SettingsNotifier.new,
