@@ -15,6 +15,8 @@ namespace Rekindle.Server.Controllers;
 public class MediaController(
     MediaRepository mediaRepository,
     ProgressRepository progressRepository,
+    ReadMarkRepository readMarkRepository,
+    TrackingIgnoreRepository trackingIgnoreRepository,
     ProgressSummaryService progressSummaryService,
     ArchiveService archiveService,
     BookService bookService,
@@ -281,6 +283,91 @@ public class MediaController(
         var fileName = Path.GetFileName(media.FilePath);
 
         return PhysicalFile(media.FilePath, mimeType, fileName, enableRangeProcessing: true);
+    }
+
+    /// <summary>
+    /// Marks a chapter as read for the signed-in user, or every chapter in a
+    /// folder. It then counts as read however far into it they are, and stays so
+    /// until unmarked; their reading progress isn't changed. Open to every level:
+    /// it's the user's own reading state.
+    /// </summary>
+    [HttpPut("{id}/read-mark")]
+    public Task<IActionResult> MarkRead(string id) => SetReadMark(id, marked: true);
+
+    /// <summary>Removes a read mark from a chapter, or every chapter in a folder.</summary>
+    [HttpDelete("{id}/read-mark")]
+    public Task<IActionResult> UnmarkRead(string id) => ForChapters(id, async (userId, chapters) =>
+    {
+        await readMarkRepository.UnmarkAsync(userId, chapters);
+        return new { markedRead = false, chapters = chapters.Count };
+    });
+
+    /// <summary>
+    /// Leaves an archive, or every archive in a folder, out of the signed-in
+    /// user's series progress: an annual or bundled volume they don't mean to
+    /// read then doesn't keep the series from looking finished or up to date.
+    /// The archive's own progress is kept. Open to every level.
+    /// </summary>
+    [HttpPut("{id}/tracking-ignore")]
+    public Task<IActionResult> IgnoreTracking(string id) => ForChapters(id, async (userId, chapters) =>
+    {
+        await trackingIgnoreRepository.IgnoreAsync(userId, chapters, DateTime.UtcNow);
+        return new { ignored = true, chapters = chapters.Count };
+    });
+
+    /// <summary>Counts an archive, or every archive in a folder, in series progress again.</summary>
+    [HttpDelete("{id}/tracking-ignore")]
+    public Task<IActionResult> TrackAgain(string id) => ForChapters(id, async (userId, chapters) =>
+    {
+        await trackingIgnoreRepository.TrackAsync(userId, chapters);
+        return new { ignored = false, chapters = chapters.Count };
+    });
+
+    private Task<IActionResult> SetReadMark(string id, bool marked) => ForChapters(id, async (userId, chapters) =>
+    {
+        await readMarkRepository.MarkAsync(userId, chapters, DateTime.UtcNow);
+        return new { markedRead = marked, chapters = chapters.Count };
+    });
+
+    /// <summary>
+    /// Runs <paramref name="change"/> for the signed-in user on the archive
+    /// <paramref name="id"/>, or, for a folder, on every archive beneath it.
+    /// </summary>
+    private async Task<IActionResult> ForChapters(
+        string id, Func<string, IReadOnlyCollection<string>, Task<object>> change)
+    {
+        var media = await mediaRepository.GetByIdAsync(id);
+        if (media is null)
+            return NotFound();
+        var userId = GetUserId();
+        if (userId is null)
+            return Unauthorized();
+
+        var chapters = media.MediaType == "folder"
+            ? ArchivesUnder(id, await mediaRepository.GetNodesInLibrariesOfAsync([id]))
+            : [id];
+        return Ok(await change(userId, chapters));
+    }
+
+    private static List<string> ArchivesUnder(string folderId, IEnumerable<MediaNode> nodes)
+    {
+        var children = nodes.Where(n => n.ParentId is not null)
+            .GroupBy(n => n.ParentId!)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        var result = new List<string>();
+        var visited = new HashSet<string> { folderId };
+        var stack = new Stack<string>([folderId]);
+        while (stack.Count > 0)
+        {
+            if (!children.TryGetValue(stack.Pop(), out var list)) continue;
+            foreach (var child in list)
+            {
+                if (!visited.Add(child.Id)) continue;
+                if (child.IsFolder) stack.Push(child.Id);
+                else result.Add(child.Id);
+            }
+        }
+        return result;
     }
 
     [HttpPost("{id}/progress")]

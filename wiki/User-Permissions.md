@@ -11,7 +11,7 @@ Every Rekindle user is assigned a permission level that controls what they can s
 | 1 | Reader | Browse libraries, read archives, track reading progress |
 | 2 | Downloader | Everything at level 1, plus download archives for offline use |
 | 3 | Contributor | Everything at level 2, plus manually edit series metadata (About card) |
-| 4 | Admin | Everything at level 3, plus manage users, libraries, API keys, uploads, and server settings |
+| 4 | Admin | Everything at level 3, plus manage users, libraries, scheduled scans, API keys, uploads, and server settings |
 
 ---
 

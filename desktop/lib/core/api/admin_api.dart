@@ -96,9 +96,8 @@ class AdminApi {
       _client.dio.put('api/users/$userId/permission',
           data: {'permissionLevel': permissionLevel});
 
-  Future<void> updatePassword(String userId, String password) =>
-      _client.dio
-          .put('api/users/$userId/password', data: {'password': password});
+  Future<void> updatePassword(String userId, String password) => _client.dio
+      .put('api/users/$userId/password', data: {'password': password});
 
   Future<void> deleteUser(String userId) =>
       _client.dio.delete('api/users/$userId');
@@ -114,7 +113,8 @@ class AdminApi {
   }) async {
     final formData = FormData.fromMap({
       'libraryId': libraryId,
-      if (relativePath != null && relativePath.isNotEmpty) 'relativePath': relativePath,
+      if (relativePath != null && relativePath.isNotEmpty)
+        'relativePath': relativePath,
       if (deferScan) 'deferScan': 'true',
       'file': await MultipartFile.fromFile(filePath, filename: fileName),
     });
@@ -148,7 +148,8 @@ class AdminApi {
       if (author != null) 'author': author,
       if (head != null) 'head': MultipartFile.fromBytes(head, filename: 'head'),
     });
-    final resp = await _client.dio.post('api/admin/upload/inspect', data: formData);
+    final resp =
+        await _client.dio.post('api/admin/upload/inspect', data: formData);
     final data = resp.data as Map<String, dynamic>;
     return BookInspection(
       status: ImportStatus.fromServer(data['status'] as String?),
@@ -163,4 +164,56 @@ class AdminApi {
     final data = resp.data as Map<String, dynamic>;
     return data['freedBytes'] as int? ?? 0;
   }
+
+  /// Every library with its scan schedule. Servers before 1.5.1-beta.8 answer
+  /// 404, as they have no schedules.
+  Future<List<ScanScheduleInfo>> getScanSchedules() async {
+    final resp = await _client.dio.get('api/admin/scan-schedules');
+    return (resp.data as List<dynamic>)
+        .map((e) => ScanScheduleInfo.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Scans [libraryId] every [intervalHours]; 0 turns scheduled scans off.
+  Future<ScanScheduleInfo> setScanSchedule(
+      String libraryId, int intervalHours) async {
+    final resp = await _client.dio.put(
+      'api/admin/scan-schedules/$libraryId',
+      data: {'intervalHours': intervalHours},
+    );
+    return ScanScheduleInfo.fromJson(resp.data as Map<String, dynamic>);
+  }
+}
+
+/// A library and how often it's scanned on its own.
+class ScanScheduleInfo {
+  final String libraryId;
+  final String libraryName;
+
+  /// Hours between scheduled scans; 0 when there are none.
+  final int intervalHours;
+  final DateTime? lastRunAt;
+  final DateTime? nextRunAt;
+
+  const ScanScheduleInfo({
+    required this.libraryId,
+    required this.libraryName,
+    required this.intervalHours,
+    this.lastRunAt,
+    this.nextRunAt,
+  });
+
+  factory ScanScheduleInfo.fromJson(Map<String, dynamic> j) => ScanScheduleInfo(
+        libraryId: j['libraryId'] as String,
+        libraryName: j['libraryName'] as String? ?? '',
+        intervalHours: j['intervalHours'] as int? ?? 0,
+        lastRunAt: _time(j['lastRunAt']),
+        nextRunAt: _time(j['nextRunAt']),
+      );
+
+  // The server writes UTC; shown in local time.
+  static DateTime? _time(Object? v) => v is String
+      ? DateTime.tryParse(v.endsWith('Z') || v.contains('+') ? v : '${v}Z')
+          ?.toLocal()
+      : null;
 }

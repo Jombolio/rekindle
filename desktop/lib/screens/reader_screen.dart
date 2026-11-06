@@ -940,7 +940,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
               ),
               Expanded(
                 child: mediaAsync.when(
-                  data: (m) => Text(m.displayTitle,
+                  data: (m) => Text(
+                      m.label(
+                          showExtension: ref.watch(settingsProvider
+                              .select((s) => s.showFileExtensions))),
                       style: const TextStyle(color: Colors.white),
                       overflow: TextOverflow.ellipsis),
                   loading: () => const SizedBox.shrink(),

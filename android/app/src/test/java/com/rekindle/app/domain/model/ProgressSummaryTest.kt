@@ -55,4 +55,18 @@ class ProgressSummaryTest {
     fun unstartedSummary_isNotStarted() {
         assertFalse(ProgressSummary("a", progress = 0f, isCompleted = false).isStarted)
     }
+
+    @Test
+    fun `a read mark comes through, and older servers mean none`() {
+        val marked = ProgressSummaryDto(mediaId = "a", progress = 1.0, isCompleted = true, markedRead = true).toDomain()
+        assertTrue(marked.markedRead)
+        assertTrue(marked.isCompleted)
+        assertFalse(ProgressSummaryDto(mediaId = "b").toDomain().markedRead)
+    }
+
+    @Test
+    fun `an ignored archive comes through, and older servers mean tracked`() {
+        assertTrue(ProgressSummaryDto(mediaId = "a", ignored = true).toDomain().ignored)
+        assertFalse(ProgressSummaryDto(mediaId = "b").toDomain().ignored)
+    }
 }

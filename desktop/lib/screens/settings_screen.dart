@@ -130,6 +130,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
 
+          const SizedBox(height: 8),
+          Card(
+            child: SwitchListTile(
+              title: const Text('Show file extensions'),
+              subtitle: const Text(
+                  'Add ".cbz", ".epub" and so on after the names of archives.'),
+              value: settings.showFileExtensions,
+              onChanged: (v) => ref
+                  .read(settingsProvider.notifier)
+                  .setShowFileExtensions(show: v),
+            ),
+          ),
           const SizedBox(height: 24),
 
           // ── Reader ──────────────────────────────────────────────────────

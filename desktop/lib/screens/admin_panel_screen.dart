@@ -14,6 +14,7 @@ import '../providers/auth_provider.dart';
 import '../providers/sources_provider.dart';
 import 'book_import_dialog.dart';
 import 'widgets/cover_image.dart';
+import 'widgets/scan_schedules.dart';
 
 // ── Per-source providers ──────────────────────────────────────────────────
 
@@ -92,7 +93,7 @@ class AdminPanelScreen extends ConsumerWidget {
     final sourceName = source?.name ?? 'Admin Panel';
 
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: Text('$sourceName — Admin'),
@@ -100,6 +101,7 @@ class AdminPanelScreen extends ConsumerWidget {
             tabs: [
               Tab(icon: Icon(Icons.people_outline), text: 'Users'),
               Tab(icon: Icon(Icons.monitor_heart_outlined), text: 'System'),
+              Tab(icon: Icon(Icons.event_repeat_outlined), text: 'Scans'),
               Tab(icon: Icon(Icons.api_outlined), text: 'APIs'),
             ],
           ),
@@ -108,6 +110,9 @@ class AdminPanelScreen extends ConsumerWidget {
           children: [
             _UsersTab(sourceId: sourceId),
             _SystemTab(sourceId: sourceId),
+            ScanSchedulesTab(
+              api: AdminApi(ref.watch(_sourceClientProvider(sourceId))),
+            ),
             _ApisTab(sourceId: sourceId),
           ],
         ),

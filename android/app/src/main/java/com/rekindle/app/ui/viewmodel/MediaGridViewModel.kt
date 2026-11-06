@@ -40,6 +40,10 @@ class MediaGridViewModel @Inject constructor(
     private val prefs: PrefsStore,
 ) : ViewModel() {
 
+    /** Settings → Show file extensions. */
+    val showFileExtensions: StateFlow<Boolean> = prefs.showFileExtensions
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     private val libraryId: String = checkNotNull(savedStateHandle["libraryId"])
     private val libraryType: String? = savedStateHandle["libraryType"]
 
@@ -102,6 +106,22 @@ class MediaGridViewModel @Inject constructor(
         viewModelScope.launch {
             val fetched = repo.getProgressSummaries(items)
             _summaries.update { it + fetched }
+        }
+    }
+
+    /** Leaves an item out of its series' progress, or counts it again, then tells the user. */
+    fun setTrackingIgnored(media: Media, ignored: Boolean, onDone: (String) -> Unit) {
+        viewModelScope.launch {
+            onDone(repo.setTrackingIgnored(media.id, ignored))
+            loadSummaries(listOf(media))
+        }
+    }
+
+    /** Marks a series or chapter as read, or removes the mark, then tells the user via [onDone]. */
+    fun setReadMark(media: Media, marked: Boolean, onDone: (String) -> Unit) {
+        viewModelScope.launch {
+            onDone(repo.setReadMark(media.id, marked, media.isFolder))
+            loadSummaries(listOf(media))
         }
     }
 

@@ -192,6 +192,23 @@ fun SettingsScreen(
                     }
                 }
 
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Show file extensions", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Add \".cbz\", \".epub\" and so on after the names of archives.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Switch(
+                        checked = state.showFileExtensions,
+                        onCheckedChange = { vm.setShowFileExtensions(it) },
+                    )
+                }
+
                 // ── Reader ────────────────────────────────────────────────────────
                 SectionHeader("Reader")
 

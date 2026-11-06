@@ -142,6 +142,52 @@ class MediaRepository @Inject constructor(
      * to this device's own progress (archives only) when the server can't be
      * reached or predates the endpoint.
      */
+    /**
+     * Marks [mediaId] as read, or removes the mark, and returns what to tell the
+     * user. A series is marked chapter by chapter on the server. Reading progress
+     * isn't touched.
+     */
+    suspend fun setReadMark(mediaId: String, marked: Boolean, isSeries: Boolean): String = try {
+        val response = if (marked) api.markRead(mediaId) else api.unmarkRead(mediaId)
+        when {
+            response.isSuccessful -> {
+                _coverProgressChanged.tryEmit(Unit)
+                when {
+                    marked && isSeries -> "Series marked as read."
+                    marked -> "Marked as read."
+                    isSeries -> "Read marks removed."
+                    else -> "Read mark removed."
+                }
+            }
+            response.code() == 404 -> "Your server needs updating to mark chapters as read."
+            else -> "Couldn't change the read mark."
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        "Couldn't reach the server."
+    }
+
+    /**
+     * Leaves [mediaId] out of its series' progress, or counts it again, and returns
+     * what to tell the user. The archive's own progress isn't touched.
+     */
+    suspend fun setTrackingIgnored(mediaId: String, ignored: Boolean): String = try {
+        val response = if (ignored) api.ignoreTracking(mediaId) else api.trackAgain(mediaId)
+        when {
+            response.isSuccessful -> {
+                _coverProgressChanged.tryEmit(Unit)
+                if (ignored) "Left out of the series' progress." else "Counted in the series' progress again."
+            }
+            response.code() == 404 -> "Your server needs updating for this."
+            else -> "Couldn't make the change."
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        "Couldn't reach the server."
+    }
+
     suspend fun getProgressSummaries(items: List<Media>): Map<String, ProgressSummary> {
         if (items.isEmpty()) return emptyMap()
         return try {

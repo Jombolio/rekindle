@@ -48,6 +48,8 @@ data class SettingsState(
     val readingStyle: ReadingStyle = ReadingStyle(),
     /** Offer betas and release candidates when checking for updates. */
     val receivePreReleases: Boolean = false,
+    /** Show archives' file extensions after their names. */
+    val showFileExtensions: Boolean = false,
     /** Taps still needed to turn pre-releases on, while counting down; else null. */
     val preReleaseTapsLeft: Int? = null,
     val checkingForUpdates: Boolean = false,
@@ -95,6 +97,9 @@ class SettingsViewModel @Inject constructor(
             }.collect { change -> _state.update(change) }
         }
         viewModelScope.launch {
+            prefs.showFileExtensions.collect { show -> _state.update { it.copy(showFileExtensions = show) } }
+        }
+        viewModelScope.launch {
             prefs.receivePreReleases.collect { receive ->
                 _state.update { it.copy(receivePreReleases = receive) }
             }
@@ -112,6 +117,10 @@ class SettingsViewModel @Inject constructor(
                 _state.update { it.copy(bookFont = font, bookFontSize = size) }
             }
         }
+    }
+
+    fun setShowFileExtensions(show: Boolean) {
+        viewModelScope.launch { prefs.setShowFileExtensions(show) }
     }
 
     fun setThemeMode(mode: String) {

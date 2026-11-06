@@ -55,6 +55,10 @@ class DownloadsViewModel @Inject constructor(
     private val prefs: PrefsStore,
 ) : ViewModel() {
 
+    /** Settings → Show file extensions. */
+    val showFileExtensions: StateFlow<Boolean> = prefs.showFileExtensions
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     /** Bearer header for loading server covers of downloaded items (active source). */
     val authHeader: StateFlow<String> = prefs.token
         .map { "Bearer ${it ?: ""}" }

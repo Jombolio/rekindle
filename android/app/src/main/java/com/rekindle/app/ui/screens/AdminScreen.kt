@@ -1,5 +1,7 @@
 package com.rekindle.app.ui.screens
 
+import com.rekindle.app.domain.model.ScanSchedule
+import androidx.compose.material3.ScrollableTabRow
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -119,6 +121,7 @@ fun AdminScreen(
             1 -> adminVm.loadUsers()
             2 -> adminVm.loadStats()
             3 -> adminVm.loadApisConfig()
+            4 -> adminVm.loadScanSchedules()
         }
     }
 
@@ -147,8 +150,8 @@ fun AdminScreen(
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            TabRow(selectedTabIndex = selectedTab) {
-                listOf("Libraries", "Users", "System", "APIs").forEachIndexed { idx, title ->
+            ScrollableTabRow(selectedTabIndex = selectedTab, edgePadding = 0.dp) {
+                listOf("Libraries", "Users", "System", "APIs", "Scans").forEachIndexed { idx, title ->
                     Tab(
                         selected = selectedTab == idx,
                         onClick = { selectedTab = idx },
@@ -179,6 +182,11 @@ fun AdminScreen(
                 3 -> ApisTabContent(
                     adminVm = adminVm,
                     adminState = adminState,
+                )
+                4 -> ScansTabContent(
+                    adminState = adminState,
+                    onSetInterval = adminVm::setScanSchedule,
+                    onRetry = adminVm::loadScanSchedules,
                 )
             }
         }
@@ -657,6 +665,102 @@ internal fun UploadTabContent(
         }
         adminState.uploadError?.let { err ->
             Text(err, color = MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
+// ── Scans tab ─────────────────────────────────────────────────────────────────
+
+/**
+ * Scheduled scans: each library, how often the server scans it on its own, and
+ * when that last and next happens. Part of the Admin Panel, so admins only.
+ */
+@Composable
+private fun ScansTabContent(
+    adminState: AdminScreenState,
+    onSetInterval: (libraryId: String, hours: Int) -> Unit,
+    onRetry: () -> Unit,
+) {
+    when {
+        adminState.schedulesLoading && adminState.scanSchedules.isEmpty() ->
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        adminState.schedulesError != null && adminState.scanSchedules.isEmpty() ->
+            Column(
+                Modifier.fillMaxSize().padding(24.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(adminState.schedulesError!!)
+                TextButton(onClick = onRetry) { Text("Try again") }
+            }
+        else -> LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item {
+                Text(
+                    "Scan libraries on their own, to pick up new and removed files without anyone " +
+                        "pressing Scan. Scheduled scans run one at a time, and wait for a scan already running.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                adminState.schedulesError?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            if (adminState.scanSchedules.isEmpty()) {
+                item { Text("There are no libraries yet.", modifier = Modifier.padding(top = 16.dp)) }
+            }
+            items(adminState.scanSchedules, key = { it.libraryId }) { schedule ->
+                ScanScheduleCard(
+                    schedule = schedule,
+                    saving = schedule.libraryId in adminState.schedulesSaving,
+                    onSetInterval = { onSetInterval(schedule.libraryId, it) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScanScheduleCard(schedule: ScanSchedule, saving: Boolean, onSetInterval: (Int) -> Unit) {
+    var menuOpen by remember { mutableStateOf(false) }
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(schedule.libraryName, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    if (schedule.intervalHours == 0) "Only scanned when someone presses Scan"
+                    else listOfNotNull(
+                        schedule.nextRunAt?.let { "Next: ${ScanSchedule.timeLabel(it)}" },
+                        schedule.lastRunAt?.let { "Last: ${ScanSchedule.timeLabel(it)}" } ?: "Not run yet",
+                    ).joinToString("  ·  "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            if (saving) {
+                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+            } else {
+                Box {
+                    TextButton(onClick = { menuOpen = true }) {
+                        Text(ScanSchedule.intervalLabel(schedule.intervalHours))
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        (ScanSchedule.INTERVALS.keys + schedule.intervalHours).distinct().forEach { hours ->
+                            DropdownMenuItem(
+                                text = { Text(ScanSchedule.intervalLabel(hours)) },
+                                onClick = {
+                                    menuOpen = false
+                                    if (hours != schedule.intervalHours) onSetInterval(hours)
+                                },
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

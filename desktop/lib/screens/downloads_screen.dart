@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import '../providers/settings_provider.dart';
+import '../core/models/media.dart' show withExtension;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -87,8 +89,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     );
   }
 
-  Future<void> _confirmDelete(
-      BuildContext context, DownloadedItem item) async {
+  Future<void> _confirmDelete(BuildContext context, DownloadedItem item) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -109,14 +110,15 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       ),
     );
     if (confirmed != true) return;
-    await ref.read(downloadProvider(item.mediaId).notifier).delete(item.mediaId);
+    await ref
+        .read(downloadProvider(item.mediaId).notifier)
+        .delete(item.mediaId);
     ref.invalidate(downloadsLibraryProvider);
   }
 
   Future<void> _confirmPurgeAll(
       BuildContext context, List<DownloadedSeries> series) async {
-    final count =
-        series.fold<int>(0, (sum, s) => sum + s.items.length);
+    final count = series.fold<int>(0, (sum, s) => sum + s.items.length);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -177,7 +179,7 @@ class _FolderGrid extends StatelessWidget {
 
 // ── Chapter grid (within a folder) ───────────────────────────────────────────
 
-class _ChapterGrid extends StatelessWidget {
+class _ChapterGrid extends ConsumerWidget {
   final List<DownloadedItem> items;
   final void Function(DownloadedItem item) onDelete;
 
@@ -192,7 +194,9 @@ class _ChapterGrid extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final showExtensions =
+        ref.watch(settingsProvider.select((s) => s.showFileExtensions));
     return GridView.builder(
       padding: const EdgeInsets.all(16),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -206,7 +210,7 @@ class _ChapterGrid extends StatelessWidget {
         final item = items[i];
         return _CoverTile(
           mediaId: item.mediaId,
-          title: item.title,
+          title: withExtension(item.title, item.format, show: showExtensions),
           subtitle: item.format.toUpperCase(),
           onTap: () => _open(context, item),
           onLongPress: () => onDelete(item),
@@ -339,8 +343,7 @@ class _FolderBadge extends StatelessWidget {
           children: [
             Icon(Icons.library_books, size: 12, color: Colors.white),
             SizedBox(width: 3),
-            Text('Series',
-                style: TextStyle(color: Colors.white, fontSize: 10)),
+            Text('Series', style: TextStyle(color: Colors.white, fontSize: 10)),
           ],
         ),
       ),

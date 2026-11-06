@@ -36,6 +36,9 @@ class SettingsState {
   /// Show a word's definition when it's selected in a book.
   final bool defineOnSelect;
 
+  /// Show archives' file extensions after their names. Off by default.
+  final bool showFileExtensions;
+
   /// Offer pre-releases (betas, release candidates) when checking for updates.
   final bool receivePreReleases;
 
@@ -52,6 +55,7 @@ class SettingsState {
     this.bookTheme = BookTheme.matchApp,
     this.readingStyle = const ReadingStyle(),
     this.defineOnSelect = true,
+    this.showFileExtensions = false,
     this.receivePreReleases = false,
     this.autoCheckUpdates = true,
     this.discord = const DiscordPresenceSettings(),
@@ -67,6 +71,7 @@ class SettingsState {
     BookTheme? bookTheme,
     ReadingStyle? readingStyle,
     bool? defineOnSelect,
+    bool? showFileExtensions,
     bool? receivePreReleases,
     bool? autoCheckUpdates,
     DiscordPresenceSettings? discord,
@@ -81,6 +86,7 @@ class SettingsState {
         bookTheme: bookTheme ?? this.bookTheme,
         readingStyle: readingStyle ?? this.readingStyle,
         defineOnSelect: defineOnSelect ?? this.defineOnSelect,
+        showFileExtensions: showFileExtensions ?? this.showFileExtensions,
         receivePreReleases: receivePreReleases ?? this.receivePreReleases,
         autoCheckUpdates: autoCheckUpdates ?? this.autoCheckUpdates,
         discord: discord ?? this.discord,
@@ -110,6 +116,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
       bookTheme: BookTheme.parse(prefs.bookTheme),
       readingStyle: ReadingStyle.fromJson(prefs.readingStyle),
       defineOnSelect: prefs.defineOnSelect,
+      showFileExtensions: prefs.showFileExtensions,
       receivePreReleases: prefs.receivePreReleases,
       autoCheckUpdates: prefs.autoCheckUpdates,
       discord: DiscordPresenceSettings(
@@ -162,6 +169,11 @@ class SettingsNotifier extends Notifier<SettingsState> {
   Future<void> setReadingStyle(ReadingStyle style) async {
     state = state.copyWith(readingStyle: style);
     await Prefs.instance.setReadingStyle(style.toJson());
+  }
+
+  Future<void> setShowFileExtensions({required bool show}) async {
+    await Prefs.instance.setShowFileExtensions(show: show);
+    state = state.copyWith(showFileExtensions: show);
   }
 
   Future<void> setDefineOnSelect({required bool enabled}) async {

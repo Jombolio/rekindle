@@ -118,6 +118,24 @@ class MediaApi {
     return {for (final s in summaries) s.mediaId: s};
   }
 
+  /// Marks a chapter, or every chapter in a series, as read for this user.
+  /// Their reading progress is left as it is.
+  Future<void> markRead(String mediaId) =>
+      _client.dio.put('api/media/$mediaId/read-mark');
+
+  /// Removes the read mark from a chapter, or every chapter in a series.
+  Future<void> unmarkRead(String mediaId) =>
+      _client.dio.delete('api/media/$mediaId/read-mark');
+
+  /// Leaves an archive, or everything in a folder, out of the series' progress.
+  /// Its own progress is kept.
+  Future<void> ignoreTracking(String mediaId) =>
+      _client.dio.put('api/media/$mediaId/tracking-ignore');
+
+  /// Counts an archive, or everything in a folder, in the series' progress again.
+  Future<void> trackAgain(String mediaId) =>
+      _client.dio.delete('api/media/$mediaId/tracking-ignore');
+
   Future<List<Media>> getChapters(String folderId) async {
     final resp = await _client.dio.get('api/media/$folderId/chapters');
     return (resp.data as List<dynamic>)

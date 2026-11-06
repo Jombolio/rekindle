@@ -252,4 +252,106 @@ public class ProgressSummaryTests
 
         One(nodes, [progress], "s").NewCount.Should().Be(1);
     }
+
+    // ── Read marks ────────────────────────────────────────────────────────
+
+    private static ProgressSummary Marked(
+        IEnumerable<MediaNode> nodes, IEnumerable<ReadingProgress> progress, string id, params string[] marks) =>
+        ProgressSummaryService
+            .Summarize(nodes, progress.ToDictionary(p => p.MediaId), [id], marks.ToHashSet())
+            .Single();
+
+    [Fact]
+    public void Marked_Archive_CountsAsRead_WithoutAnyProgress()
+    {
+        var s = Marked([Archive("a")], [], "a", "a");
+
+        s.IsCompleted.Should().BeTrue();
+        s.MarkedRead.Should().BeTrue();
+        s.Progress.Should().Be(1);
+    }
+
+    [Fact]
+    public void Marked_Archive_StaysRead_WhileBeingReread()
+    {
+        // Rereading from the start writes progress that isn't completed.
+        var s = Marked([Archive("a", pages: 40)], [Read("a", page: 2)], "a", "a");
+
+        s.IsCompleted.Should().BeTrue();
+        s.MarkedRead.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Folder_IsRead_WhenEveryChapterIsMarkedOrFinished()
+    {
+        var nodes = new[] { Folder("s"), Archive("c1", "s"), Archive("c2", "s") };
+
+        var s = Marked(nodes, [Read("c2", completed: true)], "s", "c1");
+        s.IsCompleted.Should().BeTrue();
+        s.MarkedRead.Should().BeFalse(); // Only one of them is marked.
+
+        Marked(nodes, [], "s", "c1", "c2").MarkedRead.Should().BeTrue();
+        Marked(nodes, [], "s", "c1").IsCompleted.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Marked_Chapter_IsNotNew()
+    {
+        var nodes = new[] { Folder("s"), Archive("old", "s"), Archive("fresh", "s", addedDay: 5) };
+        var progress = new[] { Read("old", completed: true, readDay: 2) };
+
+        Marked(nodes, progress, "fresh").IsNew.Should().BeTrue();
+        Marked(nodes, progress, "fresh", "fresh").IsNew.Should().BeFalse();
+    }
+
+    // ── Ignored archives ──────────────────────────────────────────────────
+
+    private static ProgressSummary WithIgnored(
+        IEnumerable<MediaNode> nodes, IEnumerable<ReadingProgress> progress, string id, params string[] ignored) =>
+        ProgressSummaryService
+            .Summarize(nodes, progress.ToDictionary(p => p.MediaId), [id], ignored: ignored.ToHashSet())
+            .Single();
+
+    [Fact]
+    public void Series_IsFinished_WithoutItsIgnoredAnnual()
+    {
+        var nodes = new[] { Folder("s"), Archive("c1", "s"), Archive("c2", "s"), Archive("annual", "s") };
+        var progress = new[] { Read("c1", completed: true), Read("c2", completed: true) };
+
+        WithIgnored(nodes, progress, "s").IsCompleted.Should().BeFalse();
+
+        var s = WithIgnored(nodes, progress, "s", "annual");
+        s.IsCompleted.Should().BeTrue();
+        s.Progress.Should().Be(1);
+        s.Ignored.Should().BeFalse(); // Only part of it is ignored.
+    }
+
+    [Fact]
+    public void Ignored_Archives_AreNotCountedAsNew()
+    {
+        var nodes = new[] { Folder("s"), Archive("old", "s"), Archive("annual", "s", addedDay: 5) };
+        var progress = new[] { Read("old", completed: true, readDay: 2) };
+
+        WithIgnored(nodes, progress, "s").NewCount.Should().Be(1);
+        WithIgnored(nodes, progress, "s", "annual").NewCount.Should().Be(0);
+        WithIgnored(nodes, progress, "annual", "annual").IsNew.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Ignored_Archive_KeepsItsOwnProgress()
+    {
+        var s = WithIgnored([Archive("annual", pages: 40)], [Read("annual", page: 10)], "annual", "annual");
+
+        s.Ignored.Should().BeTrue();
+        s.Progress.Should().Be(0.25);
+        s.IsCompleted.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Folder_OfIgnoredArchives_IsIgnored()
+    {
+        var nodes = new[] { Folder("annuals"), Archive("a1", "annuals"), Archive("a2", "annuals") };
+        WithIgnored(nodes, [], "annuals", "a1", "a2").Ignored.Should().BeTrue();
+        WithIgnored(nodes, [], "annuals", "a1").Ignored.Should().BeFalse();
+    }
 }

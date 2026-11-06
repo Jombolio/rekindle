@@ -10,12 +10,15 @@ import com.rekindle.app.data.api.RekindleApi
 import com.rekindle.app.data.repository.MetadataRepository
 import com.rekindle.app.data.model.CreateUserRequest
 import com.rekindle.app.data.model.MediaDto
+import com.rekindle.app.data.model.ScanScheduleDto
+import com.rekindle.app.data.model.SetScanScheduleRequest
 import com.rekindle.app.data.model.UpdatePasswordRequest
 import com.rekindle.app.data.model.UpdatePermissionRequest
 import com.rekindle.app.data.model.toDomain
 import com.rekindle.app.domain.model.AdminStats
 import com.rekindle.app.domain.model.AdminUser
 import com.rekindle.app.domain.model.Media
+import com.rekindle.app.domain.model.ScanSchedule
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -61,6 +64,12 @@ data class AdminScreenState(
     val apisSaving: Boolean = false,
     val apisError: String? = null,
     val apisSaveSuccess: Boolean = false,
+    // Scheduled scans tab
+    val scanSchedules: List<ScanSchedule> = emptyList(),
+    val schedulesLoading: Boolean = false,
+    val schedulesError: String? = null,
+    /** Libraries whose schedule is being saved. */
+    val schedulesSaving: Set<String> = emptySet(),
 )
 
 @HiltViewModel
@@ -135,6 +144,49 @@ class AdminViewModel @Inject constructor(
                 .onFailure { e -> _state.update { it.copy(usersError = e.message) } }
         }
     }
+
+    // ── Scheduled scans ───────────────────────────────────────────────────────
+
+    fun loadScanSchedules() {
+        viewModelScope.launch {
+            _state.update { it.copy(schedulesLoading = true, schedulesError = null) }
+            runCatching { api.getScanSchedules().map { it.toScanSchedule() } }
+                .onSuccess { list -> _state.update { it.copy(scanSchedules = list, schedulesLoading = false) } }
+                .onFailure { e -> _state.update { it.copy(schedulesLoading = false, schedulesError = describeScheduleError(e)) } }
+        }
+    }
+
+    /** Scans [libraryId] every [intervalHours]; 0 turns scheduled scans off. */
+    fun setScanSchedule(libraryId: String, intervalHours: Int) {
+        viewModelScope.launch {
+            _state.update { it.copy(schedulesSaving = it.schedulesSaving + libraryId) }
+            runCatching { api.setScanSchedule(libraryId, SetScanScheduleRequest(intervalHours)).toScanSchedule() }
+                .onSuccess { saved ->
+                    _state.update { s ->
+                        s.copy(scanSchedules = s.scanSchedules.map { if (it.libraryId == libraryId) saved else it })
+                    }
+                }
+                .onFailure { e -> _state.update { it.copy(schedulesError = describeScheduleError(e)) } }
+            _state.update { it.copy(schedulesSaving = it.schedulesSaving - libraryId) }
+        }
+    }
+
+    private fun describeScheduleError(e: Throwable): String = when {
+        e is retrofit2.HttpException && e.code() == 404 -> "Your server needs updating to schedule scans."
+        e is retrofit2.HttpException -> runCatching {
+            JSONObject(e.response()?.errorBody()?.string().orEmpty()).getString("error")
+        }.getOrNull() ?: "The server refused the change."
+        e is IOException -> "Couldn't reach the server."
+        else -> e.message ?: "Something went wrong."
+    }
+
+    private fun ScanScheduleDto.toScanSchedule() = ScanSchedule(
+        libraryId = libraryId,
+        libraryName = libraryName,
+        intervalHours = intervalHours,
+        lastRunAt = ScanSchedule.parseTime(lastRunAt),
+        nextRunAt = ScanSchedule.parseTime(nextRunAt),
+    )
 
     // ── Stats & Cache ─────────────────────────────────────────────────────────
 

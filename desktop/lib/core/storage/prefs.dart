@@ -108,6 +108,12 @@ class Prefs {
 
   // Whether selecting a word in a book shows its definition.
   bool get defineOnSelect => _prefs.getBool('define_on_select') ?? true;
+
+  // Whether archive names show their file extension (".cbz"). Off by default.
+  bool get showFileExtensions =>
+      _prefs.getBool('show_file_extensions') ?? false;
+  Future<void> setShowFileExtensions({required bool show}) =>
+      _prefs.setBool('show_file_extensions', show);
   Future<void> setDefineOnSelect({required bool enabled}) =>
       _prefs.setBool('define_on_select', enabled);
 

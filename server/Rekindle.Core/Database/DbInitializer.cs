@@ -50,6 +50,57 @@ public class DbInitializer(DbConnectionFactory factory, ILogger<DbInitializer> l
             await ApplyMigration(connection, 8, Migration_008);
         if (fromVersion < 9)
             await ApplyMigration(connection, 9, Migration_009);
+        if (fromVersion < 10)
+            await ApplyMigration(connection, 10, Migration_010);
+        if (fromVersion < 11)
+            await ApplyMigration(connection, 11, Migration_011);
+        if (fromVersion < 12)
+            await ApplyMigration(connection, 12, Migration_012);
+    }
+
+    private static async Task Migration_012(SqliteConnection connection)
+    {
+        // Archives a user leaves out of their series progress, such as annuals
+        // or bundled volumes. Their own progress stays in reading_progress.
+        await connection.ExecuteAsync(
+            """
+            CREATE TABLE IF NOT EXISTS tracking_ignores (
+                user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                media_id   TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+                ignored_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, media_id)
+            );
+            """);
+    }
+
+    private static async Task Migration_011(SqliteConnection connection)
+    {
+        // Chapters a user marked as read. Kept apart from reading_progress so a
+        // mark survives rereading, and progress survives a mark.
+        await connection.ExecuteAsync(
+            """
+            CREATE TABLE IF NOT EXISTS read_marks (
+                user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                media_id  TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+                marked_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, media_id)
+            );
+            """);
+    }
+
+    private static async Task Migration_010(SqliteConnection connection)
+    {
+        // Scheduled library scans, set in the Admin Panel. No row means the
+        // library is only scanned on request. Times are UTC.
+        await connection.ExecuteAsync(
+            """
+            CREATE TABLE IF NOT EXISTS library_scan_schedules (
+                library_id     TEXT PRIMARY KEY REFERENCES libraries(id) ON DELETE CASCADE,
+                interval_hours INTEGER NOT NULL,
+                last_run_at    TEXT,
+                next_run_at    TEXT NOT NULL
+            );
+            """);
     }
 
     private static async Task Migration_009(SqliteConnection connection)

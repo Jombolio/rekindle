@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/models/media.dart';
+import '../providers/settings_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/media_provider.dart';
 import '../providers/progress_summary_provider.dart';
+import 'widgets/read_mark_menu.dart';
 import 'widgets/cover_image.dart';
 import 'widgets/download_button.dart';
 import 'widgets/error_view.dart';
@@ -83,11 +85,10 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
 
   void _openItem(BuildContext context, Media item) {
     if (item.isFolder) {
-      context.push('/series/${item.id}',
-          extra: <String, String?>{
-            'title': item.displayTitle,
-            'libraryType': widget.libraryType,
-          });
+      context.push('/series/${item.id}', extra: <String, String?>{
+        'title': item.displayTitle,
+        'libraryType': widget.libraryType,
+      });
     } else if (item.isImageBased) {
       context.push('/reader/${item.id}',
           extra: <String, dynamic>{'libraryType': widget.libraryType});
@@ -289,6 +290,8 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
     }
 
     final ids = [for (final m in items) m.id];
+    final showExtensions =
+        ref.watch(settingsProvider.select((s) => s.showFileExtensions));
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -307,46 +310,50 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
               ),
               itemCount: items.length,
               itemBuilder: (_, i) {
-            final item = items[i];
-            final summary = watchProgressSummary(
-                ref, item, summaryChunkKey(ids, i, kGridSummaryChunk));
+                final item = items[i];
+                final summary = watchProgressSummary(
+                    ref, item, summaryChunkKey(ids, i, kGridSummaryChunk));
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: Stack(
-                    fit: StackFit.expand,
+                return ReadMarkMenuArea(
+                  media: item,
+                  summary: summary,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      GestureDetector(
-                        onTap: () => _openItem(context, item),
-                        child: CoverImage(
-                          url: client.coverUrl(item.id),
-                          headers: client.authHeaders,
-                          cacheKey: item.coverCachePath ?? item.id,
+                      Expanded(
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            GestureDetector(
+                              onTap: () => _openItem(context, item),
+                              child: CoverImage(
+                                url: client.coverUrl(item.id),
+                                headers: client.authHeaders,
+                                cacheKey: item.coverCachePath ?? item.id,
+                              ),
+                            ),
+                            ReadProgressRing(summary: summary),
+                            NewChaptersBadge(count: summary?.newCount ?? 0),
+                            DownloadStatusBadge(
+                              mediaId: item.id,
+                              isFolder: item.isFolder,
+                            ),
+                          ],
                         ),
                       ),
-                      ReadProgressRing(summary: summary),
-                      NewChaptersBadge(count: summary?.newCount ?? 0),
-                      DownloadStatusBadge(
-                        mediaId: item.id,
-                        isFolder: item.isFolder,
+                      const SizedBox(height: 4),
+                      GestureDetector(
+                        onTap: () => _openItem(context, item),
+                        child: MarqueeText(
+                          text: item.label(showExtension: showExtensions),
+                          style: Theme.of(context).textTheme.bodySmall,
+                          textAlign: TextAlign.center,
+                        ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 4),
-                GestureDetector(
-                  onTap: () => _openItem(context, item),
-                  child: MarqueeText(
-                    text: item.displayTitle,
-                    style: Theme.of(context).textTheme.bodySmall,
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ],
-            );
-          },
+                );
+              },
             ),
 
             // Bottom progress bar — visible while the next page is loading.

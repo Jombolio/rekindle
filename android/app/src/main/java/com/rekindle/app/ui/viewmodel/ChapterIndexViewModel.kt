@@ -1,5 +1,6 @@
 package com.rekindle.app.ui.viewmodel
 
+import kotlinx.coroutines.flow.StateFlow
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -56,6 +57,10 @@ class ChapterIndexViewModel @Inject constructor(
     private val progressDao: ProgressQueueDao,
     private val prefs: PrefsStore,
 ) : ViewModel() {
+
+    /** Settings → Show file extensions. */
+    val showFileExtensions: StateFlow<Boolean> = prefs.showFileExtensions
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val folderId: String = checkNotNull(savedStateHandle["folderId"])
     val libraryType: String? = savedStateHandle["libraryType"]
@@ -153,11 +158,30 @@ class ChapterIndexViewModel @Inject constructor(
      * progress (offline).
      */
     fun summaryFor(media: Media, state: ChapterIndexState): ProgressSummary? {
+        val remote = state.summaries[media.id]
+        // A read mark holds whatever the progress says, unsynced or not.
+        if (remote?.markedRead == true) return remote
         val local = state.readProgress[media.id]?.let {
             ProgressSummary.fromLocal(media.id, it.currentPage, it.isCompleted, media.pageCount)
         }
         if (local != null && state.readProgress[media.id]?.synced == false) return local
-        return state.summaries[media.id] ?: local
+        return remote ?: local
+    }
+
+    /** Leaves a chapter out of the series' progress, or counts it again, then tells the user. */
+    fun setTrackingIgnored(media: Media, ignored: Boolean, onDone: (String) -> Unit) {
+        viewModelScope.launch {
+            onDone(repo.setTrackingIgnored(media.id, ignored))
+            loadSummaries()
+        }
+    }
+
+    /** Marks a chapter as read, or removes the mark, then tells the user via [onDone]. */
+    fun setReadMark(media: Media, marked: Boolean, onDone: (String) -> Unit) {
+        viewModelScope.launch {
+            onDone(repo.setReadMark(media.id, marked, media.isFolder))
+            loadSummaries()
+        }
     }
 
     fun scrapeMetadata() {
