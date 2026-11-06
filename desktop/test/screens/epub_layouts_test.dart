@@ -17,6 +17,7 @@ import 'package:rekindle/providers/auth_provider.dart';
 import 'package:rekindle/providers/connectivity_provider.dart';
 import 'package:rekindle/screens/book/paged_chapter_view.dart';
 import 'package:rekindle/screens/epub_reader_screen.dart';
+import 'package:rekindle/screens/widgets/page_curl.dart';
 import 'package:rekindle/screens/widgets/reading_options.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';

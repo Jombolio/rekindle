@@ -1,7 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:rekindle/screens/book/paged_chapter_view.dart';
+import 'package:rekindle/screens/widgets/page_curl.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

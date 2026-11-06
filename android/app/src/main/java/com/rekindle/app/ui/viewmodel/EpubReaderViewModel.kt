@@ -14,6 +14,7 @@ import com.rekindle.app.core.prefs.BookFont
 import com.rekindle.app.core.prefs.BookLayout
 import com.rekindle.app.core.prefs.BookTheme
 import com.rekindle.app.core.prefs.DEFAULT_BOOK_FONT_SIZE
+import com.rekindle.app.core.prefs.DEFAULT_PAGE_TURN_MS
 import com.rekindle.app.core.prefs.MAX_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.MIN_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.PrefsStore
@@ -54,6 +55,8 @@ data class EpubReaderState(
     val themeOverride: EpubTheme? = null,
     /** Layout and readability options. */
     val style: ReadingStyle = ReadingStyle(),
+    /** How long one page turn takes, in milliseconds. */
+    val pageTurnMs: Int = DEFAULT_PAGE_TURN_MS,
     /**
      * Where the continuous layout's document starts. It changes only when the reader
      * jumps to a chapter; scrolling into the next one moves [chapterIndex] alone.
@@ -135,6 +138,10 @@ class EpubReaderViewModel @Inject constructor(
      * that reflows the text reopens it at the current spot.
      */
     private fun followSettings() {
+        // On its own: how long a turn takes never reflows the text.
+        viewModelScope.launch {
+            prefs.pageTurnMs.collect { ms -> _state.update { it.copy(pageTurnMs = ms) } }
+        }
         viewModelScope.launch {
             combine(prefs.bookFont, prefs.bookFontSize, prefs.bookTheme, prefs.readingStyle) { font, size, theme, style ->
                 Settings(font, size, theme, style)

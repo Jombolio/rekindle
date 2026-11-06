@@ -38,6 +38,9 @@ class SettingsState {
 
   /// Show archives' file extensions after their names. Off by default.
   final bool comicPageTurns;
+
+  /// How long one page turn takes, in both readers.
+  final Duration pageTurn;
   final bool showFileExtensions;
 
   /// Offer pre-releases (betas, release candidates) when checking for updates.
@@ -57,6 +60,7 @@ class SettingsState {
     this.readingStyle = const ReadingStyle(),
     this.defineOnSelect = true,
     this.comicPageTurns = true,
+    this.pageTurn = const Duration(milliseconds: kDefaultPageTurnMs),
     this.showFileExtensions = false,
     this.receivePreReleases = false,
     this.autoCheckUpdates = true,
@@ -74,6 +78,7 @@ class SettingsState {
     ReadingStyle? readingStyle,
     bool? defineOnSelect,
     bool? comicPageTurns,
+    Duration? pageTurn,
     bool? showFileExtensions,
     bool? receivePreReleases,
     bool? autoCheckUpdates,
@@ -90,6 +95,7 @@ class SettingsState {
         readingStyle: readingStyle ?? this.readingStyle,
         defineOnSelect: defineOnSelect ?? this.defineOnSelect,
         comicPageTurns: comicPageTurns ?? this.comicPageTurns,
+        pageTurn: pageTurn ?? this.pageTurn,
         showFileExtensions: showFileExtensions ?? this.showFileExtensions,
         receivePreReleases: receivePreReleases ?? this.receivePreReleases,
         autoCheckUpdates: autoCheckUpdates ?? this.autoCheckUpdates,
@@ -121,6 +127,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
       readingStyle: ReadingStyle.fromJson(prefs.readingStyle),
       defineOnSelect: prefs.defineOnSelect,
       comicPageTurns: prefs.comicPageTurns,
+      pageTurn: Duration(milliseconds: _clampPageTurnMs(prefs.pageTurnMs)),
       showFileExtensions: prefs.showFileExtensions,
       receivePreReleases: prefs.receivePreReleases,
       autoCheckUpdates: prefs.autoCheckUpdates,
@@ -181,6 +188,12 @@ class SettingsNotifier extends Notifier<SettingsState> {
     state = state.copyWith(comicPageTurns: enabled);
   }
 
+  Future<void> setPageTurn(Duration turn) async {
+    final ms = _clampPageTurnMs(turn.inMilliseconds);
+    await Prefs.instance.setPageTurnMs(ms);
+    state = state.copyWith(pageTurn: Duration(milliseconds: ms));
+  }
+
   Future<void> setShowFileExtensions({required bool show}) async {
     await Prefs.instance.setShowFileExtensions(show: show);
     state = state.copyWith(showFileExtensions: show);
@@ -215,6 +228,8 @@ class SettingsNotifier extends Notifier<SettingsState> {
 
 int _clampConfirmMs(int ms) =>
     ms.clamp(kMinChapterConfirmMs, kMaxChapterConfirmMs);
+
+int _clampPageTurnMs(int ms) => ms.clamp(kMinPageTurnMs, kMaxPageTurnMs);
 
 final settingsProvider = NotifierProvider<SettingsNotifier, SettingsState>(
   SettingsNotifier.new,

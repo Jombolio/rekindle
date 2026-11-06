@@ -23,6 +23,7 @@ import com.rekindle.app.core.epub.ReaderBook
 import com.rekindle.app.core.prefs.BUNDLED_FONT_FILES
 import com.rekindle.app.core.prefs.BUNDLED_FONT_PATH
 import com.rekindle.app.core.prefs.BookLayout
+import com.rekindle.app.core.prefs.DEFAULT_PAGE_TURN_MS
 import com.rekindle.app.core.prefs.ReadingCss
 import java.io.ByteArrayInputStream
 import java.util.concurrent.Executors
@@ -64,6 +65,9 @@ class BookWebView(
     var themeCss: String = ""
     var layout: BookLayout = BookLayout.SCROLL
     var animations: Boolean = true
+
+    /** How long one page turn takes, in milliseconds. */
+    var turnMs: Int = DEFAULT_PAGE_TURN_MS
 
     /** What is loaded, to tell a real change from a recomposition. */
     private var loadedKey: String? = null
@@ -257,9 +261,22 @@ class BookWebView(
         val changed = target != page || count != pageCount
         page = target
         pageCount = count
-        val behavior = if (animate && animations) "smooth" else "instant"
+        // Scrolled by hand rather than with behavior:'smooth', which has no say
+        // over how long it takes: a turn has to last as long as the reader's
+        // page turn setting, the same one the comic reader and the desktop
+        // client use. A duration of 0 jumps. Each turn takes a ticket and
+        // stops as soon as a newer one starts, so two turns never fight.
+        val ms = if (animate && animations) turnMs.coerceAtLeast(0) else 0
         evaluateJavascript(
-            "window.scrollTo({left:${target / perScreen}*innerWidth,top:0,behavior:'$behavior'})",
+            "(function(x,d){var w=window;w.__rkTurn=(w.__rkTurn||0)+1;var id=w.__rkTurn;" +
+                "var s=w.scrollX,c=x-s;if(!c)return;" +
+                "if(d<=0){w.scrollTo(x,0);return}var t0=null;" +
+                "function f(t){if(w.__rkTurn!==id)return;t0=t0||t;" +
+                "var p=Math.min(1,(t-t0)/d);" +
+                // easeInOutCubic, near enough the clients' easeInOut.
+                "var e=p<0.5?4*p*p*p:1-Math.pow(-2*p+2,3)/2;" +
+                "w.scrollTo(s+c*e,0);if(p<1)requestAnimationFrame(f)}" +
+                "requestAnimationFrame(f)})(${target / perScreen}*innerWidth,$ms)",
             null,
         )
         if (changed || turned) {

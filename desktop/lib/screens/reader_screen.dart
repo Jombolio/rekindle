@@ -326,12 +326,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       ref.read(settingsProvider).comicPageTurns &&
       !MediaQuery.disableAnimationsOf(context);
 
-  Duration get _pageTurnDuration => Duration(
-      milliseconds: MediaQuery.disableAnimationsOf(context)
-          ? 1
-          : _bookPageTurns
-              ? 450
-              : 200);
+  /// A page turn takes as long as the book reader's, from the same setting, so
+  /// the two read the same. The pager eases the curl itself, which the book
+  /// does inside its painter, so the motion is eased once either way. A
+  /// sliding page is quicker: there is no paper to follow.
+  Duration get _pageTurnDuration {
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return const Duration(milliseconds: 1);
+    }
+    final turn = ref.read(settingsProvider).pageTurn;
+    return _bookPageTurns
+        ? turn
+        : Duration(milliseconds: (turn.inMilliseconds * 2 / 7).round());
+  }
 
   void _nextSlide(BuildContext context, List<Media> siblings) {
     _resetZoom();
@@ -848,68 +855,97 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     List<List<int>> slides,
     double pageGap,
   ) {
+    final pager = PageView.builder(
+      controller: _pageCtrl,
+      reverse: isRtl,
+      physics: _isZoomed
+          ? const NeverScrollableScrollPhysics()
+          : const PageScrollPhysics(),
+      itemCount: slides.length,
+      onPageChanged: (viewIndex) {
+        // Reset zoom so the next page starts at fit-to-screen.
+        if (_isZoomed) _resetZoom();
+        // Restore/remap jumps must not write progress: the provider already
+        // holds the logical page, and reporting the new slide's last page
+        // crept progress forward whenever slide grouping differed between
+        // sessions (e.g. offline opens have no spreads array).
+        if (_suppressPageReport) return;
+        // Report the LAST page of the slide so finishing a book on a double-
+        // page spread reaches totalPages-1 and marks completion. Restore maps
+        // any contained page back to this slide, so this is safe.
+        final pageIndex = slides[viewIndex].last;
+        ref
+            .read(readerProvider((widget.mediaId, widget.libraryType)).notifier)
+            .goToPage(pageIndex, widget.mediaId);
+      },
+      itemBuilder: (_, viewIndex) {
+        final content = _buildSlideContent(
+            viewIndex, extractedPages, client, isRtl, slides, pageGap);
+        return _bookPageTurns
+            ? ComicPageTurn(
+                controller: _pageCtrl,
+                index: viewIndex,
+                reverse: isRtl,
+                child: content,
+              )
+            : content;
+      },
+    );
     return InteractiveViewer(
       transformationController: _transformCtrl,
       minScale: 1.0,
       maxScale: 5.0,
       // When zoomed in, pan within the page. When at 1:1, let PageView swipe.
       panEnabled: _isZoomed,
-      child: PageView.builder(
-        controller: _pageCtrl,
-        reverse: isRtl,
-        physics: _isZoomed
-            ? const NeverScrollableScrollPhysics()
-            : const PageScrollPhysics(),
-        itemCount: slides.length,
-        onPageChanged: (viewIndex) {
-          // Reset zoom so the next page starts at fit-to-screen.
-          if (_isZoomed) _resetZoom();
-          // Restore/remap jumps must not write progress: the provider already
-          // holds the logical page, and reporting the new slide's last page
-          // crept progress forward whenever slide grouping differed between
-          // sessions (e.g. offline opens have no spreads array).
-          if (_suppressPageReport) return;
-          // Report the LAST page of the slide so finishing a book on a double-
-          // page spread reaches totalPages-1 and marks completion. Restore maps
-          // any contained page back to this slide, so this is safe.
-          final pageIndex = slides[viewIndex].last;
-          ref
-              .read(
-                  readerProvider((widget.mediaId, widget.libraryType)).notifier)
-              .goToPage(pageIndex, widget.mediaId);
-        },
-        itemBuilder: (_, viewIndex) {
-          final slide = slides[viewIndex];
-          final Widget content;
-          if (slide.length == 1) {
-            content = Image(
-              image: _buildImageProvider(slide[0], extractedPages, client),
-              fit: BoxFit.contain,
-              filterQuality: FilterQuality.medium,
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return const Center(
-                  child: CircularProgressIndicator(color: Colors.white54),
-                );
-              },
-              errorBuilder: (_, __, ___) => const Center(
-                child:
-                    Icon(Icons.broken_image, color: Colors.white54, size: 64),
+      // The turning sheet is drawn above the pager, so it lies over the slide
+      // being turned to rather than under it: the pager paints slides in index
+      // order, which would put the next one on top.
+      child: _bookPageTurns
+          ? Stack(fit: StackFit.expand, children: [
+              pager,
+              ComicPageCurl(
+                controller: _pageCtrl,
+                reverse: isRtl,
+                slideCount: slides.length,
+                slideBuilder: (index) => _buildSlideContent(
+                    index, extractedPages, client, isRtl, slides, pageGap),
               ),
-            );
-          } else {
-            content = _buildDoublePageSlide(
-                slide[0], slide[1], isRtl, extractedPages, client, pageGap);
-          }
-          return _bookPageTurns
-              ? ComicPageTurn(
-                  controller: _pageCtrl,
-                  index: viewIndex,
-                  reverse: isRtl,
-                  child: content,
-                )
-              : content;
-        },
+            ])
+          : pager,
+    );
+  }
+
+  /// One slide: a single page, or a two-page spread.
+  ///
+  /// Given room to choose, a single page takes only the size it is drawn at,
+  /// letterbox excluded, so [ComicPageCurl] curls the page itself rather than
+  /// the whole window. In the pager it is given the viewport outright and
+  /// letterboxes itself inside it as before.
+  Widget _buildSlideContent(
+    int viewIndex,
+    List<String>? extractedPages,
+    dynamic client,
+    bool isRtl,
+    List<List<int>> slides,
+    double pageGap,
+  ) {
+    final slide = slides[viewIndex];
+    if (slide.length > 1) {
+      return _buildDoublePageSlide(
+          slide[0], slide[1], isRtl, extractedPages, client, pageGap);
+    }
+    return Image(
+      image: _buildImageProvider(slide[0], extractedPages, client),
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.medium,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return const Center(
+          child: CircularProgressIndicator(color: Colors.white54),
+        );
+      },
+      errorBuilder: (_, __, ___) => const Center(
+        child: Icon(Icons.broken_image, color: Colors.white54, size: 64),
       ),
     );
   }

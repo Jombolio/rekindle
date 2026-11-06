@@ -207,6 +207,50 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           Row(
                             children: [
                               Expanded(
+                                child: Text('Page turn speed',
+                                    style: theme.textTheme.bodyLarge),
+                              ),
+                              Text(
+                                _formatPageTurn(settings.pageTurn),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.primary),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'How long a page takes to turn, in comics and in books.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                          Slider(
+                            // Left to right runs fast to slow, as the label says.
+                            value: settings.pageTurn.inMilliseconds
+                                .clamp(kMinPageTurnMs, kMaxPageTurnMs)
+                                .toDouble(),
+                            min: kMinPageTurnMs.toDouble(),
+                            max: kMaxPageTurnMs.toDouble(),
+                            // 100 ms steps across the range.
+                            divisions: (kMaxPageTurnMs - kMinPageTurnMs) ~/ 100,
+                            label: _formatPageTurn(settings.pageTurn),
+                            onChanged: (v) => ref
+                                .read(settingsProvider.notifier)
+                                .setPageTurn(
+                                    Duration(milliseconds: v.round())),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -559,6 +603,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
 /// "750 ms" below a second, "1.5 s" above — the slider steps in 250 ms, so one
 /// decimal is always enough.
+/// A page turn as the reader picks it: how it feels, and how long it takes.
+String _formatPageTurn(Duration d) {
+  final ms = d.inMilliseconds;
+  final feel = switch (ms) {
+    <= 300 => 'Very fast',
+    <= 500 => 'Fast',
+    <= 800 => 'Standard',
+    <= 1100 => 'Slow',
+    _ => 'Very slow',
+  };
+  return '$feel · $ms ms';
+}
+
 String _formatConfirmWindow(Duration d) {
   final ms = d.inMilliseconds;
   if (ms < 1000) return '$ms ms';

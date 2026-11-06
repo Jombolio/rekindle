@@ -73,6 +73,8 @@ import com.rekindle.app.core.prefs.MAX_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.MIN_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.MAX_CHAPTER_CONFIRM_MS
 import com.rekindle.app.core.prefs.MIN_CHAPTER_CONFIRM_MS
+import com.rekindle.app.core.prefs.MAX_PAGE_TURN_MS
+import com.rekindle.app.core.prefs.MIN_PAGE_TURN_MS
 import com.rekindle.app.ui.viewmodel.SettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -247,6 +249,34 @@ fun SettingsScreen(
                         trailingContent = {
                             Switch(checked = state.comicPageTurns, onCheckedChange = vm::setComicPageTurns)
                         },
+                    )
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Page turn speed",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            formatPageTurn(state.pageTurnMs),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Text(
+                        "How long a page takes to turn, in comics and in books.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Slider(
+                        // Left to right runs fast to slow, as the label says.
+                        value = state.pageTurnMs
+                            .coerceIn(MIN_PAGE_TURN_MS, MAX_PAGE_TURN_MS)
+                            .toFloat(),
+                        onValueChange = { vm.setPageTurnMs(it.toInt()) },
+                        valueRange = MIN_PAGE_TURN_MS.toFloat()..MAX_PAGE_TURN_MS.toFloat(),
+                        // 100 ms steps; steps counts the gaps *between* endpoints.
+                        steps = (MAX_PAGE_TURN_MS - MIN_PAGE_TURN_MS) / 100 - 1,
                     )
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -542,6 +572,18 @@ fun SettingsScreen(
 
     /** "750 ms" below a second, "1.5 s" above — the slider steps in 250 ms, so one
      *  decimal is always enough. Matches the desktop client's wording. */
+    /** A page turn as the reader picks it: how it feels, and how long it takes. */
+    private fun formatPageTurn(ms: Int): String {
+        val feel = when {
+            ms <= 300 -> "Very fast"
+            ms <= 500 -> "Fast"
+            ms <= 800 -> "Standard"
+            ms <= 1100 -> "Slow"
+            else -> "Very slow"
+        }
+        return "$feel · $ms ms"
+    }
+
     private fun formatConfirmWindow(ms: Int): String {
         if (ms < 1000) return "$ms ms"
         val seconds = ms / 1000.0

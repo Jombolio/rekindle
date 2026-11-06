@@ -30,6 +30,13 @@ const val MIN_CHAPTER_CONFIRM_MS = 250
 const val MAX_CHAPTER_CONFIRM_MS = 5000
 const val DEFAULT_CHAPTER_CONFIRM_MS = 2000
 
+// How long a page takes to turn. The default is the book reader's own turn,
+// which the comic reader matches. Same bounds and pref key as the desktop
+// client, so a reader who uses both gets the same speed on each.
+const val MIN_PAGE_TURN_MS = 200
+const val MAX_PAGE_TURN_MS = 1400
+const val DEFAULT_PAGE_TURN_MS = 700
+
 @Singleton
 class PrefsStore @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -208,6 +215,15 @@ class PrefsStore @Inject constructor(
     suspend fun setComicPageTurns(enabled: Boolean) =
         store.edit { it[Keys.COMIC_PAGE_TURNS] = enabled }
 
+    /** How long one page turn takes, in milliseconds. */
+    val pageTurnMs: Flow<Int> = store.data.map {
+        (it[Keys.PAGE_TURN_MS] ?: DEFAULT_PAGE_TURN_MS)
+            .coerceIn(MIN_PAGE_TURN_MS, MAX_PAGE_TURN_MS)
+    }
+    suspend fun setPageTurnMs(ms: Int) = store.edit {
+        it[Keys.PAGE_TURN_MS] = ms.coerceIn(MIN_PAGE_TURN_MS, MAX_PAGE_TURN_MS)
+    }
+
     val showFileExtensions: Flow<Boolean> = store.data.map { it[Keys.SHOW_FILE_EXTENSIONS] ?: false }
 
     /** The font and text size books open with. */
@@ -306,6 +322,7 @@ class PrefsStore @Inject constructor(
         val SPINE_GAP = floatPreferencesKey("spine_gap")
         val RECEIVE_PRE_RELEASES = booleanPreferencesKey("receive_pre_releases")
         val COMIC_PAGE_TURNS = booleanPreferencesKey("comic_page_turns")
+        val PAGE_TURN_MS = intPreferencesKey("page_turn_ms")
         val SHOW_FILE_EXTENSIONS = booleanPreferencesKey("show_file_extensions")
         val BOOK_FONT = stringPreferencesKey("book_font")
         val BOOK_FONT_SIZE = floatPreferencesKey("book_font_size")

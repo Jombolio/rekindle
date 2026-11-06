@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rekindle.app.core.prefs.DEFAULT_CHAPTER_CONFIRM_MS
+import com.rekindle.app.core.prefs.DEFAULT_PAGE_TURN_MS
 import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.data.repository.DownloadRepository
 import com.rekindle.app.data.repository.MediaRepository
@@ -23,6 +24,8 @@ import javax.inject.Inject
 
 data class ReaderState(
     val comicPageTurns: Boolean = true,
+    /** How long one page turn takes, in milliseconds. */
+    val pageTurnMs: Int = DEFAULT_PAGE_TURN_MS,
     val title: String = "",
     val totalPages: Int = 0,
     val currentPage: Int = 0,
@@ -89,6 +92,7 @@ class ReaderViewModel @Inject constructor(
                     scrollMode = prefs.isScrollMode(mediaId).first(),
                     spineGap = prefs.spineGap.first(),
                     comicPageTurns = prefs.comicPageTurns.first(),
+                    pageTurnMs = prefs.pageTurnMs.first(),
                     // Read once at open, like the other reader prefs: Settings is a
                     // different screen, so these cannot change while reading.
                     confirmChapterChange = prefs.confirmChapterChange.first(),

@@ -780,6 +780,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
           startFraction: _wantedFraction,
           spread: style.layout == BookLayout.spread,
           animate: style.animations,
+          turnDuration: ref.watch(settingsProvider).pageTurn,
           columnWidth: columnWidth,
           pageColor: _bgColor,
           topInset: _topInset,

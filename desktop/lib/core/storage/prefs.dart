@@ -11,6 +11,13 @@ const int kMinChapterConfirmMs = 250;
 const int kMaxChapterConfirmMs = 5000;
 const int kDefaultChapterConfirmMs = 2000;
 
+/// How long a page takes to turn, in milliseconds. The default is the book
+/// reader's own turn, which the comic reader matches; the bounds keep a value
+/// written by another build inside what still reads as a page turning.
+const int kMinPageTurnMs = 200;
+const int kMaxPageTurnMs = 1400;
+const int kDefaultPageTurnMs = 700;
+
 /// Thin wrapper around SharedPreferences for typed, named access.
 class Prefs {
   Prefs._(this._prefs);
@@ -114,6 +121,10 @@ class Prefs {
   bool get comicPageTurns => _prefs.getBool('comic_page_turns') ?? true;
   Future<void> setComicPageTurns(bool enabled) =>
       _prefs.setBool('comic_page_turns', enabled);
+
+  // How long one page turn takes, in milliseconds (both readers).
+  int get pageTurnMs => _prefs.getInt('page_turn_ms') ?? kDefaultPageTurnMs;
+  Future<void> setPageTurnMs(int ms) => _prefs.setInt('page_turn_ms', ms);
 
   bool get showFileExtensions =>
       _prefs.getBool('show_file_extensions') ?? false;
