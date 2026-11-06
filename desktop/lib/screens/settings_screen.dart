@@ -1,4 +1,5 @@
 import '../core/epub/book_font.dart';
+import '../core/epub/book_theme.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -238,6 +239,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         onChanged: (font) {
                           if (font == null) return;
                           ref.read(settingsProvider.notifier).setBookFont(font);
+                        },
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 32),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Reading theme',
+                                style: theme.textTheme.bodyLarge),
+                            const SizedBox(height: 4),
+                            Text(
+                              'The colours books open in. The palette button '
+                              'in a book changes them for that visit.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      DropdownButton<BookTheme>(
+                        value: settings.bookTheme,
+                        items: [
+                          for (final bookTheme in BookTheme.values)
+                            DropdownMenuItem(
+                              value: bookTheme,
+                              child: Text(bookTheme.label),
+                            ),
+                        ],
+                        onChanged: (bookTheme) {
+                          if (bookTheme == null) return;
+                          ref
+                              .read(settingsProvider.notifier)
+                              .setBookTheme(bookTheme);
                         },
                       ),
                     ],

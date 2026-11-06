@@ -64,6 +64,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.rekindle.app.domain.model.ServerSource
 import com.rekindle.app.BuildConfig
 import com.rekindle.app.core.prefs.BookFont
+import com.rekindle.app.core.prefs.BookTheme
 import com.rekindle.app.core.update.UpdateCheck
 import com.rekindle.app.core.prefs.MAX_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.MIN_BOOK_FONT_SIZE
@@ -257,6 +258,26 @@ fun SettingsScreen(
                             selected = state.bookFont == font,
                             onClick = { vm.setBookFont(font) },
                             label = { Text(font.label) },
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Text("Reading theme", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "The colours books open in. The palette button in a book changes them for that visit.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    BookTheme.entries.forEach { bookTheme ->
+                        FilterChip(
+                            selected = state.bookTheme == bookTheme,
+                            onClick = { vm.setBookTheme(bookTheme) },
+                            label = { Text(bookTheme.label) },
                         )
                     }
                 }

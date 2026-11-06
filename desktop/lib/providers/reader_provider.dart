@@ -115,6 +115,18 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, ReaderArgs> {
   @override
   ReaderState build(ReaderArgs arg) {
     final (mediaId, _) = arg;
+    // Riverpod keeps this notifier across rebuilds, and a reader's close
+    // rebuilds it for the next open. Nothing from the last session may carry
+    // over: a stale "the reader moved" flag alone would let the next close save
+    // the fresh state's page 0 over the real progress.
+    _syncTimer?.cancel();
+    _completedOnLoad = false;
+    _userNavigated = false;
+    _restored = false;
+    _externalPage = null;
+    _bookMode = false;
+    _bookFraction = null;
+    _bookCompleted = false;
     _latest = const ReaderState();
     listenSelf((_, next) => _latest = next);
     ref.onDispose(() {
