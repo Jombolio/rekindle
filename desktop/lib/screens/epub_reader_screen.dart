@@ -694,7 +694,8 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     if (!layout.paged || position == null || position.count == 0) {
       return chapter;
     }
-    final first = position.page + 1;
+    // A spread's left page is -1 when a chapter opens alone on the right.
+    final first = position.page < 0 ? 1 : position.page + 1;
     final last = layout == BookLayout.spread
         ? (position.page + 2).clamp(1, position.count)
         : first;
@@ -780,6 +781,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
           spread: style.layout == BookLayout.spread,
           animate: style.animations,
           columnWidth: columnWidth,
+          pageColor: _bgColor,
           topInset: _topInset,
           bottomInset: _bottomInset,
           onPage: _onPage,
@@ -839,10 +841,10 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     ref.listen(settingsProvider, _onSettingsChanged);
     final style = reading.readingStyle;
 
-    return KeyboardListener(
+    return Focus(
       focusNode: _focusNode,
       autofocus: true,
-      onKeyEvent: (event) {
+      onKeyEvent: (node, event) {
         if (event is KeyDownEvent || event is KeyRepeatEvent) {
           final key = event.logicalKey;
           final paged = style.layout.paged;
@@ -859,16 +861,16 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
             _back();
           }
         }
-        if (event is KeyDownEvent) {
-          if (event.logicalKey == LogicalKeyboardKey.escape) {
-            // The pop-up goes first, so closing it can't also close the book.
-            if (_definition != null) {
-              _dismissDefinition();
-            } else {
-              Navigator.of(context).pop();
-            }
-          }
+        // Escape closes the pop-up first, and marks the press used, so it can't
+        // also close the book. Otherwise the app takes it to go back
+        // (EscapeGoesBack).
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.escape &&
+            _definition != null) {
+          _dismissDefinition();
+          return KeyEventResult.handled;
         }
+        return KeyEventResult.ignored;
       },
       child: Scaffold(
         key: _scaffoldKey,

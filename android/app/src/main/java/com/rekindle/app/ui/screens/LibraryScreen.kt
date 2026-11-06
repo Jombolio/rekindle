@@ -1,5 +1,7 @@
 package com.rekindle.app.ui.screens
 
+import com.rekindle.app.BuildConfig
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -89,7 +91,22 @@ fun LibraryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Rekindle") },
+                title = {
+                    // The version beside the name, so it's clear at a glance
+                    // which build is installed, betas especially.
+                    Row {
+                        Text("Rekindle", modifier = Modifier.alignByBaseline())
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "v${BuildConfig.VERSION_NAME}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.alignByBaseline(),
+                        )
+                    }
+                },
                 actions = {
                     IconButton(onClick = onDownloadsClick) {
                         Icon(Icons.Default.DownloadForOffline, contentDescription = "Downloads")

@@ -182,7 +182,9 @@ F-Droid checks for updates automatically. When a new Rekindle release is publish
 
 ### Updating
 
-Open **Settings → Updates** and tap **Check for updates**. Turn on **Include pre-releases** to be offered betas and release candidates as well.
+Open **Settings → Updates** and tap **Check for updates**.
+
+Pre-releases (betas and release candidates) aren't recommended on Android. They may have bugs, and Android won't install an older version over a newer one, so going back to a stable release means uninstalling first, which can remove your downloads. To be offered them anyway, tap the **Include pre-releases** switch three times in quick succession. One tap turns it off again.
 
 **Download** hands the APK to your browser, and Android installs it after you confirm. The app only checks when you ask.
 
