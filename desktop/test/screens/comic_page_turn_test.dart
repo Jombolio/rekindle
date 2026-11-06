@@ -38,6 +38,7 @@ void main() {
                   controller: controller,
                   reverse: reverse,
                   slideCount: _slides.length,
+                  spreadAt: (_) => false,
                   slideBuilder: (index) =>
                       SizedBox.expand(child: ColoredBox(color: _slides[index])),
                 ),
@@ -66,6 +67,24 @@ void main() {
 
   Future<void> expectSlide(WidgetTester tester, double x, int slide) async {
     expect(await pixel(tester, x), _slides[slide], reason: 'x=$x');
+  }
+
+  /// Every colour down the middle of the viewport, left to right.
+  Future<Set<Color>> row(WidgetTester tester) async {
+    final render =
+        boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+    final image = render.toImageSync();
+    final bytes = (await tester.runAsync(() => image.toByteData()))!;
+    final width = image.width;
+    image.dispose();
+    return {
+      for (var x = 0; x < width; x++)
+        () {
+          final at = ((_viewport.height ~/ 2) * width + x) * 4;
+          return Color.fromARGB(bytes.getUint8(at + 3), bytes.getUint8(at),
+              bytes.getUint8(at + 1), bytes.getUint8(at + 2));
+        }(),
+    };
   }
 
   for (final reverse in [false, true]) {
@@ -160,6 +179,7 @@ void main() {
                 controller: controller,
                 reverse: false,
                 slideCount: 1,
+                spreadAt: (_) => false,
                 slideBuilder: (index) =>
                     SizedBox.expand(child: ColoredBox(color: _slides[index])),
               ),
@@ -176,4 +196,123 @@ void main() {
     }
     await tester.pumpWidget(const SizedBox());
   });
+
+  // A two-page slide, as the reader builds the sheet that turns: the printed
+  // pages and nothing else, so the spine falls down the middle of the sheet.
+  // Each page is a primary, so the roll's shading dims it without moving any
+  // channel onto another — which is what [whichPage] reads it back by.
+  const pages = [
+    Color(0xFFFF0000), // slide 0, left
+    Color(0xFF00FF00), // slide 0, right
+    Color(0xFF0000FF), // slide 1, left
+    Color(0xFFFFFF00), // slide 1, right
+  ];
+
+  /// Which page a pixel came from, however far the roll has shaded it, or
+  /// null for the reader's background and the paper between the strips.
+  int? whichPage(Color c) {
+    const floor = 0.08;
+    final lit = [c.r > floor, c.g > floor, c.b > floor];
+    final index = [
+      [true, false, false],
+      [false, true, false],
+      [false, false, true],
+      [true, true, false],
+    ].indexWhere((want) {
+      for (var i = 0; i < 3; i++) {
+        if (want[i] != lit[i]) return false;
+      }
+      return true;
+    });
+    return index < 0 ? null : index;
+  }
+
+  for (final reverse in [false, true]) {
+    // The sheet that turns is the half on the side the reader turns from: the
+    // right reading left to right, the left reading right to left.
+    final staying = reverse ? 1 : 0;
+    final turning = reverse ? 0 : 1;
+    final arriving = reverse ? 3 : 2; // rides the sheet, printed on its back
+    final revealed = reverse ? 2 : 3; // lies beneath, uncovered by the turn
+    final stayingX = reverse ? _viewport.width - 10 : 10.0;
+    final revealedX = reverse ? 10.0 : _viewport.width - 10;
+
+    testWidgets('a spread turns about the spine down its middle, RTL=$reverse',
+        (tester) async {
+      final controller = PageController();
+      addTearDown(controller.dispose);
+      Widget spread(int index) => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final half in [index * 2, index * 2 + 1])
+                SizedBox(
+                    width: _viewport.width / 2,
+                    height: _viewport.height,
+                    child: ColoredBox(color: pages[half])),
+            ],
+          );
+      await tester.pumpWidget(MaterialApp(
+        home: Center(
+          child: RepaintBoundary(
+            key: boundary,
+            child: SizedBox.fromSize(
+              size: _viewport,
+              child: Stack(fit: StackFit.expand, children: [
+                PageView.builder(
+                  controller: controller,
+                  reverse: reverse,
+                  itemCount: 2,
+                  itemBuilder: (_, index) => ComicPageTurn(
+                    controller: controller,
+                    index: index,
+                    reverse: reverse,
+                    child: spread(index),
+                  ),
+                ),
+                ComicPageCurl(
+                  controller: controller,
+                  reverse: reverse,
+                  slideCount: 2,
+                  spreadAt: (_) => true,
+                  slideBuilder: spread,
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ));
+
+      // At rest the slide being read fills the spread.
+      expect(whichPage(await pixel(tester, stayingX)), staying);
+      expect(whichPage(await pixel(tester, revealedX)), turning);
+
+      final drag =
+          await tester.startGesture(tester.getCenter(find.byType(PageView)));
+      await drag.moveBy(Offset(_viewport.width / 2 * (reverse ? 1 : -1), 0));
+      await tester.pump();
+      final mid = (await row(tester)).map(whichPage).toSet();
+
+      // The page on the far side of the spine has not moved: it stays down
+      // until the turning sheet lands on it. That is what a centre spine
+      // buys — without one the whole spread slides away at once.
+      expect(whichPage(await pixel(tester, stayingX)), staying,
+          reason: 'the page being turned away from should stay put');
+      // Past the sheet's edge, the next slide is already showing.
+      expect(whichPage(await pixel(tester, revealedX)), revealed,
+          reason: "the next slide's far page should be revealed");
+      // The sheet carries two pages, as a printed one does: the half being
+      // left on its front, and the next slide's facing page on its back.
+      expect(mid, contains(turning),
+          reason: 'the page being turned should still be visible');
+      expect(mid, contains(arriving),
+          reason: "the next slide's facing page should ride the sheet");
+
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(controller.page, 1);
+      expect(whichPage(await pixel(tester, stayingX)), arriving);
+      expect(whichPage(await pixel(tester, revealedX)), revealed);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
 }

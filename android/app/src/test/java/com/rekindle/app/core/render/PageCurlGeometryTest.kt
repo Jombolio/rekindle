@@ -166,6 +166,55 @@ class PageCurlGeometryTest {
         }
     }
 
+    @Test
+    fun `the back of the sheet is printed across the spine from its front`() {
+        // A spread's sheet is the half-page on one side of a centre spine.
+        val spine = 160f
+        val curl = requireNotNull(PageCurl.layout(spine, 1, spine, 0.5f))
+        for (s in curl.strips) {
+            // Whatever is printed at a distance from the spine on the front is
+            // printed the same distance the other way on the back, which is
+            // where that paper lands once the sheet has turned right over.
+            assertEquals(
+                "mirrored about the spine",
+                s.srcLeft - spine,
+                spine - s.backSrcRight,
+                0.001f,
+            )
+            assertEquals(
+                "same width as the front band",
+                s.srcRight - s.srcLeft,
+                s.backSrcRight - s.backSrcLeft,
+                0.001f,
+            )
+            // It lands on the other side of the spine, where the facing page
+            // of the slide being turned to is.
+            assertTrue("back at ${s.backSrcLeft}", s.backSrcLeft <= spine)
+        }
+        // Only the paper that has turned over carries the back, so it covers
+        // more of the half-page as the turn goes on, reaching the spine as the
+        // sheet lands.
+        fun backReach(progress: Float) = requireNotNull(
+            PageCurl.layout(spine, 1, spine, progress),
+        ).strips.filter { it.turned }.maxOf { it.backSrcRight }
+        assertTrue(backReach(0.5f) > 0f)
+        assertTrue(backReach(0.8f) > backReach(0.5f))
+        assertTrue("lands at the spine", backReach(0.95f) > spine - 15f)
+    }
+
+    @Test
+    fun `a spread turns the half-page on the side the reader turns from`() {
+        val spine = 160f
+        val ltr = requireNotNull(PageCurl.layout(spine, 1, spine, 0.4f))
+        val rtl = requireNotNull(PageCurl.layout(spine, -1, spine, 0.4f))
+        // Left to right the sheet is the right half, and its back lands left.
+        assertTrue(ltr.strips.all { it.srcLeft >= spine - 0.6f })
+        assertTrue(ltr.strips.all { it.backSrcRight <= spine + 0.6f })
+        // Right to left is the mirror of it.
+        assertTrue(rtl.strips.all { it.srcRight <= spine + 0.6f })
+        assertTrue(rtl.strips.all { it.backSrcLeft >= spine - 0.6f })
+    }
+
     /** The far edge of the paper that is still on the page, left to right. */
     private fun sheetRight(curl: PageCurl.Layout): Float =
         curl.strips.fold(curl.flatRight) { far, s -> max(far, s.dstRight) }
