@@ -264,7 +264,10 @@ class BookWebView(
         )
         if (changed || turned) {
             val fraction = if (target + perScreen >= count) 1f else target.toFloat() / count
-            onPage(target, count, fraction, turned)
+            // A spread's first column is the blank left page that puts the chapter's
+            // opening on the right, so book pages are one behind columns: -1 there.
+            if (layout == BookLayout.SPREAD) onPage(target - 1, count - 1, fraction, turned)
+            else onPage(target, count, fraction, turned)
         }
     }
 

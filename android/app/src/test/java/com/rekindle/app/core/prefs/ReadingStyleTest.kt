@@ -63,6 +63,9 @@ class ReadingStyleTest {
         assertTrue("overflow:hidden" in single)
         val spread = ReadingCss.css(ReadingStyle(layout = BookLayout.SPREAD))
         assertTrue("calc(50vw - 32px)" in spread)
+        // A chapter opens on the right, after a blank left page.
+        assertTrue("body::before{content:'';display:block;break-after:column;}" in spread)
+        assertFalse("break-after:column" in single)
         assertFalse("column-width" in ReadingCss.css(ReadingStyle(layout = BookLayout.CONTINUOUS)))
     }
 }

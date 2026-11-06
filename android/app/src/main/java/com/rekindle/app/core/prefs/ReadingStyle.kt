@@ -170,7 +170,10 @@ object ReadingCss {
                     "box-sizing:border-box;padding:${TOP_INSET}px calc(($period - $column) / 2) ${BOTTOM_INSET}px !important;" +
                     "column-width:$column;column-gap:$gap;column-fill:auto;}" +
                     "img,svg,figure,table{max-height:calc(100vh - ${TOP_INSET + BOTTOM_INSET + 16}px);" +
-                    "break-inside:avoid;object-fit:contain;}"
+                    "break-inside:avoid;object-fit:contain;}" +
+                    // Like a printed book, a chapter opens on a right-hand page:
+                    // an empty first column takes the left.
+                    (if (style.layout == BookLayout.SPREAD) "body::before{content:'';display:block;break-after:column;}" else "")
             }
         }
     }

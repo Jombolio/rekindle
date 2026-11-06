@@ -264,7 +264,8 @@ fun EpubReaderScreen(
 private fun positionLabel(chapter: Int, chapters: Int, layout: BookLayout, page: Int, pageCount: Int): String {
     val base = "Chapter ${chapter + 1} / $chapters"
     if (!layout.paged || pageCount <= 0) return base
-    val first = page + 1
+    // A spread's left page is -1 when a chapter opens alone on the right.
+    val first = if (page < 0) 1 else page + 1
     val last = if (layout == BookLayout.SPREAD) minOf(page + 2, pageCount) else first
     val pages = if (first == last) "Page $first" else "Pages $first–$last"
     return "$base · $pages of $pageCount"

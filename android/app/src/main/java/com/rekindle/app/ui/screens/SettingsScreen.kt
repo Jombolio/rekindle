@@ -279,7 +279,9 @@ fun SettingsScreen(
                     Column(Modifier.weight(1f)) {
                         Text("Include pre-releases", style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "Betas and release candidates. They may have bugs.",
+                            "Betas and release candidates. Not recommended on Android: they may " +
+                                "have bugs, and going back to a stable release means uninstalling " +
+                                "first, which can remove your downloads. Tap three times to turn on.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -287,7 +289,16 @@ fun SettingsScreen(
                     Spacer(Modifier.width(16.dp))
                     Switch(
                         checked = state.receivePreReleases,
-                        onCheckedChange = { vm.setReceivePreReleases(it) },
+                        // Off takes one tap; on takes three (see tapPreReleases).
+                        onCheckedChange = { vm.tapPreReleases() },
+                    )
+                }
+                state.preReleaseTapsLeft?.let { left ->
+                    Text(
+                        if (left == 1) "Tap once more to include pre-releases."
+                        else "Tap $left more times to include pre-releases.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
                 Spacer(Modifier.height(8.dp))

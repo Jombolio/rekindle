@@ -21,6 +21,7 @@ import 'screens/library_screen.dart';
 import 'screens/media_grid_screen.dart';
 import 'screens/reader_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/widgets/escape_goes_back.dart';
 import 'screens/widgets/update_flow.dart';
 
 final _routerProvider = Provider<GoRouter>((ref) {
@@ -206,6 +207,8 @@ class _RekindleAppState extends ConsumerState<RekindleApp> {
       ),
       themeMode: settings.themeMode,
       routerConfig: router,
+      builder: (context, child) =>
+          EscapeGoesBack(router: router, child: child ?? const SizedBox()),
       debugShowCheckedModeBanner: false,
     );
   }
