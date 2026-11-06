@@ -85,7 +85,7 @@ class PagedChapterViewState extends State<PagedChapterView>
     with SingleTickerProviderStateMixin {
   static const _gap = 56.0;
   static const _sideMargin = 24.0;
-  static const _turnDuration = Duration(milliseconds: 520);
+  static const _turnDuration = Duration(milliseconds: 700);
 
   PageBreaks? _breaks;
   RenderBox? _laidOut;
@@ -334,87 +334,112 @@ class PagedChapterViewState extends State<PagedChapterView>
 
   /// What's drawn over the live pages during a turn.
   ///
-  /// Forward in a spread, the right-hand page lifts about the spine and folds
-  /// over: for the first half of the turn it's the old right page, seen edge-on
-  /// at the middle; for the second half it's the new left page, landing on the
-  /// old left page, which stays down until it's covered. The new right page lies
-  /// beneath from the start. Back is the mirror. A single page lifts from its
-  /// left edge going forward, and the previous page drops back onto it going
-  /// back.
+  /// The turning page curls like paper (see [PageCurlPainter]): a soft roll
+  /// sweeps from its outer edge to the spine, and the page folds over it,
+  /// showing its back.
+  ///
+  /// - Forward in a spread, the right-hand page curls over onto the left, and
+  ///   its back is the new left page. The new right page lies beneath it from
+  ///   the start, and the old left page stays down until it's covered.
+  /// - Back in a spread is the mirror: the left page curls over to the right.
+  /// - A single page curls away to its left edge, revealing the next one.
+  ///   Going back, the previous page uncurls onto the current one.
   List<Widget> _turnLayers(Size size, double pageWidth) {
     final from = _from;
     if (from == null) return const [];
     final to = _to;
     final whole = Offset.zero & size;
+    final paper = widget.pageColor;
     if (to == null) {
       // Waiting for the arriving pages to paint: keep the old ones up.
-      return [
-        _Part(image: from, area: whole, rect: whole, paper: widget.pageColor)
-      ];
+      return [_Part(image: from, area: whole, rect: whole, paper: paper)];
     }
 
     final t = Curves.easeInOut.transform(_turn.value);
     final forward = _turnDirection > 0;
-    final paper = widget.pageColor;
+
+    Widget curl({
+      required ui.Image front,
+      ui.Image? back,
+      required double spine,
+      required int direction,
+      required double width,
+      required double progress,
+      Rect? clip,
+    }) =>
+        Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(
+              painter: PageCurlPainter(
+                front: front,
+                back: back,
+                area: size,
+                spine: spine,
+                direction: direction,
+                width: width,
+                progress: progress,
+                paper: paper,
+                clip: clip,
+              ),
+            ),
+          ),
+        );
 
     if (!widget.spread) {
-      final left = (size.width - pageWidth) / 2;
-      final page = Rect.fromLTWH(left - 8, 0, pageWidth + 16, size.height);
+      final left = (size.width - pageWidth) / 2 - 8;
+      final page = Rect.fromLTWH(left, 0, pageWidth + 16, size.height);
       return forward
           ? [
-              // The old page lifts away; the new one lies beneath.
-              _leaf(from, page, size, math.pi / 2 * t, pivotLeft: true),
+              // The old page curls away over its left edge; the next lies beneath.
+              curl(
+                front: from,
+                spine: left,
+                direction: 1,
+                width: page.width,
+                progress: t,
+                clip: page,
+              ),
             ]
           : [
-              // The old page stays down while the previous one drops onto it.
+              // The previous page uncurls back over the current one.
               _Part(image: from, area: whole, rect: page, paper: paper),
-              _leaf(to, page, size, math.pi / 2 * (1 - t), pivotLeft: true),
+              curl(
+                front: to,
+                spine: left,
+                direction: 1,
+                width: page.width,
+                progress: 1 - t,
+                clip: page,
+              ),
             ];
     }
 
     final spine = size.width / 2;
     final leftHalf = Rect.fromLTRB(0, 0, spine, size.height);
     final rightHalf = Rect.fromLTRB(spine, 0, size.width, size.height);
-    final firstHalf = t < 0.5;
-    if (forward) {
-      return [
-        _Part(image: from, area: whole, rect: leftHalf, paper: paper),
-        firstHalf
-            ? _leaf(from, rightHalf, size, math.pi * t, pivotLeft: true)
-            : _leaf(to, leftHalf, size, -math.pi * (1 - t), pivotLeft: false),
-      ];
-    }
-    return [
-      _Part(image: from, area: whole, rect: rightHalf, paper: paper),
-      firstHalf
-          ? _leaf(from, leftHalf, size, -math.pi * t, pivotLeft: false)
-          : _leaf(to, rightHalf, size, math.pi * (1 - t), pivotLeft: true),
-    ];
-  }
-
-  /// [rect] of [image], turned [angle] about its left or right edge, with the
-  /// near edge coming towards the reader as paper does.
-  Widget _leaf(ui.Image image, Rect rect, Size size, double angle,
-      {required bool pivotLeft}) {
-    // Darker as it stands up, lit again as it lies flat.
-    final shade = 0.3 * math.sin(angle.abs().clamp(0.0, math.pi));
-    return Positioned.fromRect(
-      rect: rect,
-      child: Transform(
-        alignment: pivotLeft ? Alignment.centerLeft : Alignment.centerRight,
-        transform: Matrix4.identity()
-          ..setEntry(3, 2, 0.0012)
-          ..rotateY(angle),
-        child: _Part(
-          image: image,
-          area: Offset.zero & size,
-          rect: rect,
-          paper: widget.pageColor,
-          shade: shade,
-          positioned: false,
-        ),
-      ),
-    );
+    return forward
+        ? [
+            _Part(image: from, area: whole, rect: leftHalf, paper: paper),
+            curl(
+              front: from,
+              back: to,
+              spine: spine,
+              direction: 1,
+              width: size.width - spine,
+              progress: t,
+            ),
+          ]
+        : [
+            _Part(image: from, area: whole, rect: rightHalf, paper: paper),
+            curl(
+              front: from,
+              back: to,
+              spine: spine,
+              direction: -1,
+              width: spine,
+              progress: t,
+            ),
+          ];
   }
 
   /// One page: a window onto the laid-out chapter, from the page's start to its
@@ -466,37 +491,32 @@ class PagedChapterViewState extends State<PagedChapterView>
   }
 }
 
-/// Part of a page image: [rect] of an image of [area], on paper, optionally
-/// shaded. Positioned at [rect] unless [positioned] is false, when it fills its
-/// parent.
+/// Part of a page image: [rect] of an image of [area], on paper, positioned
+/// at [rect].
 class _Part extends StatelessWidget {
   final ui.Image image;
   final Rect area;
   final Rect rect;
   final Color paper;
-  final double shade;
-  final bool positioned;
 
   const _Part({
     required this.image,
     required this.area,
     required this.rect,
     required this.paper,
-    this.shade = 0,
-    this.positioned = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    final painted = IgnorePointer(
-      child: CustomPaint(
-        size: rect.size,
-        painter: _PartPainter(image, area, rect, paper, shade),
+    return Positioned.fromRect(
+      rect: rect,
+      child: IgnorePointer(
+        child: CustomPaint(
+          size: rect.size,
+          painter: _PartPainter(image, area, rect, paper),
+        ),
       ),
     );
-    return positioned
-        ? Positioned.fromRect(rect: rect, child: painted)
-        : painted;
   }
 }
 
@@ -505,9 +525,8 @@ class _PartPainter extends CustomPainter {
   final Rect area;
   final Rect rect;
   final Color paper;
-  final double shade;
 
-  _PartPainter(this.image, this.area, this.rect, this.paper, this.shade);
+  _PartPainter(this.image, this.area, this.rect, this.paper);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -527,18 +546,11 @@ class _PartPainter extends CustomPainter {
       canvas.drawImageRect(
           image, src, dst, Paint()..filterQuality = FilterQuality.medium);
     }
-    if (shade > 0) {
-      canvas.drawRect(dst,
-          Paint()..color = const Color(0xFF000000).withValues(alpha: shade));
-    }
   }
 
   @override
   bool shouldRepaint(_PartPainter old) =>
-      !identical(old.image, image) ||
-      old.rect != rect ||
-      old.shade != shade ||
-      old.paper != paper;
+      !identical(old.image, image) || old.rect != rect || old.paper != paper;
 }
 
 /// Reports its child's render box after each layout that changes its size, such
@@ -575,4 +587,204 @@ class _RenderLayoutReporter extends RenderProxyBox {
       if (attached) onLayout(this);
     });
   }
+}
+
+/// A page curling over like paper, for a page turn.
+///
+/// The page is hinged at [spine] and reaches [width] from it, towards
+/// [direction] (1: to the right, -1: to the left). A fold sweeps from the free
+/// edge to the spine as [progress] goes from 0 to 1. Beyond the fold the page
+/// wraps round a roll that tightens as it goes, then lies flat again, folded
+/// back over itself, showing its [back]. At 1 the whole page has turned over
+/// onto the other side of the spine.
+///
+/// It's drawn in narrow vertical strips, each a slice of the page images moved
+/// to where that slice of paper sits on the roll, and shaded by how far it
+/// faces away from the light. The page beneath gets a soft shadow from the roll.
+@visibleForTesting
+class PageCurlPainter extends CustomPainter {
+  /// The images hold the whole area, at the screen's pixel ratio.
+  final ui.Image front;
+
+  /// What's printed on the back, in its final place across the spine. Plain
+  /// paper when null.
+  final ui.Image? back;
+  final Size area;
+  final double spine;
+  final int direction;
+  final double width;
+  final double progress;
+  final Color paper;
+  final Rect? clip;
+
+  static const _strips = 120;
+
+  const PageCurlPainter({
+    required this.front,
+    this.back,
+    required this.area,
+    required this.spine,
+    required this.direction,
+    required this.width,
+    required this.progress,
+    required this.paper,
+    this.clip,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (progress <= 0 || width <= 0) return;
+    if (clip != null) canvas.clipRect(clip!);
+
+    final t = progress.clamp(0.0, 1.0);
+    // The fold moves from the free edge to the spine; the roll tightens as it
+    // goes, so the page lies flat at the end.
+    final fold = width * (1 - t);
+    final radius = math.max(0.5, width * 0.16 * (1 - t));
+    final halfTurn = math.pi * radius;
+
+    // Where paper at distance [u] from the spine ends up, as a distance from
+    // the spine, and the angle it has rolled through.
+    (double, double) place(double u) {
+      final s = u - fold;
+      if (s <= 0) return (u, 0);
+      final angle = s / radius;
+      if (angle <= math.pi) return (fold + radius * math.sin(angle), angle);
+      return (fold - (s - halfTurn), math.pi);
+    }
+
+    double screen(double d) => spine + direction * d;
+
+    final scaleX = front.width / area.width;
+    final scaleY = front.height / area.height;
+    final paperPaint = Paint()..color = paper.withValues(alpha: 1);
+    final imagePaint = Paint()..filterQuality = FilterQuality.medium;
+
+    // The part before the fold is still flat: one piece, so it has no seams.
+    final flatEdge = screen(fold);
+    final flat = Rect.fromLTRB(
+        math.min(spine, flatEdge), 0, math.max(spine, flatEdge), size.height);
+    if (flat.width > 0) {
+      canvas.drawRect(flat, paperPaint);
+      canvas.drawImageRect(
+        front,
+        Rect.fromLTRB(
+            flat.left * scaleX, 0, flat.right * scaleX, area.height * scaleY),
+        flat,
+        imagePaint,
+      );
+    }
+
+    // The rest, in strips: (where it's printed, where it is now, shade).
+    final fronts = <(Rect, Rect, double)>[];
+    final backs = <(Rect, Rect, double)>[];
+    for (var i = 0; i < _strips; i++) {
+      final ua = fold + (width - fold) * i / _strips;
+      final ub = fold + (width - fold) * (i + 1) / _strips;
+      final (pa, aa) = place(ua);
+      final (pb, ab) = place(ub);
+      final angle = (aa + ab) / 2;
+      final xa = screen(pa), xb = screen(pb);
+      // Half a pixel of overlap hides the joins between strips.
+      final dst = Rect.fromLTRB(
+          math.min(xa, xb) - 0.5, 0, math.max(xa, xb) + 0.5, size.height);
+      if (dst.width <= 0.6) continue;
+      if (angle <= math.pi / 2) {
+        // The printed side, still facing up, darker as it turns away.
+        final sa = screen(ua), sb = screen(ub);
+        final src = Rect.fromLTRB(math.min(sa, sb) * scaleX, 0,
+            math.max(sa, sb) * scaleX, area.height * scaleY);
+        fronts.add((src, dst, 0.3 * (1 - math.cos(angle))));
+      } else {
+        // The back, now facing up. With a [back] image, what's printed there
+        // where this paper will lie once turned; otherwise the front showing
+        // faintly through, reversed.
+        final sa = back != null ? spine - direction * ua : screen(ua);
+        final sb = back != null ? spine - direction * ub : screen(ub);
+        final src = Rect.fromLTRB(math.min(sa, sb) * scaleX, 0,
+            math.max(sa, sb) * scaleX, area.height * scaleY);
+        // Lit at the top of the roll, settling as it lies flat.
+        final shade =
+            angle < math.pi ? 0.16 * (1 + math.cos(angle)) + 0.03 : 0.04;
+        backs.add((src, dst, shade));
+      }
+    }
+
+    // Each set is painted paper first, then print, then shade, so no strip's
+    // paper covers its neighbour's edge.
+    void draw(List<(Rect, Rect, double)> strips, {required bool isBack}) {
+      for (final (_, dst, _) in strips) {
+        canvas.drawRect(dst, paperPaint);
+      }
+      for (final (src, dst, _) in strips) {
+        if (!isBack) {
+          canvas.drawImageRect(front, src, dst, imagePaint);
+        } else if (back != null) {
+          canvas.drawImageRect(back!, src, dst, imagePaint);
+        } else {
+          // Show-through: the front, mirrored and faint.
+          canvas.save();
+          canvas.translate(dst.center.dx, 0);
+          canvas.scale(-1, 1);
+          canvas.translate(-dst.center.dx, 0);
+          canvas.drawImageRect(
+              front,
+              src,
+              dst,
+              Paint()
+                ..filterQuality = FilterQuality.medium
+                ..color = const Color.fromRGBO(0, 0, 0, 0.1));
+          canvas.restore();
+        }
+      }
+      // Shade at each strip's exact width: overlapping shade would show as
+      // darker lines at the joins.
+      for (final (_, dst, shade) in strips) {
+        if (shade > 0.002) {
+          canvas.drawRect(dst.deflate(0.5),
+              Paint()..color = Color.fromRGBO(0, 0, 0, shade.clamp(0.0, 0.6)));
+        }
+      }
+    }
+
+    draw(fronts, isBack: false);
+
+    // The roll's shadow on the page beneath, just past its outer edge.
+    final edge = screen(fold + radius);
+    const reach = 36.0;
+    final shadowRect = Rect.fromLTRB(
+      direction > 0 ? edge : edge - reach,
+      0,
+      direction > 0 ? edge + reach : edge,
+      size.height,
+    );
+    final strength = 0.22 * math.sin(math.pi * t);
+    if (strength > 0.01) {
+      canvas.drawRect(
+        shadowRect,
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(edge, 0),
+            Offset(edge + direction * reach, 0),
+            [
+              Color.fromRGBO(0, 0, 0, strength),
+              const Color.fromRGBO(0, 0, 0, 0)
+            ],
+          ),
+      );
+    }
+
+    draw(backs, isBack: true);
+  }
+
+  @override
+  bool shouldRepaint(PageCurlPainter old) =>
+      old.progress != progress ||
+      !identical(old.front, front) ||
+      !identical(old.back, back) ||
+      old.spine != spine ||
+      old.width != width ||
+      old.direction != direction ||
+      old.paper != paper ||
+      old.clip != clip;
 }

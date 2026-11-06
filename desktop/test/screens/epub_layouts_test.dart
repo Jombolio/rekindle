@@ -291,11 +291,15 @@ void main() {
     });
   });
 
+  /// How far the page curling over is through its turn, or 0 when no page is
+  /// turning.
   double maxTurn(WidgetTester tester) => tester
-      .widgetList<Transform>(find.descendant(
-          of: find.byType(PagedChapterView), matching: find.byType(Transform)))
-      // Rotation about the vertical axis shows in the matrix's x–z entry.
-      .map((t) => t.transform.entry(0, 2).abs())
+      .widgetList<CustomPaint>(find.descendant(
+          of: find.byType(PagedChapterView),
+          matching: find.byType(CustomPaint)))
+      .map((p) => p.painter)
+      .whereType<PageCurlPainter>()
+      .map((p) => p.progress)
       .fold(0.0, math.max);
 
   Future<void> turnAndWatch(WidgetTester tester, LogicalKeyboardKey key) async {
@@ -312,20 +316,23 @@ void main() {
     });
     tearDownAll(() => animate = false);
 
-    testWidgets('the page lifts from its edge, then lies flat', (tester) async {
+    testWidgets('the page curls away from its edge, then lies flat',
+        (tester) async {
       final navigator = await pumpApp(tester);
       await openBook(tester, navigator);
       expect(position(tester), contains('Page 1 of'));
 
       await turnAndWatch(tester, LogicalKeyboardKey.arrowRight);
-      expect(maxTurn(tester), greaterThan(0.1), reason: 'a page mid-turn');
+      expect(maxTurn(tester), inExclusiveRange(0.05, 0.95),
+          reason: 'a page curling over, part way through');
 
       await settle(tester);
       expect(position(tester), contains('Page 2 of'));
       expect(maxTurn(tester), 0);
 
       await turnAndWatch(tester, LogicalKeyboardKey.arrowLeft);
-      expect(maxTurn(tester), greaterThan(0.1));
+      // Going back, the previous page uncurls onto this one.
+      expect(maxTurn(tester), inExclusiveRange(0.05, 0.95));
       await settle(tester);
       expect(position(tester), contains('Page 1 of'));
       await closeBook(tester, navigator);
@@ -339,15 +346,16 @@ void main() {
     });
     tearDownAll(() => animate = false);
 
-    testWidgets('the page folds over the spine', (tester) async {
+    testWidgets('the page curls over the spine', (tester) async {
       final navigator = await pumpApp(tester);
       await openBook(tester, navigator);
 
       await turnAndWatch(tester, LogicalKeyboardKey.arrowRight);
-      expect(maxTurn(tester), greaterThan(0.1));
-      // Past halfway the leaf is the new left page, still turning.
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(maxTurn(tester), greaterThan(0.05));
+      final early = maxTurn(tester);
+      expect(early, inExclusiveRange(0.0, 1.0));
+      // Later in the turn the page has folded further over the spine.
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(maxTurn(tester), inExclusiveRange(early, 1.0));
 
       await settle(tester);
       expect(position(tester), contains('Pages 2–3 of'));
