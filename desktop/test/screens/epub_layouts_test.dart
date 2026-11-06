@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,7 +14,9 @@ import 'package:rekindle/core/epub/reading_style.dart';
 import 'package:rekindle/core/storage/prefs.dart';
 import 'package:rekindle/providers/auth_provider.dart';
 import 'package:rekindle/providers/connectivity_provider.dart';
+import 'package:rekindle/screens/book/paged_chapter_view.dart';
 import 'package:rekindle/screens/epub_reader_screen.dart';
+import 'package:rekindle/screens/widgets/reading_options.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -77,12 +80,16 @@ void main() {
   late Directory downloads;
 
   late BookLayout layout;
+  var ruler = false;
+  var animate = false;
 
   setUp(() async {
     downloads = await Directory.systemTemp.createTemp('rekindle-test');
     SharedPreferences.setMockInitialValues({
       'download_directory': downloads.path,
-      'reading_style': ReadingStyle(layout: layout, animations: false).toJson(),
+      'reading_style':
+          ReadingStyle(layout: layout, animations: animate, ruler: ruler)
+              .toJson(),
     });
     await Prefs.init();
     db = await databaseFactoryFfi.openDatabase(
@@ -228,6 +235,81 @@ void main() {
 
       await openBook(tester, navigator);
       expect(position(tester), reached);
+      await closeBook(tester, navigator);
+    });
+  });
+
+  group('reading ruler', () {
+    setUpAll(() {
+      layout = BookLayout.page;
+      ruler = true;
+    });
+    tearDownAll(() => ruler = false);
+
+    testWidgets('follows the pointer over margins and while a button is held',
+        (tester) async {
+      final navigator = await pumpApp(tester);
+      await openBook(tester, navigator);
+
+      double? rulerY() => tester
+          .widgetList<CustomPaint>(find.byType(CustomPaint))
+          .map((p) => p.painter)
+          .whereType<ReadingRulerPainter>()
+          .single
+          .y;
+
+      // Beside the page, where nothing of the book is drawn.
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(10, 300));
+      await mouse.moveTo(const Offset(10, 420));
+      await tester.pump();
+      expect(rulerY(), 420);
+
+      // Dragging, as when selecting text.
+      await mouse.down(const Offset(700, 400));
+      await mouse.moveTo(const Offset(700, 520));
+      await tester.pump();
+      expect(rulerY(), 520);
+      await mouse.up();
+      await mouse.removePointer();
+      await settle(tester);
+      await closeBook(tester, navigator);
+    });
+  });
+
+  group('page-turn animation', () {
+    setUpAll(() {
+      layout = BookLayout.page;
+      animate = true;
+    });
+    tearDownAll(() => animate = false);
+
+    testWidgets('slides the old page out as the new one comes in',
+        (tester) async {
+      final navigator = await pumpApp(tester);
+      await openBook(tester, navigator);
+      expect(position(tester), contains('Page 1 of'));
+
+      final paged = find.byType(PagedChapterView);
+      double slideOffset() => tester
+          .widgetList<Transform>(
+              find.descendant(of: paged, matching: find.byType(Transform)))
+          .map((t) => t.transform.getTranslation().x)
+          .fold(0.0, (a, b) => a.abs() > b.abs() ? a : b);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      // Mid-turn: pages are moving, and the old page is there as an image.
+      expect(slideOffset().abs(), greaterThan(50));
+      expect(find.descendant(of: paged, matching: find.byType(RawImage)),
+          findsOneWidget);
+
+      await settle(tester);
+      expect(position(tester), contains('Page 2 of'));
+      expect(slideOffset(), 0);
+      expect(find.descendant(of: paged, matching: find.byType(RawImage)),
+          findsNothing);
       await closeBook(tester, navigator);
     });
   });

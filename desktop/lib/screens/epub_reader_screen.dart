@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:ui' as ui;
 
 import 'package:csslib/visitor.dart' as css;
 import 'package:dio/dio.dart';
@@ -105,8 +106,15 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   int _continuousEpoch = 0;
   DateTime _lastWheelTurn = DateTime.fromMillisecondsSinceEpoch(0);
 
+  /// Turning into another chapter: the page being left, which the next
+  /// chapter's pages slide in over, and which direction.
+  ui.Image? _arrivingFrom;
+  int _arrivalDirection = 0;
+
   /// Where the reading ruler sits, following the pointer.
   final ValueNotifier<double?> _rulerY = ValueNotifier(null);
+
+  void _moveRuler(PointerEvent event) => _rulerY.value = event.localPosition.dy;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey();
 
   // The dictionary pop-up. It appears once a selection has settled and the pointer
@@ -157,6 +165,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     _defineTimer?.cancel();
     _scroll.dispose();
     _rulerY.dispose();
+    _arrivingFrom?.dispose();
     // Through the container: `ref` throws once the widget is unmounting, which
     // used to abort this method before the reader provider was invalidated. Its
     // closing save never ran, and a still-pending debounced save would later
@@ -340,6 +349,17 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     if (_chapterIndex < book.chapterCount - 1) {
       _goToChapter(_chapterIndex + 1);
     }
+  }
+
+  /// Keeps the page on screen as an image, for the next chapter to slide in
+  /// over, turning in [direction].
+  void _carryPage(int direction) {
+    if (!ref.read(settingsProvider).readingStyle.animations) return;
+    final image = _pagedKey.currentState?.snapshot();
+    if (image == null) return;
+    // An earlier image belongs to the view it was given to, which lets it go.
+    _arrivingFrom = image;
+    _arrivalDirection = direction;
   }
 
   /// Opens chapter [index] at [fraction]: 0 is its start, 1 its last page.
@@ -730,6 +750,14 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     }
 
     final chapter = _chapter;
+    final leaving = _arrivingFrom;
+    if (chapter == null && leaving != null && style.layout.paged) {
+      // The page being left stays up while the next chapter arrives.
+      return Padding(
+        padding: const EdgeInsets.only(top: _topInset, bottom: _bottomInset),
+        child: RawImage(image: leaving, fit: BoxFit.fill),
+      );
+    }
     if (chapter == null) {
       return Padding(
         padding: const EdgeInsets.only(top: _topInset),
@@ -742,6 +770,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     }
 
     if (style.layout.paged) {
+      final arriving = _arrivingFrom;
       return SelectionArea(
         onSelectionChanged: _onSelectionChanged,
         child: PagedChapterView(
@@ -756,13 +785,25 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
           onPage: _onPage,
           onPastEnd: () {
             if (_chapterIndex < book.chapterCount - 1) {
+              _carryPage(1);
               _goToChapter(_chapterIndex + 1);
             }
           },
           onBeforeStart: () {
             if (_chapterIndex > 0) {
+              _carryPage(-1);
               _goToChapter(_chapterIndex - 1, fraction: 1);
             }
+          },
+          arrivingFrom: arriving,
+          arrivalDirection: _arrivalDirection,
+          onArrived: () {
+            // Only this view's image: a newer one may be waiting already.
+            if (identical(_arrivingFrom, arriving)) {
+              _arrivingFrom = null;
+              _arrivalDirection = 0;
+            }
+            arriving?.dispose();
           },
         ),
       );
@@ -885,9 +926,6 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                         _dismissDefinition();
                         _turnByWheel(event);
                       },
-                      onPointerHover: style.ruler
-                          ? (event) => _rulerY.value = event.localPosition.dy
-                          : null,
                       child: _readingBody(book, reading),
                     ),
                   ),
@@ -1025,6 +1063,20 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                       ),
                     ),
                   ],
+
+                  // Moves the reading ruler with the pointer anywhere over the
+                  // reader: margins, bars and all, and while a button is held,
+                  // as when selecting text. On top, but translucent, so every
+                  // pointer event still reaches what's underneath.
+                  if (style.ruler)
+                    Positioned.fill(
+                      child: Listener(
+                        behavior: HitTestBehavior.translucent,
+                        onPointerHover: _moveRuler,
+                        onPointerMove: _moveRuler,
+                        onPointerDown: _moveRuler,
+                      ),
+                    ),
                 ],
               ),
       ),

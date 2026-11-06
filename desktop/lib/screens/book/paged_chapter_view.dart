@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -39,6 +40,15 @@ class PagedChapterView extends StatefulWidget {
   final VoidCallback onPastEnd;
   final VoidCallback onBeforeStart;
 
+  /// Arriving from another chapter: the page being left, as an image, and the
+  /// direction to slide (1 forward, -1 back). The new chapter slides in once
+  /// its first page is known, pushing the old page out.
+  final ui.Image? arrivingFrom;
+  final int arrivalDirection;
+
+  /// Called once the arrival slide is over, so the image can be let go.
+  final VoidCallback? onArrived;
+
   const PagedChapterView({
     super.key,
     required this.content,
@@ -51,6 +61,9 @@ class PagedChapterView extends StatefulWidget {
     required this.onPage,
     required this.onPastEnd,
     required this.onBeforeStart,
+    this.arrivingFrom,
+    this.arrivalDirection = 0,
+    this.onArrived,
   });
 
   @override
@@ -71,12 +84,31 @@ class PagedChapterViewState extends State<PagedChapterView>
   /// lands on the page holding the same text.
   late double _anchor = widget.startFraction;
 
+  static const _turnDuration = Duration(milliseconds: 300);
+
   late final AnimationController _turn = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 220),
+    duration: _turnDuration,
     value: 1,
   );
   int _turnDirection = 1;
+
+  /// The pages being turned away from, as an image, while they slide out.
+  ui.Image? _outgoing;
+  bool _ownsOutgoing = false;
+  final _pagesKey = GlobalKey();
+  bool _arrived = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.arrivingFrom != null && widget.animate) {
+      _outgoing = widget.arrivingFrom;
+      _turnDirection =
+          widget.arrivalDirection == 0 ? 1 : widget.arrivalDirection;
+      _turn.value = 0;
+    }
+  }
 
   int get _step => widget.spread ? 2 : 1;
 
@@ -87,7 +119,44 @@ class PagedChapterViewState extends State<PagedChapterView>
   @override
   void dispose() {
     _turn.dispose();
+    _releaseOutgoing();
+    if (!_arrived) widget.onArrived?.call();
     super.dispose();
+  }
+
+  void _releaseOutgoing() {
+    if (_ownsOutgoing) _outgoing?.dispose();
+    _outgoing = null;
+    _ownsOutgoing = false;
+  }
+
+  /// The pages on screen as an image, to slide out as the next ones come in.
+  /// Null when there's nothing painted to capture yet.
+  ui.Image? snapshot() {
+    final boundary = _pagesKey.currentContext?.findRenderObject();
+    if (boundary is! RenderRepaintBoundary || !boundary.hasSize) return null;
+    try {
+      return boundary.toImageSync(
+          pixelRatio: MediaQuery.devicePixelRatioOf(context));
+    } catch (_) {
+      return null; // Not painted yet: turn without the slide.
+    }
+  }
+
+  /// Slides from [outgoing] (disposed here if [owned]) to what's built now.
+  void _slide(ui.Image? outgoing, int direction, {required bool owned}) {
+    if (!identical(outgoing, _outgoing)) _releaseOutgoing();
+    _outgoing = outgoing;
+    _ownsOutgoing = owned;
+    _turnDirection = direction;
+    _turn.forward(from: 0).whenComplete(() {
+      if (!mounted) return;
+      setState(_releaseOutgoing);
+      if (!_arrived) {
+        _arrived = true;
+        widget.onArrived?.call();
+      }
+    });
   }
 
   /// Turns to the next page, or past the chapter's end.
@@ -113,12 +182,13 @@ class PagedChapterViewState extends State<PagedChapterView>
 
   void _turnTo(int page, int direction) {
     final breaks = _breaks!;
+    // Captured before the pages change, so it's what the reader is leaving.
+    final leaving = widget.animate ? snapshot() : null;
     setState(() {
       _page = page;
       _anchor = breaks.fractionOf(page);
     });
-    _turnDirection = direction;
-    if (widget.animate) _turn.forward(from: 0);
+    if (widget.animate) _slide(leaving, direction, owned: true);
     widget.onPage(_position, turned: true);
   }
 
@@ -145,11 +215,16 @@ class PagedChapterViewState extends State<PagedChapterView>
       box.size.height,
       _pageHeight,
     );
+    final first = _breaks == null;
     setState(() {
       _breaks = breaks;
       _page = _align(breaks.pageAt(_anchor));
     });
     widget.onPage(_position, turned: false);
+    // Arriving from another chapter: slide in now that the right page is known.
+    if (first && _outgoing != null && !_turn.isAnimating && _turn.value == 0) {
+      _slide(_outgoing, _turnDirection, owned: false);
+    }
   }
 
   @override
@@ -174,27 +249,55 @@ class PagedChapterViewState extends State<PagedChapterView>
         ],
       ];
 
+      final fullWidth = constraints.maxWidth;
       return Padding(
         padding:
             EdgeInsets.only(top: widget.topInset, bottom: widget.bottomInset),
-        child: AnimatedBuilder(
-          animation: _turn,
-          builder: (context, child) {
-            final t = Curves.easeOut.transform(_turn.value);
-            return Opacity(
-              // Hidden until the first page breaks are known, so the chapter
-              // doesn't flash on its first page before jumping to the saved one.
-              opacity: _breaks == null ? 0 : 0.35 + 0.65 * t,
-              child: Transform.translate(
-                offset: Offset((1 - t) * 48 * _turnDirection, 0),
-                child: child,
+        child: ClipRect(
+          child: AnimatedBuilder(
+            animation: _turn,
+            builder: (context, child) {
+              final t = Curves.easeInOutCubic.transform(_turn.value);
+              final outgoing = _outgoing;
+              // The new pages come in from the side being turned towards while
+              // the old ones leave by the other, edge to edge, like a slide.
+              return Stack(
+                children: [
+                  Opacity(
+                    // Hidden until the first page breaks are known, so the
+                    // chapter doesn't flash on its first page before moving to
+                    // the saved one.
+                    opacity: _breaks == null ? 0 : 1,
+                    child: Transform.translate(
+                      offset: Offset((1 - t) * fullWidth * _turnDirection, 0),
+                      child: child,
+                    ),
+                  ),
+                  if (outgoing != null)
+                    Transform.translate(
+                      offset: Offset(-t * fullWidth * _turnDirection, 0),
+                      child: RawImage(
+                        image: outgoing,
+                        width: fullWidth,
+                        height: pageHeight,
+                        fit: BoxFit.fill,
+                      ),
+                    ),
+                ],
+              );
+            },
+            child: RepaintBoundary(
+              key: _pagesKey,
+              child: SizedBox(
+                width: fullWidth,
+                height: pageHeight,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: pages,
+                ),
               ),
-            );
-          },
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: pages,
+            ),
           ),
         ),
       );
