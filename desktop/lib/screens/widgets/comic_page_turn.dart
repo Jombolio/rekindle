@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -5,11 +6,32 @@ import 'package:flutter/rendering.dart';
 
 import 'page_curl.dart';
 
-/// The pager's position in slides, safe to read before it has laid out.
-double comicPagerPage(PageController controller) =>
-    controller.hasClients && controller.position.hasContentDimensions
-        ? controller.page ?? controller.initialPage.toDouble()
-        : controller.initialPage.toDouble();
+/// The pager's position in slides, safe to read before it has laid out, and
+/// while it is laying out.
+///
+/// The slides read this as they are laid out, which is the one moment
+/// [PageController.page] can be wrong: it clamps the scroll offset to the
+/// scroll extents, and when the viewport grows the offset is corrected for the
+/// new width before the extents are. So the window growing — maximised, say —
+/// while near the end of a book, or coming back from no size at all, had the
+/// slide being read take itself to be pages away and draw nothing, and nothing
+/// told it otherwise until the page was turned. The offset and the viewport's
+/// width are both current by then, so the page is worked out from them.
+double comicPagerPage(PageController controller) {
+  if (!controller.hasClients) return controller.initialPage.toDouble();
+  final position = controller.position;
+  if (position.hasPixels &&
+      position.hasViewportDimension &&
+      position.viewportDimension > 0) {
+    return position.pixels /
+        math.max(1.0, position.viewportDimension * controller.viewportFraction);
+  }
+  // No width to divide by. The pager keeps the page it was on in that case,
+  // and gives it back once it has dimensions to report it by.
+  return position.hasContentDimensions
+      ? controller.page ?? controller.initialPage.toDouble()
+      : controller.initialPage.toDouble();
+}
 
 /// One slide of the comic pager, held still in the viewport.
 ///
