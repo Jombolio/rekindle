@@ -705,32 +705,115 @@ private fun PagedModeContent(
                 page = { pagerState.currentPage + pagerState.currentPageOffsetFraction },
                 reverse = state.isRtl,
                 slideCount = slideCount,
-                // Only a pair of two-page slides turns about a centre spine;
-                // anything else is one sheet bound at its outer edge.
+                // In double-page reading a slide two pages wide — a pair, or a
+                // landscape page — turns about the spine down its middle,
+                // whatever follows it. A single portrait page — the cover, or
+                // the page left alone before a landscape one — is one sheet
+                // bound at its outer edge, as in single-page reading.
                 spreadAt = { leaf ->
-                    (slides.getOrNull(leaf)?.size ?: 0) > 1 &&
-                        (slides.getOrNull(leaf + 1)?.size ?: 0) > 1
+                    val slide = slides.getOrNull(leaf)
+                    state.doublePage && slide != null &&
+                        (slide.size > 1 || state.spreads.getOrElse(slide[0]) { false })
                 },
                 slide = { index ->
                     slides.getOrNull(index)?.let {
                         CurlSlide(it, state.isRtl, state.spineGap, imageModelFn)
                     }
                 },
+                backSlide = { index ->
+                    slides.getOrNull(index)?.let {
+                        PagerSlide(it, state.isRtl, state.spineGap, imageModelFn)
+                    }
+                },
+                // Double-page reading turns spreads on the reader's black; a
+                // lone page turning among them has to match, or its grey back
+                // flashes against every other turn in the book.
+                paper = if (state.doublePage) ReaderBackdrop else ReaderPaper,
             )
         }
     }
 }
 
 /**
- * One slide as the sheet that turns: the page alone, with none of the reader's
- * gestures or zoom on it.
+ * One slide as the sheet that turns: the pages alone, with none of the
+ * reader's gestures or zoom on them, each at the size the pager draws it.
  *
- * A single page takes only the size it is drawn at, letterbox excluded, so the
- * sheet is the page itself. A spread keeps the whole viewport, which is close
- * to what two pages side by side already fill.
+ * The pager gives every page a box to fill — the viewport, or its half of it
+ * in a spread — and scales the picture up or down to fit. Left to size itself,
+ * an image keeps its natural size and only ever shrinks, so a page smaller than
+ * the screen was one size in the pager and a smaller one as the sheet, and
+ * shrank as every turn began. So each page here takes the largest size that
+ * fits its box in the picture's own proportions, which is where the pager drew
+ * it. A spread keeps its pages flush to the spine, so its middle is the spine.
  */
 @Composable
 private fun CurlSlide(
+    slide: List<Int>,
+    isRtl: Boolean,
+    spineGap: Float,
+    imageModelFn: (Int) -> Any,
+) {
+    if (slide.size == 1) {
+        ContainedPage(imageModelFn(slide[0]))
+        return
+    }
+    val left = if (isRtl) slide[1] else slide[0]
+    val right = if (isRtl) slide[0] else slide[1]
+    BoxWithConstraints {
+        val gap = if (spineGap > 0f) spineGap.dp else 0.dp
+        val half = (maxWidth - gap) / 2
+        val tall = maxHeight
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ContainedPage(
+                imageModelFn(left),
+                Modifier.widthIn(max = half).heightIn(max = tall),
+                alignment = Alignment.CenterEnd,
+            )
+            if (gap > 0.dp) Spacer(Modifier.width(gap))
+            ContainedPage(
+                imageModelFn(right),
+                Modifier.widthIn(max = half).heightIn(max = tall),
+                alignment = Alignment.CenterStart,
+            )
+        }
+    }
+}
+
+/**
+ * A page at the largest size that fits where it is put, in the picture's own
+ * proportions — the rect [ContentScale.Fit] draws it in. Until the picture has
+ * loaded and its proportions are known, it sizes itself.
+ */
+@Composable
+private fun ContainedPage(
+    model: Any,
+    modifier: Modifier = Modifier,
+    alignment: Alignment = Alignment.Center,
+) {
+    var aspect by remember(model) { mutableStateOf<Float?>(null) }
+    AsyncImage(
+        model = model,
+        contentDescription = null,
+        contentScale = ContentScale.Fit,
+        alignment = alignment,
+        onSuccess = { success ->
+            val d = success.result.drawable
+            if (d.intrinsicWidth > 0 && d.intrinsicHeight > 0) {
+                aspect = d.intrinsicWidth.toFloat() / d.intrinsicHeight
+            }
+        },
+        modifier = aspect?.let { modifier.aspectRatio(it) } ?: modifier,
+    )
+}
+
+/**
+ * One slide as the pager lays it out, filling the viewport, with none of its
+ * gestures or zoom: a lone page fitted to the whole of it, or a spread's two
+ * pages each fitted to their half and flush to the spine. The back of a turning
+ * spread is printed from this, so each part lands where the pager will show it.
+ */
+@Composable
+private fun PagerSlide(
     slide: List<Int>,
     isRtl: Boolean,
     spineGap: Float,
@@ -741,33 +824,30 @@ private fun CurlSlide(
             model = imageModelFn(slide[0]),
             contentDescription = null,
             contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize(),
         )
         return
     }
     val left = if (isRtl) slide[1] else slide[0]
     val right = if (isRtl) slide[0] else slide[1]
-    // The printed spread and nothing else: each page as wide as it draws,
-    // within its half, so the sheet that turns carries no letterbox and its
-    // middle is the spine.
-    BoxWithConstraints {
-        val gap = if (spineGap > 0f) spineGap.dp else 0.dp
-        val half = (maxWidth - gap) / 2
-        val tall = maxHeight
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(
-                model = imageModelFn(left),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.widthIn(max = half).heightIn(max = tall),
-            )
-            if (gap > 0.dp) Spacer(Modifier.width(gap))
-            AsyncImage(
-                model = imageModelFn(right),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.widthIn(max = half).heightIn(max = tall),
-            )
+    Row(Modifier.fillMaxSize()) {
+        AsyncImage(
+            model = imageModelFn(left),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            alignment = Alignment.CenterEnd,
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+        )
+        if (spineGap > 0f) {
+            Box(Modifier.fillMaxHeight().padding(horizontal = (spineGap / 2).dp))
         }
+        AsyncImage(
+            model = imageModelFn(right),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            alignment = Alignment.CenterStart,
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+        )
     }
 }
 

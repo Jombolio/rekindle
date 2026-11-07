@@ -88,10 +88,13 @@ class ComicPageTurn extends StatelessWidget {
 ///   from, with nothing printed on its back.
 /// - In a spread the spine is down the middle, and the sheet is the half-page
 ///   on the leading side of it. It carries two pages, as a real one does: the
-///   half being left on its front, and the next slide's facing page on its
-///   back, which is how the new page arrives. The other half of the slide
-///   being left stays down until the sheet lands on top of it, while the next
-///   slide's far page is already showing beyond the sheet's edge.
+///   half being left on its front, and the next slide on its back, printed
+///   where it will lie, which is how the new page arrives. The other half of
+///   the slide being left stays down until the sheet lands on top of it,
+///   while the rest of the next slide already shows beyond the sheet's edge.
+///   Once the sheet lands, its back and what lies beyond it together are the
+///   next slide, whatever its shape — another spread, a landscape page, or a
+///   single page standing alone.
 class ComicPageCurl extends StatefulWidget {
   final PageController controller;
 
@@ -101,12 +104,23 @@ class ComicPageCurl extends StatefulWidget {
 
   final int slideCount;
 
-  /// Whether the pair starting at this slide turns as a spread, which needs
-  /// both it and the slide after it to be two-page ones.
+  /// Whether this slide turns as a spread: about the spine down its middle,
+  /// a half-page at a time. True for a slide two pages wide; what comes after
+  /// it can be any size, since its picture is taken as the pager lays it out.
   final bool Function(int leaf) spreadAt;
 
-  /// Builds the slide that turns, by slide index.
+  /// Builds the slide that turns, by slide index, at the size it is printed —
+  /// which is the sheet.
   final Widget Function(int index) slideBuilder;
+
+  /// Builds a slide as the pager lays it out, filling the viewport. A spread
+  /// prints the next slide on the back of its turning half, and taking that
+  /// from the pager's layout puts each part of it exactly where it will lie,
+  /// however the two slides differ in size.
+  final Widget Function(int index) backBuilder;
+
+  /// The back of a sheet bound at its outer edge, where nothing is printed.
+  final Color paper;
 
   const ComicPageCurl({
     super.key,
@@ -115,6 +129,8 @@ class ComicPageCurl extends StatefulWidget {
     required this.slideCount,
     required this.spreadAt,
     required this.slideBuilder,
+    required this.backBuilder,
+    this.paper = ComicPageTurn.paper,
   });
 
   @override
@@ -166,7 +182,8 @@ class _ComicPageCurlState extends State<ComicPageCurl> {
   void _syncPainter() {
     _painter
       ..reverse = widget.reverse
-      ..spread = _spread;
+      ..spread = _spread
+      ..paper = widget.paper;
   }
 
   /// The pair the pager sits between, named by its lower slide. Null when
@@ -208,25 +225,38 @@ class _ComicPageCurlState extends State<ComicPageCurl> {
           // A page is images and text; nothing here blocks rasterising. Fall
           // back to the flat page rather than throwing if that ever changes.
           mode: SnapshotMode.permissive,
+          // A single page takes its final size once its proportions are known
+          // (see ContainedPage), which can land mid-turn if it was still
+          // loading. Take its picture again rather than curl the old one.
+          autoresize: true,
           painter: painter,
           child: widget.slideBuilder(index),
         ),
       );
 
   @override
-  Widget build(BuildContext context) {
-    if (!_spread) {
-      return IgnorePointer(child: _sheet(_leaf, _painter));
-    }
-    return IgnorePointer(
-      child: Stack(fit: StackFit.expand, children: [
-        // Painted first and only to hand its picture over: in a spread the
-        // next slide's facing page is printed on the back of the turning one.
-        _sheet(_leaf + 1, _backPainter),
-        _sheet(_leaf, _painter),
-      ]),
-    );
-  }
+  Widget build(BuildContext context) => IgnorePointer(
+        child: LayoutBuilder(builder: (context, constraints) {
+          // The sheet is centred in this; the painter needs it to fade the
+          // margins around the sheet.
+          _painter.viewport = constraints.biggest;
+          if (!_spread) return _sheet(_leaf, _painter);
+          return Stack(fit: StackFit.expand, children: [
+            // Painted first and only to hand its picture over: in a spread
+            // the next slide is printed on the back of the turning half. It
+            // is the whole viewport, as the pager lays it out, so each part
+            // of it is where it will lie once the turn is done.
+            SnapshotWidget(
+              controller: _snapshot,
+              mode: SnapshotMode.permissive,
+              autoresize: true,
+              painter: _backPainter,
+              child: widget.backBuilder(_leaf + 1),
+            ),
+            _sheet(_leaf, _painter),
+          ]);
+        }),
+      );
 }
 
 /// The picture of the slide being turned to, left by the sheet beneath for the
@@ -272,6 +302,11 @@ class _CurlPainter extends SnapshotPainter {
   double _progress = 0;
   bool _reverse = false;
   bool _spread = false;
+  Color _paper = ComicPageTurn.paper;
+
+  /// The area the sheet is centred in. Set on every layout, which is always
+  /// followed by a paint, so it needs no notification of its own.
+  Size viewport = Size.zero;
 
   set progress(double value) {
     if (value == _progress) return;
@@ -291,14 +326,55 @@ class _CurlPainter extends SnapshotPainter {
     notifyListeners();
   }
 
+  set paper(Color value) {
+    if (value == _paper) return;
+    _paper = value;
+    notifyListeners();
+  }
+
   /// Flat: the pager is already showing this slide itself.
   bool get _flat => _progress <= 0 || _progress >= 1;
+
+  /// Fades the margins around the sheet from the slide being left to the one
+  /// being turned to.
+  ///
+  /// At rest everything outside a slide's pages is the reader's background.
+  /// Mid-turn the pager is already showing the next slide there, and when the
+  /// two slides are not the same size — scans rarely are, and a landscape page
+  /// never is — its edges would jump into the margins on the turn's first
+  /// frame. Covering them with the background, thinning as the turn goes,
+  /// matches both ends: the margins of the slide being left at 0, and of the
+  /// slide being turned to at 1.
+  void _fadeMargins(Canvas canvas, Offset offset, Size size) {
+    final alpha = (1 - _progress).clamp(0.0, 1.0);
+    if (alpha <= 0 || viewport.isEmpty) return;
+    // The sheet is centred in the viewport, so the viewport's corner is the
+    // sheet's, less half the room around it.
+    final origin = offset -
+        Offset((viewport.width - size.width) / 2,
+            (viewport.height - size.height) / 2);
+    final whole = origin & viewport;
+    final sheet = offset & size;
+    final paint = Paint()
+      ..color = ComicPageTurn.backdrop.withValues(alpha: alpha);
+    // The four bands around the sheet, so nothing inside it is covered: what
+    // the turn has uncovered there is meant to show.
+    for (final band in [
+      Rect.fromLTRB(whole.left, whole.top, whole.right, sheet.top),
+      Rect.fromLTRB(whole.left, sheet.bottom, whole.right, whole.bottom),
+      Rect.fromLTRB(whole.left, sheet.top, sheet.left, sheet.bottom),
+      Rect.fromLTRB(sheet.right, sheet.top, whole.right, sheet.bottom),
+    ]) {
+      if (band.width > 0 && band.height > 0) canvas.drawRect(band, paint);
+    }
+  }
 
   @override
   void paintSnapshot(PaintingContext context, Offset offset, Size size,
       ui.Image image, Size sourceSize, double pixelRatio) {
     if (_flat) return;
     final canvas = context.canvas;
+    _fadeMargins(canvas, offset, size);
     canvas.save();
     canvas.translate(offset.dx, offset.dy);
     if (_spread) {
@@ -313,7 +389,7 @@ class _CurlPainter extends SnapshotPainter {
         direction: _reverse ? -1 : 1,
         width: size.width,
         progress: _progress,
-        paper: ComicPageTurn.paper,
+        paper: _paper,
         // Paper that has turned right over lands past the bound edge, where
         // there is no page any more: clipped off, as the book clips it to the
         // page rather than letting it run into the margin.
@@ -347,8 +423,14 @@ class _CurlPainter extends SnapshotPainter {
     PageCurlPainter(
       front: front,
       // Both sides of this sheet carry a page, as a printed spread does: the
-      // half being left, and the next slide's facing page on the back.
+      // half being left, and the next slide on the back. That picture is of
+      // the whole viewport, and this sheet sits centred in it.
       back: _sheets.back,
+      backArea: viewport.isEmpty ? null : viewport,
+      backOrigin: viewport.isEmpty
+          ? Offset.zero
+          : Offset((viewport.width - size.width) / 2,
+              (viewport.height - size.height) / 2),
       area: size,
       spine: spine,
       direction: _reverse ? -1 : 1,
@@ -368,6 +450,7 @@ class _CurlPainter extends SnapshotPainter {
     // the page, or if the sheet could not be rasterised. Mid-turn, show it
     // flat rather than leaving a gap.
     if (_flat) return;
+    _fadeMargins(context.canvas, offset, size);
     painter(context, offset);
   }
 

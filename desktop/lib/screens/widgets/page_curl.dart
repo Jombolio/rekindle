@@ -22,6 +22,14 @@ class PageCurlPainter extends CustomPainter {
   /// What's printed on the back, in its final place across the spine. Plain
   /// paper when null.
   final ui.Image? back;
+
+  /// The area [back] is a picture of, when it isn't the same as [area]: the
+  /// back can be a picture of something larger, with this sheet's area lying
+  /// at [backOrigin] within it. A comic reader turns a spread whose next
+  /// slide may be a different size, so it hands over the whole viewport and
+  /// where the sheet sits in it.
+  final Size? backArea;
+  final Offset backOrigin;
   final Size area;
   final double spine;
   final int direction;
@@ -42,7 +50,23 @@ class PageCurlPainter extends CustomPainter {
     required this.progress,
     required this.paper,
     this.clip,
+    this.backArea,
+    this.backOrigin = Offset.zero,
   });
+
+  /// The band of [back] printed behind the sheet between [left] and [right],
+  /// both measured across this sheet's [area].
+  Rect _backSrc(ui.Image back, double left, double right) {
+    final whole = backArea ?? area;
+    final scaleX = back.width / whole.width;
+    final scaleY = back.height / whole.height;
+    return Rect.fromLTRB(
+      (left + backOrigin.dx) * scaleX,
+      backOrigin.dy * scaleY,
+      (right + backOrigin.dx) * scaleX,
+      (backOrigin.dy + area.height) * scaleY,
+    );
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -61,8 +85,13 @@ class PageCurlPainter extends CustomPainter {
       if (image != null) {
         canvas.drawImageRect(
           image,
-          Rect.fromLTRB(rect.left * image.width / area.width, 0,
-              rect.right * image.width / area.width, image.height.toDouble()),
+          t == 0
+              ? Rect.fromLTRB(
+                  rect.left * image.width / area.width,
+                  0,
+                  rect.right * image.width / area.width,
+                  image.height.toDouble())
+              : _backSrc(image, rect.left, rect.right),
           rect,
           Paint()..filterQuality = FilterQuality.medium,
         );
@@ -134,8 +163,10 @@ class PageCurlPainter extends CustomPainter {
         // faintly through, reversed.
         final sa = back != null ? spine - direction * ua : screen(ua);
         final sb = back != null ? spine - direction * ub : screen(ub);
-        final src = Rect.fromLTRB(math.min(sa, sb) * scaleX, 0,
-            math.max(sa, sb) * scaleX, area.height * scaleY);
+        final src = back != null
+            ? _backSrc(back!, math.min(sa, sb), math.max(sa, sb))
+            : Rect.fromLTRB(math.min(sa, sb) * scaleX, 0,
+                math.max(sa, sb) * scaleX, area.height * scaleY);
         // Lit at the top of the roll, settling as it lies flat.
         final shade = (0.16 * (1 + math.cos(angle)) + 0.04) * (1 - t);
         backs.add((src, dst, shade));
@@ -219,5 +250,7 @@ class PageCurlPainter extends CustomPainter {
       old.area != area ||
       old.direction != direction ||
       old.paper != paper ||
-      old.clip != clip;
+      old.clip != clip ||
+      old.backArea != backArea ||
+      old.backOrigin != backOrigin;
 }

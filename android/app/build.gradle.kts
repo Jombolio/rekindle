@@ -37,8 +37,8 @@ android {
         applicationId = "com.rekindle.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 36
-        versionName = "1.5.1-beta.11"
+        versionCode = 37
+        versionName = "1.5.1-beta.12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

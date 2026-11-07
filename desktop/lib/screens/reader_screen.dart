@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/models/media.dart';
 import 'widgets/comic_page_turn.dart';
+import 'widgets/contained_page.dart';
 import '../core/utils/slides.dart';
 import '../core/storage/prefs.dart';
 import '../providers/auth_provider.dart';
@@ -724,8 +725,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                     : scrollMode
                         ? _buildScrollView(context, readerState, extractedPages,
                             client, siblings)
-                        : _buildPagedView(
-                            extractedPages, client, isRtl, slides, pageGap),
+                        : _buildPagedView(extractedPages, client, isRtl,
+                            slides, pageGap,
+                            doublePage: doublePage,
+                            spreads: readerState.spreads),
               ),
 
               // ── Loading / offline indicator (unzoomed) ─────────────────
@@ -853,8 +856,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     dynamic client,
     bool isRtl,
     List<List<int>> slides,
-    double pageGap,
-  ) {
+    double pageGap, {
+    required bool doublePage,
+    required List<bool> spreads,
+  }) {
+    // Two pages wide: a pair, or a landscape page standing alone, which is a
+    // spread printed as one image. Either has a spine down its middle.
+    bool wide(int index) {
+      final slide = slides[index];
+      return slide.length > 1 ||
+          (slide[0] < spreads.length && spreads[slide[0]]);
+    }
+
     final pager = PageView.builder(
       controller: _pageCtrl,
       reverse: isRtl,
@@ -907,15 +920,23 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 controller: _pageCtrl,
                 reverse: isRtl,
                 slideCount: slides.length,
-                // Only a pair of two-page slides turns about a centre spine;
-                // anything else is one sheet bound at its outer edge.
-                spreadAt: (leaf) =>
-                    leaf + 1 < slides.length &&
-                    slides[leaf].length > 1 &&
-                    slides[leaf + 1].length > 1,
+                // In double-page reading a slide two pages wide — a pair, or a
+                // landscape page — turns about the spine down its middle,
+                // whatever follows it. A single portrait page — the cover, or
+                // the page left alone before a landscape one — is one sheet
+                // bound at its outer edge, as in single-page reading.
+                spreadAt: (leaf) => doublePage && wide(leaf),
                 slideBuilder: (index) => _buildSlideContent(
                     index, extractedPages, client, isRtl, slides, pageGap,
                     measured: true),
+                backBuilder: (index) => _buildSlideContent(
+                    index, extractedPages, client, isRtl, slides, pageGap),
+                // Double-page reading turns spreads on the reader's black;
+                // a lone page turning among them has to match, or its grey
+                // back flashes against every other turn in the book.
+                paper: doublePage
+                    ? ComicPageTurn.backdrop
+                    : ComicPageTurn.paper,
               ),
             ])
           : pager,
@@ -945,8 +966,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
           slide[0], slide[1], isRtl, extractedPages, client, pageGap,
           measured: measured);
     }
-    return Image(
-      image: _buildImageProvider(slide[0], extractedPages, client),
+    final provider = _buildImageProvider(slide[0], extractedPages, client);
+    final image = Image(
+      image: provider,
       fit: BoxFit.contain,
       filterQuality: FilterQuality.medium,
       loadingBuilder: (context, child, loadingProgress) {
@@ -959,6 +981,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         child: Icon(Icons.broken_image, color: Colors.white54, size: 64),
       ),
     );
+    // The pager gives a single page the whole viewport, so it is scaled up as
+    // well as down to fit, and the sheet has to be the same size.
+    return measured ? ContainedPage(image: provider, child: image) : image;
   }
 
   Widget _buildDoublePageSlide(
@@ -993,7 +1018,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
     if (measured) {
       // The printed spread and nothing else: each page as wide as it draws,
-      // within its half, so the sheet that turns carries no letterbox.
+      // within its half, so the sheet that turns carries no letterbox. A page
+      // in a spread is drawn at its own size, only ever shrunk to fit its
+      // half (see the Align below), so the plain image already matches it.
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
