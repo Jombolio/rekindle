@@ -130,6 +130,11 @@ class Prefs {
       _prefs.getBool('show_file_extensions') ?? false;
   Future<void> setShowFileExtensions({required bool show}) =>
       _prefs.setBool('show_file_extensions', show);
+
+  /// Typing while browsing a library searches it. On by default.
+  bool get typeToSearch => _prefs.getBool('type_to_search') ?? true;
+  Future<void> setTypeToSearch({required bool enabled}) =>
+      _prefs.setBool('type_to_search', enabled);
   Future<void> setDefineOnSelect({required bool enabled}) =>
       _prefs.setBool('define_on_select', enabled);
 
