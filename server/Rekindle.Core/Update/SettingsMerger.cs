@@ -60,6 +60,35 @@ public static class SettingsMerger
         return new SettingsMergeResult(json + newLine, added);
     }
 
+    /// Brings the settings file at [path] up to date in place, the way an update
+    /// does, so it also happens after an older version's --update or a manual
+    /// unzip. Null when the file doesn't exist or has nothing to add. The new
+    /// text is written beside it and swapped in, so a failure never leaves a
+    /// half-written file; IO errors (a read-only install folder) are the
+    /// caller's to report.
+    public static SettingsMergeResult? UpgradeFile(string path, string shippedJson)
+    {
+        if (!File.Exists(path)) return null;
+
+        var result = AddMissing(File.ReadAllText(path), shippedJson);
+        if (result is null) return null;
+
+        var temp = path + ".rekindle-new";
+        try
+        {
+            File.WriteAllText(temp, result.Json);
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(temp, File.GetUnixFileMode(path));
+            File.Move(temp, path, overwrite: true);
+        }
+        finally
+        {
+            try { if (File.Exists(temp)) File.Delete(temp); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+        return result;
+    }
+
     /// Adds what [shipped] has and [target] lacks. Configuration keys are
     /// case-insensitive, so "rekindle" in the user's file counts as "Rekindle".
     /// Arrays and plain values are the user's: they are never looked inside or

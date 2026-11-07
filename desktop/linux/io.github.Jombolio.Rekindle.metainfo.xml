@@ -54,6 +54,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="1.6.3" date="2026-11-07">
+      <description>
+        <p>No changes to the desktop app beyond the version number.</p>
+      </description>
+    </release>
     <release version="1.6.2" date="2026-11-07">
       <description>
         <p>No changes to the desktop app beyond the version number.</p>
