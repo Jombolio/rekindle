@@ -1,6 +1,6 @@
 # Configuration
 
-The server is configured by editing `appsettings.json` in the same directory as the binary. Changes take effect on the next restart, except `Rekindle.Contacts` and `Rekindle.LandingTheme`, which apply straight away.
+The server is configured by editing `appsettings.json` in the same directory as the binary. Changes take effect on the next restart, except `Rekindle.Contacts` and `Rekindle.LandingTheme`, which apply straight away. A setting missing from your file uses the default shown below, and `--update` adds settings introduced by newer releases to your file without changing your values (see [Updating](Installing-the-Server#updating)).
 
 ---
 
