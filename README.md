@@ -35,9 +35,9 @@ Run the server on any machine that holds your archive files. Connect from any de
 | Platform | Where to get it |
 |----------|----------------|
 | Server (Linux / Windows) | [Gitea Releases](https://git.jombo.uk/Jombo/rekindle/releases) · [GitHub Releases](https://github.com/Jombolio/rekindle/releases) |
-| Client — (Linux / Windows) | [Gitea Releases](https://git.jombo.uk/Jombo/rekindle/releases) · [GitHub Releases](https://github.com/Jombolio/rekindle/releases) |
-| Client — Android | F-Droid · custom repo: `https://fdroid.jombo.uk/repo` |
-| Client — Android (Fallback) | [Gitea Releases](https://git.jombo.uk/Jombo/rekindle/releases) · [GitHub Releases](https://github.com/Jombolio/rekindle/releases) |
+| Client (Linux / Windows) | [Gitea Releases](https://git.jombo.uk/Jombo/rekindle/releases) · [GitHub Releases](https://github.com/Jombolio/rekindle/releases) |
+| Client (Android) | F-Droid · custom repo: `https://fdroid.jombo.uk/repo` |
+| Client (Android, fallback) | [Gitea Releases](https://git.jombo.uk/Jombo/rekindle/releases) · [GitHub Releases](https://github.com/Jombolio/rekindle/releases) |
 
 Every release is published to both. Gitea is the primary; GitHub carries the same release as a mirror.
 
