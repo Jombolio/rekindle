@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -79,112 +80,161 @@ fun ComicPageCurl(
     paper: Color = ReaderPaper,
 ) {
     if (slideCount < 2) return
-    val frontLayer = rememberGraphicsLayer()
-    val backLayer = rememberGraphicsLayer()
     val last = slideCount - 2
-    // The slide being turned, kept composed and recorded even at rest, so its
-    // picture is ready the moment a turn starts.
+    // The slide being turned: the lower-numbered of the pair the pager is
+    // between.
     var leaf by remember { mutableIntStateOf(page().toInt().coerceIn(0, last)) }
-    var sheet by remember { mutableStateOf<ImageBitmap?>(null) }
-    var backSheet by remember { mutableStateOf<ImageBitmap?>(null) }
-    // The size the sheet was last recorded at, reported from the draw phase.
-    var recorded by remember { mutableStateOf(IntSize.Zero) }
+    // The slide nearest the pager's position. At rest it is the one being read.
+    var near by remember { mutableIntStateOf(page().roundToInt()) }
     // The viewport the sheet is centred in.
     var viewport by remember { mutableStateOf(IntSize.Zero) }
-    val spread = spreadAt(leaf)
 
     // Follow the pager without recomposing on every frame of a turn: only a
     // change of sheet rebuilds anything.
     LaunchedEffect(last) {
-        snapshotFlow { page().toInt().coerceIn(0, last) }
+        snapshotFlow { page().toInt().coerceIn(0, last) to page().roundToInt() }
             .distinctUntilChanged()
-            .collect {
-                leaf = it
-                sheet = null
-                backSheet = null
+            .collect { (l, n) ->
+                leaf = l
+                near = n
             }
     }
 
+    // Both sheets a turn from here could take are kept composed and pictured
+    // at rest: the slide being read, which a forward turn lifts, and the one
+    // before it, which a turn back lays down over it. Otherwise a turn back
+    // would start before its sheet had a picture, and its first frames would
+    // show the previous page whole, or nothing at all.
+    val leaves = listOf(near - 1, near, leaf).filter { it in 0..last }.distinct().sorted()
+
+    Box(
+        Modifier.fillMaxSize().onSizeChanged { viewport = it },
+        contentAlignment = Alignment.Center,
+    ) {
+        for (sheetLeaf in leaves) {
+            key(sheetLeaf) {
+                CurlSheet(
+                    leaf = sheetLeaf,
+                    active = sheetLeaf == leaf,
+                    page = page,
+                    reverse = reverse,
+                    viewport = { viewport },
+                    spread = spreadAt(sheetLeaf),
+                    slide = slide,
+                    backSlide = backSlide,
+                    paper = paper,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * One slide as a sheet: composed and recorded whether or not it is turning, and
+ * drawn curling only while it is the [active] one.
+ */
+@Composable
+private fun CurlSheet(
+    leaf: Int,
+    active: Boolean,
+    page: () -> Float,
+    reverse: Boolean,
+    viewport: () -> IntSize,
+    spread: Boolean,
+    slide: @Composable (index: Int) -> Unit,
+    backSlide: @Composable (index: Int) -> Unit,
+    paper: Color,
+) {
+    val frontLayer = rememberGraphicsLayer()
+    val backLayer = rememberGraphicsLayer()
+    var sheet by remember { mutableStateOf<ImageBitmap?>(null) }
+    var backSheet by remember { mutableStateOf<ImageBitmap?>(null) }
+    // The size the sheet was last recorded at, reported from the draw phase.
+    var recorded by remember { mutableStateOf(IntSize.Zero) }
+    val area = viewport()
+
     // Take the sheets' pictures once the layers have recorded them. They
     // record in the draw phase, so let a frame go by first.
-    LaunchedEffect(leaf, recorded, viewport, spread) {
+    LaunchedEffect(recorded, area, spread) {
         if (recorded.width <= 0 || recorded.height <= 0) return@LaunchedEffect
         withFrameNanos { }
         sheet = frontLayer.toImageBitmap()
         backSheet = if (spread) backLayer.toImageBitmap() else null
     }
 
-    Box(
-        Modifier.fillMaxSize().onSizeChanged { viewport = it },
-        contentAlignment = Alignment.Center,
-    ) {
-        if (spread) {
-            // Recorded and never drawn: the pager is already showing this
-            // slide beneath the overlay. Its picture is wanted only for what
-            // is printed on the back of the turning half. It is the whole
-            // viewport, as the pager lays it out, so each part of it is where
-            // it will lie once the turn is done.
-            Box(
-                Modifier.fillMaxSize().drawWithContent {
-                    backLayer.record { this@drawWithContent.drawContent() }
-                },
-            ) {
-                backSlide(leaf + 1)
-            }
-        }
+    if (spread) {
+        // Recorded and never drawn: the pager is already showing this slide
+        // beneath the overlay. Its picture is wanted only for what is printed
+        // on the back of the turning half. It is the whole viewport, as the
+        // pager lays it out, so each part of it is where it will lie once the
+        // turn is done.
         Box(
-            Modifier.drawWithContent {
-                frontLayer.record { this@drawWithContent.drawContent() }
-                val measured = IntSize(size.width.roundToInt(), size.height.roundToInt())
-                if (measured != recorded) recorded = measured
-                val width = size.width
-                if (width <= 0f) return@drawWithContent
-                val progress = (page() - leaf).coerceIn(0f, 1f)
-                if (progress <= 0f || progress >= 1f) return@drawWithContent
-                // Where the sheet sits in the viewport it is centred in.
-                val origin = Offset(
-                    (viewport.width - width) / 2f,
-                    (viewport.height - size.height) / 2f,
-                )
-                fadeMargins(viewport, origin, progress)
-                val front = sheet?.asAndroidBitmap()
-                if (front == null) {
-                    // No picture yet: show the page flat, rather than letting
-                    // the slide beneath flash through for a frame.
-                    drawLayer(frontLayer)
-                    return@drawWithContent
-                }
-                // Paper that has turned right over lands past the bound edge,
-                // where there is no page any more: clipped off, as the book
-                // clips it to the page rather than into the margin.
-                clipRect(0f, 0f, width, size.height) {
-                    if (spread) {
-                        drawSpreadCurl(
-                            front = front,
-                            back = backSheet?.asAndroidBitmap(),
-                            backOrigin = origin,
-                            backArea = Size(viewport.width.toFloat(), viewport.height.toFloat()),
-                            reverse = reverse,
-                            progress = progress,
-                        )
-                    } else {
-                        drawPageCurl(
-                            front = front,
-                            // Bound at the edge the reader turns away from,
-                            // reaching across the page to the free edge it is
-                            // lifted by.
-                            spine = if (reverse) width else 0f,
-                            direction = if (reverse) -1 else 1,
-                            width = width,
-                            progress = progress,
-                            paper = paper,
-                        )
-                    }
-                }
+            Modifier.fillMaxSize().drawWithContent {
+                backLayer.record { this@drawWithContent.drawContent() }
             },
         ) {
-            slide(leaf)
+            backSlide(leaf + 1)
         }
+    }
+    Box(
+        Modifier.drawWithContent {
+            frontLayer.record { this@drawWithContent.drawContent() }
+            val measured = IntSize(size.width.roundToInt(), size.height.roundToInt())
+            if (measured != recorded) recorded = measured
+            if (!active) return@drawWithContent
+            val width = size.width
+            if (width <= 0f) return@drawWithContent
+            val progress = (page() - leaf).coerceIn(0f, 1f)
+            if (progress <= 0f || progress >= 1f) return@drawWithContent
+            val view = viewport()
+            // Where the sheet sits in the viewport it is centred in.
+            val origin = Offset(
+                (view.width - width) / 2f,
+                (view.height - size.height) / 2f,
+            )
+            val front = sheet?.asAndroidBitmap()
+            if (front == null) {
+                // No picture yet. Early in a turn the sheet still covers its
+                // page, so show it flat rather than let the slide beneath
+                // flash through; past halfway it has mostly turned away, and
+                // drawing it whole would flash it back over the page instead.
+                if (progress < 0.5f) {
+                    fadeMargins(view, origin, progress)
+                    drawLayer(frontLayer)
+                }
+                return@drawWithContent
+            }
+            fadeMargins(view, origin, progress)
+            // Paper that has turned right over lands past the bound edge,
+            // where there is no page any more: clipped off, as the book clips
+            // it to the page rather than into the margin.
+            clipRect(0f, 0f, width, size.height) {
+                if (spread) {
+                    drawSpreadCurl(
+                        front = front,
+                        back = backSheet?.asAndroidBitmap(),
+                        backOrigin = origin,
+                        backArea = Size(view.width.toFloat(), view.height.toFloat()),
+                        reverse = reverse,
+                        progress = progress,
+                    )
+                } else {
+                    drawPageCurl(
+                        front = front,
+                        // Bound at the edge the reader turns away from,
+                        // reaching across the page to the free edge it is
+                        // lifted by.
+                        spine = if (reverse) width else 0f,
+                        direction = if (reverse) -1 else 1,
+                        width = width,
+                        progress = progress,
+                        paper = paper,
+                    )
+                }
+            }
+        },
+    ) {
+        slide(leaf)
     }
 }
 
