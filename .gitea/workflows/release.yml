@@ -80,7 +80,7 @@ jobs:
           # GitHub's hosted runners preinstall Flutter's Linux toolchain;
           # the act runner image doesn't. Package list from Flutter's
           # Linux setup docs.
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev zip jq
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libasound2-dev liblzma-dev libstdc++-12-dev zip jq
 
       - name: Build
         working-directory: desktop
