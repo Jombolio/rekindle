@@ -54,6 +54,24 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="1.6.0" date="2026-11-07">
+      <description>
+        <p>
+          Text books are rebuilt: Kindle formats, streaming, page layouts,
+          readability options, an offline dictionary, and books read aloud in a
+          natural voice. Comics and manga turn their pages like paper.
+        </p>
+        <ul>
+          <li>MOBI, AZW and AZW3 books, streamed a chapter at a time</li>
+          <li>Scroll, continuous, single-page and two-page book layouts</li>
+          <li>Readability fonts, spacing, high-contrast themes and a reading ruler</li>
+          <li>An offline English dictionary</li>
+          <li>Books read aloud on your own computer, with the sentence highlighted</li>
+          <li>Paper-like page turns for books, comics and manga, at a speed you set</li>
+          <li>Scheduled library scans, read marks and type to search</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.5.0" date="2026-11-02">
       <description>
         <p>
