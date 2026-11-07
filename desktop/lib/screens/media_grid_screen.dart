@@ -15,6 +15,7 @@ import 'widgets/download_button.dart';
 import 'widgets/error_view.dart';
 import 'widgets/marquee_text.dart';
 import 'widgets/progress_badges.dart';
+import 'widgets/type_to_search.dart';
 
 class MediaGridScreen extends ConsumerStatefulWidget {
   final String libraryId;
@@ -38,6 +39,10 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   // ── Search ─────────────────────────────────────────────────────────────
   bool _searchActive = false;
   final _searchCtrl = TextEditingController();
+  final _searchFocus = FocusNode(debugLabel: 'Folder search');
+
+  /// The search was opened by typing, so emptying it closes it again.
+  bool _typedSearch = false;
   String _debouncedQuery = '';
   Timer? _debounce;
 
@@ -60,6 +65,7 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
     _searchCtrl.dispose();
+    _searchFocus.dispose();
     _debounce?.cancel();
     super.dispose();
   }
@@ -99,18 +105,55 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
 
   // ── Search helpers ──────────────────────────────────────────────────────
 
-  void _openSearch() => setState(() => _searchActive = true);
+  void _openSearch() {
+    setState(() {
+      _searchActive = true;
+      _typedSearch = false;
+    });
+    _focusSearch();
+  }
+
+  /// Typing on the grid: open the search holding what was typed, or add to it.
+  void _onType(String text) {
+    final value = _searchCtrl.value;
+    final at =
+        value.selection.isValid ? value.selection.end : value.text.length;
+    final next = value.text.substring(0, at) + text + value.text.substring(at);
+    _searchCtrl.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: at + text.length),
+    );
+    if (!_searchActive) {
+      setState(() {
+        _searchActive = true;
+        _typedSearch = true;
+      });
+    }
+    _onQueryChanged(next);
+    _focusSearch();
+  }
+
+  void _focusSearch() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _searchActive) _searchFocus.requestFocus();
+    });
+  }
 
   void _closeSearch() {
     _debounce?.cancel();
     _searchCtrl.clear();
     setState(() {
       _searchActive = false;
+      _typedSearch = false;
       _debouncedQuery = '';
     });
   }
 
   void _onQueryChanged(String q) {
+    if (_typedSearch && q.isEmpty) {
+      _closeSearch();
+      return;
+    }
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), () {
       if (mounted) setState(() => _debouncedQuery = q.trim());
@@ -118,6 +161,10 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   }
 
   void _clearQuery() {
+    if (_typedSearch) {
+      _closeSearch();
+      return;
+    }
     _debounce?.cancel();
     _searchCtrl.clear();
     setState(() => _debouncedQuery = '');
@@ -154,6 +201,7 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
       ),
       title: TextField(
         controller: _searchCtrl,
+        focusNode: _searchFocus,
         autofocus: true,
         decoration: const InputDecoration(
           hintText: 'Search folders and directories…',
@@ -372,6 +420,16 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
 
   @override
   Widget build(BuildContext context) {
+    return TypeToSearch(
+      enabled: ref.watch(settingsProvider.select((s) => s.typeToSearch)),
+      active: _searchActive,
+      onType: _onType,
+      onEscape: _closeSearch,
+      child: _buildScreen(context),
+    );
+  }
+
+  Widget _buildScreen(BuildContext context) {
     if (_searchActive) {
       return Scaffold(
         appBar: _searchAppBar(context),

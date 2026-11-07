@@ -30,9 +30,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Show file extensions'), findsOneWidget);
     expect(find.text('Confirm chapter change'), findsNothing);
-    await tester.tap(find.byType(Switch));
+    await tester
+        .tap(find.widgetWithText(SwitchListTile, 'Show file extensions'));
     await tester.pumpAndSettle();
     expect(Prefs.instance.showFileExtensions, isTrue);
+    expect(Prefs.instance.typeToSearch, isTrue);
+    await tester.tap(find.widgetWithText(SwitchListTile, 'Type to search'));
+    await tester.pumpAndSettle();
+    expect(Prefs.instance.typeToSearch, isFalse);
     await tester.pageBack();
     await tester.pumpAndSettle();
     await tester.tap(find.text('Reader'));
