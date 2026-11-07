@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import com.rekindle.app.core.render.PageCurl
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -59,7 +60,13 @@ val ReaderPaper = Color(0xFF2B2B2B)
  *
  * [page] is the pager's continuous position in slides, read in the draw phase so
  * scrolling never costs a recomposition. [slide] draws one slide at the size it
- * chooses for itself, so the sheet is the page and not the window around it.
+ * is printed, so the sheet is the page and not the window around it.
+ * [spreadAt] says whether a slide turns about the spine down its middle: true
+ * for one two pages wide, whatever follows it. [backSlide] draws a slide as the
+ * pager lays it out, filling the viewport: a spread prints the next slide on
+ * the back of its turning half, and taking it from the pager's layout puts each
+ * part where it will lie, however the two slides differ in size. [paper] is the
+ * back of a sheet bound at its outer edge, where nothing is printed.
  */
 @Composable
 fun ComicPageCurl(
@@ -68,6 +75,8 @@ fun ComicPageCurl(
     slideCount: Int,
     spreadAt: (leaf: Int) -> Boolean,
     slide: @Composable (index: Int) -> Unit,
+    backSlide: @Composable (index: Int) -> Unit,
+    paper: Color = ReaderPaper,
 ) {
     if (slideCount < 2) return
     val frontLayer = rememberGraphicsLayer()
@@ -80,6 +89,8 @@ fun ComicPageCurl(
     var backSheet by remember { mutableStateOf<ImageBitmap?>(null) }
     // The size the sheet was last recorded at, reported from the draw phase.
     var recorded by remember { mutableStateOf(IntSize.Zero) }
+    // The viewport the sheet is centred in.
+    var viewport by remember { mutableStateOf(IntSize.Zero) }
     val spread = spreadAt(leaf)
 
     // Follow the pager without recomposing on every frame of a turn: only a
@@ -96,24 +107,29 @@ fun ComicPageCurl(
 
     // Take the sheets' pictures once the layers have recorded them. They
     // record in the draw phase, so let a frame go by first.
-    LaunchedEffect(leaf, recorded, spread) {
+    LaunchedEffect(leaf, recorded, viewport, spread) {
         if (recorded.width <= 0 || recorded.height <= 0) return@LaunchedEffect
         withFrameNanos { }
         sheet = frontLayer.toImageBitmap()
         backSheet = if (spread) backLayer.toImageBitmap() else null
     }
 
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Box(
+        Modifier.fillMaxSize().onSizeChanged { viewport = it },
+        contentAlignment = Alignment.Center,
+    ) {
         if (spread) {
             // Recorded and never drawn: the pager is already showing this
-            // slide beneath the overlay. Its picture is wanted only for the
-            // facing page printed on the back of the turning sheet.
+            // slide beneath the overlay. Its picture is wanted only for what
+            // is printed on the back of the turning half. It is the whole
+            // viewport, as the pager lays it out, so each part of it is where
+            // it will lie once the turn is done.
             Box(
-                Modifier.drawWithContent {
+                Modifier.fillMaxSize().drawWithContent {
                     backLayer.record { this@drawWithContent.drawContent() }
                 },
             ) {
-                slide(leaf + 1)
+                backSlide(leaf + 1)
             }
         }
         Box(
@@ -125,6 +141,12 @@ fun ComicPageCurl(
                 if (width <= 0f) return@drawWithContent
                 val progress = (page() - leaf).coerceIn(0f, 1f)
                 if (progress <= 0f || progress >= 1f) return@drawWithContent
+                // Where the sheet sits in the viewport it is centred in.
+                val origin = Offset(
+                    (viewport.width - width) / 2f,
+                    (viewport.height - size.height) / 2f,
+                )
+                fadeMargins(viewport, origin, progress)
                 val front = sheet?.asAndroidBitmap()
                 if (front == null) {
                     // No picture yet: show the page flat, rather than letting
@@ -137,7 +159,14 @@ fun ComicPageCurl(
                 // clips it to the page rather than into the margin.
                 clipRect(0f, 0f, width, size.height) {
                     if (spread) {
-                        drawSpreadCurl(front, backSheet?.asAndroidBitmap(), reverse, progress)
+                        drawSpreadCurl(
+                            front = front,
+                            back = backSheet?.asAndroidBitmap(),
+                            backOrigin = origin,
+                            backArea = Size(viewport.width.toFloat(), viewport.height.toFloat()),
+                            reverse = reverse,
+                            progress = progress,
+                        )
                     } else {
                         drawPageCurl(
                             front = front,
@@ -148,7 +177,7 @@ fun ComicPageCurl(
                             direction = if (reverse) -1 else 1,
                             width = width,
                             progress = progress,
-                            paper = ReaderPaper,
+                            paper = paper,
                         )
                     }
                 }
@@ -160,18 +189,54 @@ fun ComicPageCurl(
 }
 
 /**
+ * Fades the margins around the sheet from the slide being left to the one being
+ * turned to.
+ *
+ * At rest everything outside a slide's pages is the reader's background.
+ * Mid-turn the pager is already showing the next slide there, and when the two
+ * slides are not the same size — scans rarely are, and a landscape page never
+ * is — its edges would jump into the margins on the turn's first frame.
+ * Covering them with the background, thinning as the turn goes, matches both
+ * ends: the margins of the slide being left at 0, and of the slide being
+ * turned to at 1. Drawn in the sheet's own coordinates, so the viewport starts
+ * at minus [origin]; nothing inside the sheet is covered, since what the turn
+ * has uncovered there is meant to show.
+ */
+private fun DrawScope.fadeMargins(viewport: IntSize, origin: Offset, progress: Float) {
+    val alpha = (1f - progress).coerceIn(0f, 1f)
+    if (alpha <= 0f || viewport.width <= 0 || viewport.height <= 0) return
+    val left = -origin.x
+    val top = -origin.y
+    val right = left + viewport.width
+    val bottom = top + viewport.height
+    val color = ReaderBackdrop.copy(alpha = alpha)
+    fun band(l: Float, t: Float, r: Float, b: Float) {
+        if (r > l && b > t) drawRect(color, Offset(l, t), Size(r - l, b - t))
+    }
+    band(left, top, right, 0f)
+    band(left, size.height, right, bottom)
+    band(left, 0f, 0f, size.height)
+    band(size.width, 0f, right, size.height)
+}
+
+/**
  * A spread turns about the spine down its middle, a half-page at a time.
  *
  * The sheet carries two pages, as a printed one does: the half being left on
- * its front, and the next slide's facing page on its [back], which is how the
- * new page arrives. The other half of the slide being left stays down until
- * the sheet lands on top of it, so it has to be painted over the next slide,
- * which the pager is already showing beneath the overlay. The next slide's far
- * page needs nothing: it is meant to show.
+ * its front, and the next slide on its [back], printed where it will lie, which
+ * is how the new page arrives. [back] is a picture of the whole viewport, with
+ * this sheet at [backOrigin] in it. The other half of the slide being left
+ * stays down until the sheet lands on top of it, so it has to be painted over
+ * the next slide, which the pager is already showing beneath the overlay. The
+ * rest of the next slide needs nothing: it is meant to show. Once the sheet
+ * lands, its back and what lies beyond it together are the next slide,
+ * whatever its shape.
  */
 private fun DrawScope.drawSpreadCurl(
     front: Bitmap,
     back: Bitmap?,
+    backOrigin: Offset,
+    backArea: Size,
     reverse: Boolean,
     progress: Float,
 ) {
@@ -199,6 +264,8 @@ private fun DrawScope.drawSpreadCurl(
     drawPageCurl(
         front = front,
         back = back,
+        backOrigin = backOrigin,
+        backArea = backArea,
         spine = spine,
         direction = if (reverse) -1 else 1,
         width = spine,
@@ -226,13 +293,17 @@ fun DrawScope.drawPageCurl(
     paper: Color,
     /** What is printed on the sheet's back; plain paper when null. */
     back: Bitmap? = null,
+    /**
+     * Where this sheet lies within [back], and the area [back] is a picture
+     * of, when that is larger than the sheet.
+     */
+    backOrigin: Offset = Offset.Zero,
+    backArea: Size? = null,
 ) {
     val height = size.height
     val curl = PageCurl.layout(spine, direction, width, progress) ?: return
 
     val canvas = drawContext.canvas.nativeCanvas
-    // The pictures are of the whole sheet, so a sheet x maps straight onto them.
-    val scaleX = front.width / size.width
     val paperPaint = Paint().apply { color = paper.toArgb() }
     val imagePaint = Paint().apply { isFilterBitmap = true }
     // Show-through: the front, mirrored and faint, on the back of the sheet.
@@ -241,6 +312,8 @@ fun DrawScope.drawPageCurl(
     val src = Rect()
     val dst = RectF()
 
+    // A sheet x maps onto a picture by its scale, from where the sheet lies in
+    // it: the front is of the sheet itself, the back may be of more.
     fun band(
         bitmap: Bitmap,
         srcLeft: Float,
@@ -248,12 +321,16 @@ fun DrawScope.drawPageCurl(
         dstLeft: Float,
         dstRight: Float,
         paint: Paint,
+        origin: Offset = Offset.Zero,
+        area: Size = size,
     ) {
+        val sx = bitmap.width / area.width
+        val sy = bitmap.height / area.height
         src.set(
-            (srcLeft * scaleX).roundToInt().coerceIn(0, bitmap.width),
-            0,
-            (srcRight * scaleX).roundToInt().coerceIn(0, bitmap.width),
-            bitmap.height,
+            ((srcLeft + origin.x) * sx).roundToInt().coerceIn(0, bitmap.width),
+            (origin.y * sy).roundToInt().coerceIn(0, bitmap.height),
+            ((srcRight + origin.x) * sx).roundToInt().coerceIn(0, bitmap.width),
+            ((origin.y + height) * sy).roundToInt().coerceIn(0, bitmap.height),
         )
         if (src.width() <= 0) return
         dst.set(dstLeft, 0f, dstRight, height)
@@ -276,7 +353,10 @@ fun DrawScope.drawPageCurl(
             } else if (back != null) {
                 // A page is printed on this side, where it will lie once the
                 // sheet has turned right over.
-                band(back, s.backSrcLeft, s.backSrcRight, s.dstLeft, s.dstRight, imagePaint)
+                band(
+                    back, s.backSrcLeft, s.backSrcRight, s.dstLeft, s.dstRight, imagePaint,
+                    origin = backOrigin, area = backArea ?: size,
+                )
             } else {
                 val centre = (s.dstLeft + s.dstRight) / 2f
                 canvas.save()
