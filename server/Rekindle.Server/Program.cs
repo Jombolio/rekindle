@@ -14,6 +14,7 @@ using Rekindle.Core.Database;
 using Rekindle.Core.Repositories;
 using Rekindle.Core.Services;
 using Rekindle.Server.Controllers;
+using Rekindle.Server.Landing;
 
 // Self-update commands (--update, --dev-update, --check-update) run instead of
 // the server and exit; see UpdateCommand.
@@ -79,6 +80,11 @@ builder.Services.PostConfigure<RekindleOptions>(opts =>
     opts.DataPath  = Path.GetFullPath(opts.DataPath);
     opts.CachePath = Path.GetFullPath(opts.CachePath);
 });
+
+// The administrator's contact links for the landing page. Bound with change
+// tracking, so editing appsettings.json updates the page without a restart.
+builder.Services.Configure<LandingOptions>(builder.Configuration.GetSection("Rekindle"));
+builder.Services.AddSingleton<LandingPage>();
 
 // ------------------------------------------------------------------
 // Database — factory resolved lazily so config overrides are in effect
@@ -206,6 +212,7 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+LandingPage.Map(app);
 
 await app.RunAsync();
 
