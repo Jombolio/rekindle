@@ -43,6 +43,9 @@ class SettingsState {
   final Duration pageTurn;
   final bool showFileExtensions;
 
+  /// Typing while browsing a library searches it.
+  final bool typeToSearch;
+
   /// Offer pre-releases (betas, release candidates) when checking for updates.
   final bool receivePreReleases;
 
@@ -62,6 +65,7 @@ class SettingsState {
     this.comicPageTurns = true,
     this.pageTurn = const Duration(milliseconds: kDefaultPageTurnMs),
     this.showFileExtensions = false,
+    this.typeToSearch = true,
     this.receivePreReleases = false,
     this.autoCheckUpdates = true,
     this.discord = const DiscordPresenceSettings(),
@@ -80,6 +84,7 @@ class SettingsState {
     bool? comicPageTurns,
     Duration? pageTurn,
     bool? showFileExtensions,
+    bool? typeToSearch,
     bool? receivePreReleases,
     bool? autoCheckUpdates,
     DiscordPresenceSettings? discord,
@@ -97,6 +102,7 @@ class SettingsState {
         comicPageTurns: comicPageTurns ?? this.comicPageTurns,
         pageTurn: pageTurn ?? this.pageTurn,
         showFileExtensions: showFileExtensions ?? this.showFileExtensions,
+        typeToSearch: typeToSearch ?? this.typeToSearch,
         receivePreReleases: receivePreReleases ?? this.receivePreReleases,
         autoCheckUpdates: autoCheckUpdates ?? this.autoCheckUpdates,
         discord: discord ?? this.discord,
@@ -129,6 +135,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
       comicPageTurns: prefs.comicPageTurns,
       pageTurn: Duration(milliseconds: _clampPageTurnMs(prefs.pageTurnMs)),
       showFileExtensions: prefs.showFileExtensions,
+      typeToSearch: prefs.typeToSearch,
       receivePreReleases: prefs.receivePreReleases,
       autoCheckUpdates: prefs.autoCheckUpdates,
       discord: DiscordPresenceSettings(
@@ -197,6 +204,11 @@ class SettingsNotifier extends Notifier<SettingsState> {
   Future<void> setShowFileExtensions({required bool show}) async {
     await Prefs.instance.setShowFileExtensions(show: show);
     state = state.copyWith(showFileExtensions: show);
+  }
+
+  Future<void> setTypeToSearch({required bool enabled}) async {
+    await Prefs.instance.setTypeToSearch(enabled: enabled);
+    state = state.copyWith(typeToSearch: enabled);
   }
 
   Future<void> setDefineOnSelect({required bool enabled}) async {

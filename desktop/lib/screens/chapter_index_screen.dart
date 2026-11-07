@@ -17,13 +17,25 @@ import 'widgets/error_view.dart';
 import 'widgets/about_section.dart';
 import 'widgets/marquee_text.dart';
 import 'widgets/progress_badges.dart';
+import 'widgets/type_to_search.dart';
 
 // Fixed tile height — leading thumbnail is 68 px + 12 px vertical padding.
 // Keeping this constant lets ListView skip O(n) layout on large lists.
 const double _kTileHeight = 82.0;
 const double _kHeaderHeight = 32.0;
 
-class ChapterIndexScreen extends ConsumerWidget {
+/// Whether [item] matches a folder search for [query]: its title, the name it
+/// shows or its file name holds the query, ignoring case.
+bool matchesFolderSearch(Media item, String query) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return true;
+  final fileName = item.relativePath.split('/').last;
+  return item.title.toLowerCase().contains(q) ||
+      item.displayTitle.toLowerCase().contains(q) ||
+      fileName.toLowerCase().contains(q);
+}
+
+class ChapterIndexScreen extends ConsumerStatefulWidget {
   final String folderId;
   final String folderTitle;
   final String? libraryType;
@@ -36,7 +48,80 @@ class ChapterIndexScreen extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ChapterIndexScreen> createState() => _ChapterIndexScreenState();
+}
+
+class _ChapterIndexScreenState extends ConsumerState<ChapterIndexScreen> {
+  // ── Search ─────────────────────────────────────────────────────────────
+  // Opened by typing (TypeToSearch). It filters this folder's listing in
+  // place, and closes on Escape or once emptied.
+  bool _searchActive = false;
+  final _searchCtrl = TextEditingController();
+  final _searchFocus = FocusNode(debugLabel: 'Folder filter');
+
+  String get folderId => widget.folderId;
+  String get folderTitle => widget.folderTitle;
+  String? get libraryType => widget.libraryType;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    _searchFocus.dispose();
+    super.dispose();
+  }
+
+  void _onType(String text) {
+    final value = _searchCtrl.value;
+    final at =
+        value.selection.isValid ? value.selection.end : value.text.length;
+    _searchCtrl.value = TextEditingValue(
+      text: value.text.substring(0, at) + text + value.text.substring(at),
+      selection: TextSelection.collapsed(offset: at + text.length),
+    );
+    setState(() => _searchActive = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _searchActive) _searchFocus.requestFocus();
+    });
+  }
+
+  void _onQueryChanged(String q) {
+    if (q.isEmpty) {
+      _closeSearch();
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _closeSearch() {
+    _searchCtrl.clear();
+    setState(() => _searchActive = false);
+  }
+
+  Widget _searchField(BuildContext context) {
+    return TextField(
+      controller: _searchCtrl,
+      focusNode: _searchFocus,
+      decoration: const InputDecoration(
+        hintText: 'Filter this folder…',
+        border: InputBorder.none,
+      ),
+      style: Theme.of(context).textTheme.titleMedium,
+      onChanged: _onQueryChanged,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TypeToSearch(
+      enabled: ref.watch(settingsProvider.select((s) => s.typeToSearch)),
+      active: _searchActive,
+      onType: _onType,
+      onEscape: _closeSearch,
+      child: _buildScreen(context),
+    );
+  }
+
+  Widget _buildScreen(BuildContext context) {
     final chaptersAsync = ref.watch(chapterProvider(folderId));
     final client = ref.watch(apiClientProvider);
     // Resolved once here — avoids one authProvider watch per tile.
@@ -45,8 +130,14 @@ class ChapterIndexScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(folderTitle),
+        title: _searchActive ? _searchField(context) : Text(folderTitle),
         actions: [
+          if (_searchActive)
+            IconButton(
+              icon: const Icon(Icons.clear),
+              tooltip: 'Clear search',
+              onPressed: _closeSearch,
+            ),
           if (canDownload)
             FolderDownloadButton(folderId: folderId, showConfirm: true),
           IconButton(
@@ -64,11 +155,38 @@ class ChapterIndexScreen extends ConsumerWidget {
           message: e.toString(),
           onRetry: () => ref.invalidate(chapterProvider(folderId)),
         ),
-        data: (items) {
+        data: (all) {
+          final query = _searchActive ? _searchCtrl.text : '';
+          final items = query.trim().isEmpty
+              ? all
+              : [
+                  for (final m in all)
+                    if (matchesFolderSearch(m, query)) m
+                ];
           final subfolders = items.where((m) => m.isFolder).toList();
           final archives = items.where((m) => !m.isFolder).toList();
 
           final showAbout = libraryType == 'manga' || libraryType == 'comic';
+
+          if (items.isEmpty && all.isNotEmpty) {
+            return Column(
+              children: [
+                if (showAbout) AboutSection(mediaId: folderId),
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.search_off, size: 56),
+                        const SizedBox(height: 16),
+                        Text('Nothing here matches "${query.trim()}"'),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }
 
           if (subfolders.isEmpty && archives.isEmpty) {
             return Column(

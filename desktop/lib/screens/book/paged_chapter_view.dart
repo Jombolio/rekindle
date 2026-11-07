@@ -6,6 +6,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../core/epub/page_breaks.dart';
+import '../../core/read_aloud/text_locator.dart';
 import '../widgets/page_curl.dart';
 
 /// Where a paged chapter is, for the reader to show and save. In a spread,
@@ -245,6 +246,21 @@ class PagedChapterViewState extends State<PagedChapterView>
     });
     if (widget.animate) _startTurn(leaving, direction, owned: true);
     widget.onPage(_position, turned: true);
+  }
+
+  /// Turns to the page holding the text painted with a [highlight]
+  /// background, when it is not on the pages showing: reading aloud keeps the
+  /// sentence being read in view this way.
+  void follow(Color highlight) {
+    final box = _laidOut;
+    final breaks = _breaks;
+    if (box == null || breaks == null || !box.attached || breaks.height <= 0) {
+      return;
+    }
+    final top = highlightTop(box, highlight);
+    if (top == null) return;
+    final page = _align(breaks.pageAt(top / breaks.height));
+    if (page != _page) _turnTo(page, page > _page ? 1 : -1);
   }
 
   PagePosition get _position => (

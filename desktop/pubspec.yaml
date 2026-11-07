@@ -1,6 +1,6 @@
 name: rekindle
 description: Self-hosted comic, manga, and book reader.
-version: 1.5.1-beta.13
+version: 1.5.1-beta.14
 publish_to: none
 
 environment:
@@ -55,6 +55,11 @@ dependencies:
 
   # Discord Rich Presence — Windows named-pipe access via kernel32
   ffi: ^2.1.0
+  # Read-aloud. sherpa-onnx is pinned to the last 1.x: 2.x dropped the built-in
+  # phonemiser, and then skips any word its lexicon lacks.
+  sherpa_onnx: 1.13.8
+  flutter_soloud: 4.1.7
+  html: ^0.15.4
 
 dev_dependencies:
   flutter_test:

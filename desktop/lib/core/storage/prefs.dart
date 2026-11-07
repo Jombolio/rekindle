@@ -130,6 +130,11 @@ class Prefs {
       _prefs.getBool('show_file_extensions') ?? false;
   Future<void> setShowFileExtensions({required bool show}) =>
       _prefs.setBool('show_file_extensions', show);
+
+  /// Typing while browsing a library searches it. On by default.
+  bool get typeToSearch => _prefs.getBool('type_to_search') ?? true;
+  Future<void> setTypeToSearch({required bool enabled}) =>
+      _prefs.setBool('type_to_search', enabled);
   Future<void> setDefineOnSelect({required bool enabled}) =>
       _prefs.setBool('define_on_select', enabled);
 
@@ -141,6 +146,11 @@ class Prefs {
       _prefs.setDouble('book_font_size', size);
 
   // The theme books open in.
+  // The Kokoro voice books are read aloud in, by Kokoro's name for it.
+  String? get readAloudVoice => _prefs.getString('read_aloud_voice');
+  Future<void> setReadAloudVoice(String voice) =>
+      _prefs.setString('read_aloud_voice', voice);
+
   String? get bookTheme => _prefs.getString('book_theme');
   Future<void> setBookTheme(String theme) =>
       _prefs.setString('book_theme', theme);

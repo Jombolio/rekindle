@@ -10,6 +10,7 @@ import '../core/update/update_service.dart';
 import '../providers/discord_presence_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/update_provider.dart';
+import 'widgets/read_aloud_settings.dart';
 import 'widgets/reading_options.dart';
 import 'widgets/update_flow.dart';
 
@@ -184,6 +185,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           .setShowFileExtensions(show: v),
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  Card(
+                    child: SwitchListTile(
+                      title: const Text('Type to search'),
+                      subtitle: const Text(
+                          'Start typing while browsing a library to search its folders and files.'),
+                      value: settings.typeToSearch,
+                      onChanged: (v) => ref
+                          .read(settingsProvider.notifier)
+                          .setTypeToSearch(enabled: v),
+                    ),
+                  ),
                   const SizedBox(height: 24),
 
                   // ── Reader ──────────────────────────────────────────────────────
@@ -235,8 +248,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             label: _formatPageTurn(settings.pageTurn),
                             onChanged: (v) => ref
                                 .read(settingsProvider.notifier)
-                                .setPageTurn(
-                                    Duration(milliseconds: v.round())),
+                                .setPageTurn(Duration(milliseconds: v.round())),
                           ),
                         ],
                       ),
@@ -367,6 +379,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               ),
                             ],
                           ),
+                          const Divider(height: 32),
+                          const ReadAloudSettings(),
                         ],
                       ),
                     ),

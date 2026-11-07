@@ -12,6 +12,7 @@ import 'package:flutter/rendering.dart' show SelectedContent;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
+import 'package:go_router/go_router.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -28,8 +29,13 @@ import '../core/epub/epub_parser.dart';
 import '../core/epub/reader_book.dart';
 import '../core/epub/remote_book.dart';
 import '../core/models/reading_progress.dart';
+import '../core/read_aloud/read_aloud_controller.dart';
+import '../core/read_aloud/sentences.dart';
+import '../core/read_aloud/voices.dart';
+import '../core/read_aloud/text_locator.dart';
 import '../providers/auth_provider.dart';
 import '../providers/discord_presence_provider.dart';
+import '../providers/read_aloud_provider.dart';
 import '../providers/reader_provider.dart';
 import '../providers/settings_provider.dart';
 import 'widgets/definition_popup.dart';
@@ -127,9 +133,19 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   ({String word, List<DictionaryEntry> entries, Offset at})? _definition;
   bool _ignoreNextTap = false;
 
+  // Reading aloud. While it runs, the chapter is shown with its sentences
+  // marked, so the one being read can be highlighted and kept in view.
+  late final ReadAloudController _readAloud =
+      ReadAloudController(onChapterEnd: _readAloudChapterEnd);
+  ({EpubChapter chapter, MarkedChapter marked})? _marked;
+  bool _continueReading = false;
+  String? _shownReadAloudError;
+  final GlobalKey _scrollChapterKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
+    _readAloud.addListener(_onReadAloud);
     _container = ProviderScope.containerOf(context, listen: false);
     ref.read(nowReadingProvider.notifier).open(
           widget.mediaId,
@@ -160,6 +176,8 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
 
   @override
   void dispose() {
+    _readAloud.removeListener(_onReadAloud);
+    _readAloud.dispose();
     _focusNode.dispose();
     _shortChapterTimer?.cancel();
     _defineTimer?.cancel();
@@ -287,6 +305,11 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
         _restorePosition(fraction);
         _scheduleShortChapterCheck();
       }
+      // Reading carries on into the chapter opened, from where it opens.
+      if (_continueReading || _readAloud.active) {
+        _continueReading = false;
+        _readAloudFrom(chapter, fraction);
+      }
     } catch (_) {
       if (mounted && request == _chapterRequest) {
         setState(() => _chapterFailed = true);
@@ -360,6 +383,132 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     // An earlier image belongs to the view it was given to, which lets it go.
     _arrivingFrom = image;
     _arrivalDirection = direction;
+  }
+
+  /// The background behind the sentence being read.
+  Color get _highlight => _fgColor.withValues(alpha: 0.2);
+
+  String _css(Color c) =>
+      'rgba(${(c.r * 255).round()}, ${(c.g * 255).round()}, '
+      '${(c.b * 255).round()}, ${c.a.toStringAsFixed(3)})';
+
+  void _readAloudMessage(String message, {bool toSettings = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      action: toSettings
+          ? SnackBarAction(
+              label: 'Settings', onPressed: () => context.push('/settings'))
+          : null,
+    ));
+  }
+
+  /// Play, pause, and resume.
+  void _toggleReadAloud() {
+    switch (_readAloud.status) {
+      case ReadAloudStatus.playing:
+        _readAloud.pause();
+      case ReadAloudStatus.paused:
+        _readAloud.resume();
+      case ReadAloudStatus.starting:
+        break;
+      case ReadAloudStatus.idle:
+        final chapter = _chapter;
+        if (!ref.read(voicePackProvider).installed) {
+          _readAloudMessage(
+              'Download the voice in Settings, under Books, to have books '
+              'read aloud.',
+              toSettings: true);
+        } else if (_layout == BookLayout.continuous) {
+          _readAloudMessage(
+              'Read aloud works in the page, spread and scroll layouts.');
+        } else if (chapter != null) {
+          final fraction = _layout.paged
+              ? (_pagePosition?.fraction ?? _layoutFraction)
+              : _currentFraction;
+          _readAloudFrom(chapter, fraction);
+        }
+    }
+  }
+
+  void _readAloudFrom(EpubChapter chapter, double fraction) {
+    final dir = ref.read(voicePackProvider).dir;
+    if (dir == null || _layout == BookLayout.continuous) {
+      _stopReadAloud();
+      return;
+    }
+    final marked = _marked?.chapter == chapter
+        ? _marked!.marked
+        : markSentences(chapter.html);
+    setState(() => _marked = (chapter: chapter, marked: marked));
+    _readAloud.read(marked, marked.sentenceAt(fraction),
+        modelDir: dir.path, voice: ref.read(readAloudVoiceProvider));
+  }
+
+  /// A new voice picked while reading: the sentence being read starts again
+  /// in it.
+  void _onVoiceChanged(KokoroVoice voice) {
+    final marked = _marked?.marked;
+    final dir = ref.read(voicePackProvider).dir;
+    if (!_readAloud.active || marked == null || dir == null) return;
+    _readAloud.read(marked, _readAloud.current ?? 0,
+        modelDir: dir.path, voice: voice);
+  }
+
+  void _stopReadAloud() {
+    _continueReading = false;
+    _readAloud.stop();
+    if (mounted) setState(() => _marked = null);
+  }
+
+  void _readAloudChapterEnd() {
+    final book = _book;
+    if (!mounted || book == null || _chapterIndex >= book.chapterCount - 1) {
+      _stopReadAloud();
+      return;
+    }
+    _continueReading = true;
+    if (_layout.paged) _carryPage(1);
+    _goToChapter(_chapterIndex + 1);
+  }
+
+  void _onReadAloud() {
+    if (!mounted) return;
+    final error = _readAloud.error;
+    if (error != null && error != _shownReadAloudError) {
+      _shownReadAloudError = error;
+      _readAloudMessage('Reading aloud stopped: $error');
+    }
+    if (!_readAloud.active && !_continueReading && _marked != null) {
+      setState(() => _marked = null);
+      return;
+    }
+    setState(() {});
+    if (_readAloud.current != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _followSentence());
+    }
+  }
+
+  /// Keeps the sentence being read on screen.
+  void _followSentence() {
+    if (!mounted || _readAloud.current == null) return;
+    if (_layout.paged) {
+      _pagedKey.currentState?.follow(_highlight);
+      return;
+    }
+    if (_layout != BookLayout.scroll || !_scroll.hasClients) return;
+    final box = _scrollChapterKey.currentContext?.findRenderObject();
+    final viewport =
+        _scroll.position.context.notificationContext?.findRenderObject();
+    if (box is! RenderBox || viewport is! RenderBox || !box.attached) return;
+    final top = highlightTop(box, _highlight);
+    if (top == null) return;
+    final y = box.localToGlobal(Offset(0, top), ancestor: viewport).dy;
+    final height = _scroll.position.viewportDimension;
+    if (y >= _topInset && y <= height - _bottomInset - 48) return;
+    final target = (_scroll.position.pixels + y - height * 0.3)
+        .clamp(0.0, _scroll.position.maxScrollExtent);
+    _scroll.animateTo(target,
+        duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
   }
 
   /// Opens chapter [index] at [fraction]: 0 is its start, 1 its last page.
@@ -718,6 +867,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
         textStyle: _textStyle(reading),
         style: reading.readingStyle,
         onTapLink: _onTapLink,
+        marked: _marked?.chapter == chapter ? _marked!.marked : null,
+        sentence: _readAloud.current,
+        highlight: _css(_highlight),
       );
 
   /// The book, laid out as the reading options ask.
@@ -826,7 +978,10 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
             constraints: BoxConstraints(maxWidth: columnWidth),
             child: SelectionArea(
               onSelectionChanged: _onSelectionChanged,
-              child: _chapterView(book, chapter, reading),
+              child: KeyedSubtree(
+                key: _scrollChapterKey,
+                child: _chapterView(book, chapter, reading),
+              ),
             ),
           ),
         ),
@@ -840,6 +995,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     // Watched, so a change here or in Settings applies straight away.
     final reading = ref.watch(settingsProvider);
     ref.listen(settingsProvider, _onSettingsChanged);
+    ref.listen(readAloudVoiceProvider, (_, voice) => _onVoiceChanged(voice));
     final style = reading.readingStyle;
 
     return Focus(
@@ -985,6 +1141,34 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
+                              ),
+                              if (_readAloud.active)
+                                IconButton(
+                                  icon: Icon(Icons.stop, color: _fgColor),
+                                  tooltip: 'Stop reading aloud',
+                                  onPressed: _stopReadAloud,
+                                ),
+                              IconButton(
+                                icon: _readAloud.status ==
+                                        ReadAloudStatus.starting
+                                    ? SizedBox.square(
+                                        dimension: 20,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2, color: _fgColor),
+                                      )
+                                    : Icon(
+                                        _readAloud.status ==
+                                                ReadAloudStatus.playing
+                                            ? Icons.pause
+                                            : Icons.record_voice_over_outlined,
+                                        color: _fgColor),
+                                tooltip: switch (_readAloud.status) {
+                                  ReadAloudStatus.playing => 'Pause',
+                                  ReadAloudStatus.paused => 'Resume reading',
+                                  ReadAloudStatus.starting => 'Starting…',
+                                  ReadAloudStatus.idle => 'Read aloud',
+                                },
+                                onPressed: _toggleReadAloud,
                               ),
                               IconButton(
                                 icon: Icon(Icons.palette, color: _fgColor),
@@ -1132,6 +1316,12 @@ class BookChapterView extends StatelessWidget {
   final ReadingStyle style;
   final void Function(String url) onTapLink;
 
+  /// While reading aloud: the chapter with its sentences marked, the one being
+  /// read, and the CSS colour behind it.
+  final MarkedChapter? marked;
+  final int? sentence;
+  final String? highlight;
+
   const BookChapterView({
     super.key,
     required this.book,
@@ -1139,6 +1329,9 @@ class BookChapterView extends StatelessWidget {
     required this.textStyle,
     this.style = const ReadingStyle(),
     required this.onTapLink,
+    this.marked,
+    this.sentence,
+    this.highlight,
   });
 
   @override
@@ -1152,7 +1345,11 @@ class BookChapterView extends StatelessWidget {
         colorScheme: theme.colorScheme.copyWith(primary: textStyle.color),
       ),
       child: HtmlWidget(
-        chapter.html,
+        marked?.html ?? chapter.html,
+        // Built at once while reading aloud: built in the background, each
+        // new highlight would blank the chapter for a moment.
+        buildAsync: marked != null ? false : null,
+        rebuildTriggers: [sentence, highlight],
         baseUrl:
             Uri(scheme: _bookScheme, host: 'book', path: '/${chapter.path}'),
         factoryBuilder: () => _BookWidgetFactory(book),
@@ -1163,6 +1360,12 @@ class BookChapterView extends StatelessWidget {
           final styles = {...book, ...style.overridesFor(tag, book)};
           if (tag == 'a' && !styles.containsKey('text-decoration')) {
             styles['text-decoration'] = 'none';
+          }
+          if (marked != null &&
+              highlight != null &&
+              sentence != null &&
+              element.attributes[sentenceAttribute] == '$sentence') {
+            styles['background-color'] = highlight!;
           }
           return styles.isEmpty ? null : styles;
         },
