@@ -515,4 +515,87 @@ void main() {
     expect(size.height, moreOrLessEquals(700, epsilon: 0.5));
     expect(size.width, moreOrLessEquals(700 * 300 / 450, epsilon: 0.5));
   });
+
+  // The window growing — maximised, or back from no size at all — used to
+  // leave the reader black until the page was turned. The pager corrects its
+  // offset for the new width before its scroll extents, and the slide being
+  // read, laid out in between, took the clamped page and hid itself as pages
+  // away. The reader makes its controller at page 0 and jumps to the saved
+  // page, as these do.
+  for (final (name, page, throughZero) in [
+    ('maximised near the end of a book', 4, false),
+    ('back from no size at all', 2, true),
+  ]) {
+    testWidgets('the page stays up when the window is $name', (tester) async {
+      tester.view.physicalSize = const Size(1266, 680);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      const slides = [
+        Color(0xFFFF0000),
+        Color(0xFF00FF00),
+        Color(0xFF0000FF),
+        Color(0xFFFFFF00),
+        Color(0xFF00FFFF),
+      ];
+      final key = GlobalKey();
+      final controller = PageController();
+      addTearDown(controller.dispose);
+      Widget slide(int i) => SizedBox.expand(child: ColoredBox(color: slides[i]));
+      await tester.pumpWidget(MaterialApp(
+        home: RepaintBoundary(
+          key: key,
+          child: Stack(fit: StackFit.expand, children: [
+            PageView.builder(
+              controller: controller,
+              itemCount: slides.length,
+              itemBuilder: (_, i) => ComicPageTurn(
+                controller: controller,
+                index: i,
+                reverse: false,
+                child: slide(i),
+              ),
+            ),
+            ComicPageCurl(
+              controller: controller,
+              reverse: false,
+              slideCount: slides.length,
+              spreadAt: (_) => false,
+              slideBuilder: slide,
+              backBuilder: slide,
+            ),
+          ]),
+        ),
+      ));
+      controller.jumpToPage(page);
+      await tester.pump();
+
+      Future<Color> centre() async {
+        final render =
+            key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+        final image = render.toImageSync();
+        final bytes = (await tester.runAsync(() => image.toByteData()))!;
+        final at = ((image.height ~/ 2) * image.width + image.width ~/ 2) * 4;
+        final colour = Color.fromARGB(bytes.getUint8(at + 3), bytes.getUint8(at),
+            bytes.getUint8(at + 1), bytes.getUint8(at + 2));
+        image.dispose();
+        return colour;
+      }
+
+      expect(await centre(), slides[page]);
+      if (throughZero) {
+        tester.view.physicalSize = Size.zero;
+        await tester.pump();
+      }
+      tester.view.physicalSize = const Size(2000, 1125);
+      await tester.pump();
+      // On the very first frame at the new size, not once something else
+      // happens to rebuild it.
+      expect(await centre(), slides[page],
+          reason: 'the page being read should still be showing');
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(await centre(), slides[page]);
+      expect(controller.page, page);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
 }
