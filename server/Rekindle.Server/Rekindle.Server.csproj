@@ -11,6 +11,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The shipped settings, so the server can add new ones to an older file on start. -->
+    <EmbeddedResource Include="appsettings.json" LogicalName="Rekindle.Server.appsettings.default.json" />
     <EmbeddedResource Include="Landing/rekindle-icon.png" LogicalName="Rekindle.Server.Landing.rekindle-icon.png" />
   </ItemGroup>
 

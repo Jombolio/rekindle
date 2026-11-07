@@ -13,6 +13,7 @@ using Rekindle.Server.Authorization;
 using Rekindle.Core.Database;
 using Rekindle.Core.Repositories;
 using Rekindle.Core.Services;
+using Rekindle.Core.Update;
 using Rekindle.Server.Controllers;
 using Rekindle.Server.Landing;
 
@@ -181,6 +182,10 @@ builder.Services.AddRateLimiter(options =>
 // ------------------------------------------------------------------
 var app = builder.Build();
 
+// Settings added since the administrator's appsettings.json was written are
+// added to it with their defaults, whatever way the server was updated.
+UpgradeSettings(app);
+
 // Trigger DB factory creation (resolves secret, creates dirs) then init schema
 using (var scope = app.Services.CreateScope())
 {
@@ -215,6 +220,33 @@ app.MapControllers();
 LandingPage.Map(app);
 
 await app.RunAsync();
+
+// ------------------------------------------------------------------
+// Settings upgrade
+// ------------------------------------------------------------------
+static void UpgradeSettings(WebApplication app)
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    var path = Path.Combine(app.Environment.ContentRootPath, "appsettings.json");
+    try
+    {
+        using var stream = typeof(Program).Assembly
+            .GetManifestResourceStream("Rekindle.Server.appsettings.default.json");
+        if (stream is null) return;
+        using var reader = new StreamReader(stream);
+
+        var result = SettingsMerger.UpgradeFile(path, reader.ReadToEnd());
+        if (result is not null)
+            logger.LogInformation("Added new settings to {Path}, with their defaults: {Settings}",
+                path, string.Join(", ", result.Added));
+    }
+    catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+    {
+        // A read-only install folder: the settings still use their defaults.
+        logger.LogInformation("Couldn't add new settings to {Path} ({Reason}); they use their defaults",
+            path, e.Message);
+    }
+}
 
 // ------------------------------------------------------------------
 // JWT secret resolution
