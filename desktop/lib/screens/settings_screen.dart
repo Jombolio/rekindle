@@ -10,6 +10,7 @@ import '../core/update/update_service.dart';
 import '../providers/discord_presence_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/update_provider.dart';
+import 'widgets/read_aloud_settings.dart';
 import 'widgets/reading_options.dart';
 import 'widgets/update_flow.dart';
 
@@ -367,6 +368,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               ),
                             ],
                           ),
+                          const Divider(height: 32),
+                          const ReadAloudSettings(),
                         ],
                       ),
                     ),

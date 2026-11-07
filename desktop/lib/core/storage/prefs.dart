@@ -141,6 +141,11 @@ class Prefs {
       _prefs.setDouble('book_font_size', size);
 
   // The theme books open in.
+  // The Kokoro voice books are read aloud in, by Kokoro's name for it.
+  String? get readAloudVoice => _prefs.getString('read_aloud_voice');
+  Future<void> setReadAloudVoice(String voice) =>
+      _prefs.setString('read_aloud_voice', voice);
+
   String? get bookTheme => _prefs.getString('book_theme');
   Future<void> setBookTheme(String theme) =>
       _prefs.setString('book_theme', theme);

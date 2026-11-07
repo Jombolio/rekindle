@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/epub/book_font.dart';
 import '../../core/epub/book_theme.dart';
 import '../../core/epub/reading_style.dart';
+import '../../core/read_aloud/voices.dart';
+import '../../providers/read_aloud_provider.dart';
 import '../../providers/settings_provider.dart';
 
 /// Every reading option for books: layout, font, size, theme, spacing, line
@@ -205,11 +207,52 @@ class ReadingOptionsPanel extends StatelessWidget {
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              child: ReadingOptionsForm(onThemePicked: onThemePicked),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _ReadAloudVoice(),
+                  ReadingOptionsForm(onThemePicked: onThemePicked),
+                ],
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The voice books are read aloud in. Changing it while reading carries on
+/// from the same sentence in the new voice.
+class _ReadAloudVoice extends ConsumerWidget {
+  const _ReadAloudVoice();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pack = ref.watch(voicePackProvider);
+    final voice = ref.watch(readAloudVoiceProvider);
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _Heading('Read-aloud voice'),
+        if (pack.installed)
+          _Choices<KokoroVoice>(
+            values: kokoroVoices,
+            selected: voice,
+            label: (v) => v.label.split(' · ').first,
+            onSelected: (v) =>
+                ref.read(readAloudVoiceProvider.notifier).select(v),
+          )
+        else
+          Text(
+            pack.downloading
+                ? 'The voice is downloading in Settings.'
+                : 'Download the voice in Settings, under Books.',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+      ],
     );
   }
 }
