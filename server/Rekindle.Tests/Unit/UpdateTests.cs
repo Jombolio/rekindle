@@ -186,7 +186,9 @@ public class UpdateInstallerTests : IDisposable
         Read("Rekindle.Server").Should().Be("new binary");
         Read("libvips.so.42").Should().Be("new lib");
         Read("pdfium.so").Should().Be("new pdfium");
-        Read("appsettings.json").Should().Be("""{"custom": true}""", "existing configuration is never overwritten");
+        // The user's value stays; the release's new setting is added beside it.
+        JsonDocument.Parse(Read("appsettings.json")).RootElement.GetProperty("custom").GetBoolean().Should().BeTrue();
+        JsonDocument.Parse(Read("appsettings.json")).RootElement.GetProperty("shipped").GetBoolean().Should().BeTrue();
         Read("appsettings.Production.json").Should().Be("""{"prod": true}""");
         Read("notes.txt").Should().Be("mine");
         File.ReadAllText(Path.Combine(Data, "rekindle.db")).Should().Be("database");
@@ -194,6 +196,41 @@ public class UpdateInstallerTests : IDisposable
         result.Replaced.Should().BeEquivalentTo("Rekindle.Server", "libvips.so.42");
         result.Added.Should().BeEquivalentTo("pdfium.so", "LICENSE");
         result.KeptExisting.Should().BeEquivalentTo("appsettings.json");
+        result.SettingsAdded.Should().Equal("shipped");
+    }
+
+    [Fact]
+    public void LeavesTheConfigAlone_WhenItHasEverySetting()
+    {
+        File.WriteAllText(Path.Combine(Install, "appsettings.json"), """{"shipped": false}""");
+
+        var result = UpdateInstaller.Install(Zip(Release), Install, [Data]);
+
+        Read("appsettings.json").Should().Be("""{"shipped": false}""");
+        result.SettingsAdded.Should().BeEmpty();
+        result.Replaced.Should().NotContain("appsettings.json");
+    }
+
+    [Fact]
+    public void NeverMergesIntoOverrideFiles()
+    {
+        var zip = Zip(("Rekindle.Server", "new binary"), ("appsettings.Production.json", """{"shipped": true}"""));
+
+        UpdateInstaller.Install(zip, Install, [Data]);
+
+        Read("appsettings.Production.json").Should().Be("""{"prod": true}""");
+    }
+
+    [Fact]
+    public void RollsBackTheMergedConfig_WhenTheUpdateFails()
+    {
+        Directory.CreateDirectory(Path.Combine(Install, "pdfium.so"));
+        var zip = Zip(("appsettings.json", """{"shipped": true}"""), ("pdfium.so", "x"));
+
+        var act = () => UpdateInstaller.Install(zip, Install, [Data]);
+
+        act.Should().Throw<Exception>();
+        Read("appsettings.json").Should().Be("""{"custom": true}""");
     }
 
     [Fact]

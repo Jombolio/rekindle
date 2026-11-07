@@ -127,6 +127,12 @@ internal static class UpdateCommand
             Console.WriteLine($"Installed {release.Version}: {result.Replaced.Count} file(s) replaced, {result.Added.Count} added.");
             foreach (var kept in result.KeptExisting)
                 Console.WriteLine($"  Kept your existing {kept}.");
+            if (result.SettingsAdded.Count > 0)
+            {
+                Console.WriteLine("  Added new settings to appsettings.json, with their defaults:");
+                foreach (var setting in result.SettingsAdded)
+                    Console.WriteLine($"    {setting}");
+            }
             if (result.PendingCleanup.Count > 0)
                 Console.WriteLine("  Old files still in use will be removed on the next start.");
             Console.WriteLine("Restart Rekindle Server to run the new version.");

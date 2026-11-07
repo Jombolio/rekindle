@@ -6,13 +6,16 @@ public sealed record InstallResult(
     IReadOnlyList<string> Replaced,
     IReadOnlyList<string> Added,
     IReadOnlyList<string> KeptExisting,
-    IReadOnlyList<string> PendingCleanup);
+    IReadOnlyList<string> PendingCleanup,
+    IReadOnlyList<string> SettingsAdded);
 
 /// <summary>
 /// Installs a server release zip over an existing installation, touching only
 /// the files the zip ships. Configuration and data are never overwritten:
 /// <list type="bullet">
-/// <item>appsettings*.json is installed only if it doesn't exist yet;</item>
+/// <item>appsettings*.json is installed only if it doesn't exist yet. An
+/// existing appsettings.json keeps every value and gains only the settings
+/// added since (see <see cref="SettingsMerger"/>);</item>
 /// <item>the data and cache directories are off limits, and a zip that would
 /// write into them is rejected;</item>
 /// <item>every other file in the install directory is left alone.</item>
@@ -101,6 +104,7 @@ public static class UpdateInstaller
         var replaced = new List<string>();
         var added = new List<string>();
         var kept = new List<string>();
+        var settingsAdded = new List<string>();
         var backups = new List<(string Target, string Backup)>();
         var newFiles = new List<string>();
 
@@ -120,10 +124,22 @@ public static class UpdateInstaller
                 var staged = Path.Combine(staging, relative);
                 var target = Path.GetFullPath(Path.Combine(installDir, relative));
 
+                var mergingSettings = false;
                 if (File.Exists(target) && IsConfiguration(relative))
                 {
                     kept.Add(relative);
-                    continue;
+                    // Only the main file is brought up to date; appsettings.*.json
+                    // are the administrator's own overrides.
+                    var merge = relative.Equals("appsettings.json", StringComparison.OrdinalIgnoreCase)
+                        ? SettingsMerger.AddMissing(File.ReadAllText(target), File.ReadAllText(staged))
+                        : null;
+                    if (merge is null) continue;
+
+                    // Written over the staged copy, so the swap below backs up the
+                    // user's file and a failure later on puts it back.
+                    File.WriteAllText(staged, merge.Json);
+                    settingsAdded.AddRange(merge.Added);
+                    mergingSettings = true;
                 }
 
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
@@ -136,7 +152,7 @@ public static class UpdateInstaller
                     TryDeleteFile(backup);
                     File.Move(target, backup);
                     backups.Add((target, backup));
-                    replaced.Add(relative);
+                    if (!mergingSettings) replaced.Add(relative);
                 }
                 else
                 {
@@ -164,7 +180,7 @@ public static class UpdateInstaller
         var listPath = Path.Combine(installDir, LeftoversFileName);
         if (pending.Count > 0) File.AppendAllLines(listPath, pending);
 
-        return new InstallResult(replaced, added, kept, pending);
+        return new InstallResult(replaced, added, kept, pending, settingsAdded);
     }
 
     private static void Rollback(List<string> newFiles, List<(string Target, string Backup)> backups)

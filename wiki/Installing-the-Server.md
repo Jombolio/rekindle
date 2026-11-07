@@ -133,7 +133,9 @@ On Windows, use `sc stop Rekindle`, `C:\RekindleServer\Rekindle.Server.exe --upd
 | `--update` | Installs the newest **stable** release, if it is newer than yours |
 | `--dev-update` | Installs the newest release **including pre-releases** (betas, release candidates), for testing |
 
-The update only replaces the files that ship in the release. It never touches `appsettings.json` (or any `appsettings.*.json`), your `data/` and cache folders, or anything else you keep in the server's folder. Each download is checked against the SHA-256 published with the release and refused if it doesn't match. If anything fails part-way, every file is put back as it was.
+The update only replaces the files that ship in the release. It never touches your `data/` and cache folders, any `appsettings.*.json`, or anything else you keep in the server's folder.
+
+Your `appsettings.json` carries over as it is: every value you set stays. If the new release adds settings your file doesn't have yet, the update adds them with their defaults and lists them, so you can find and change them. For example, updating from 1.6.1 adds `Rekindle:Contacts` and `Rekindle:LandingTheme`. If your file has comments or trailing commas, which a rewrite would lose, it is left exactly as it is; settings it doesn't mention still use their defaults. Each download is checked against the SHA-256 published with the release and refused if it doesn't match. If anything fails part-way, every file is put back as it was.
 
 An update never moves you to an older version: on a pre-release, `--update` waits until a stable release newer than yours exists.
 
