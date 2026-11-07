@@ -11,6 +11,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Landing/rekindle-icon.png" LogicalName="Rekindle.Server.Landing.rekindle-icon.png" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Rekindle.Core\Rekindle.Core.csproj" />
   </ItemGroup>
 

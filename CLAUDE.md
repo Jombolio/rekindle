@@ -67,6 +67,8 @@ cd android
 
 **Page cache** lives under `CachePath/pages/{mediaId}/` with a `manifest.json` tracking page filenames and spread flags. `ArchiveService` extracts on first access and evicts LRU entries when the cache exceeds `CacheMaxSizeBytes`.
 
+**Landing page:** `GET /` serves a self-contained HTML page (`Rekindle.Server/Landing/LandingPage.cs`, icon embedded) explaining Rekindle, the app downloads and this server's address. No client calls `/`; API routes are untouched. Admin contact links come from `Rekindle:Contacts` in appsettings.json (live-reloaded), filtered by `ContactLinks` to http/https/mailto and HTML-encoded. `Rekindle:LandingTheme` (System/Light/Dark) fixes the page's colour scheme.
+
 **Metadata scraping** routes strictly by library type: comics → ComicVine only; manga → MAL then AniList. `MetadataScraperService.ScrapeAsync` returns a `ScrapeResult` with status `Created | NoChange | Conflict` — conflicts are never written automatically; the client must call `/commit`.
 
 ---

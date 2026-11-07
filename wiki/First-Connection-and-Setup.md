@@ -14,6 +14,8 @@ Your server address is the IP address (or hostname) of the machine running Rekin
 
 If you are running the client on the same machine as the server, you can use `http://localhost:8080`.
 
+To check the address, open it in a web browser. You should see the Rekindle landing page, which shows the address to copy into the app and links to the app downloads. You can send that page to the people you share the server with. To list ways for them to reach you there, see [Contact links on the landing page](Configuration#contact-links-on-the-landing-page).
+
 ---
 
 ## 2. Add the server in the client
