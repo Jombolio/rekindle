@@ -19,7 +19,7 @@ license=('GPL-3.0-only')
 # Flutter runner links against. sqlite backs the local reading-progress queue,
 # and url_launcher shells out to xdg-open. Everything else the bundle needs it
 # ships itself under lib/.
-depends=('gtk3' 'sqlite' 'xdg-utils')
+depends=('alsa-lib' 'gtk3' 'sqlite' 'xdg-utils')
 provides=('rekindle')
 conflicts=('rekindle')
 # The release binary is already built with --obfuscate --split-debug-info;

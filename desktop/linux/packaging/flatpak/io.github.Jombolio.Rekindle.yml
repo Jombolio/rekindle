@@ -20,6 +20,8 @@ finish-args:
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
+  # Reading books aloud.
+  - --socket=pulseaudio
   - --device=dri
   # Talking to your own Rekindle server is the entire point.
   - --share=network
