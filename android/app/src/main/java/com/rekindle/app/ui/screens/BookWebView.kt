@@ -63,7 +63,7 @@ class BookWebView(
     private val onFlowPosition: (chapter: Int, fraction: Float) -> Unit,
     private val onPastEnd: () -> Unit,
     private val onBeforeStart: () -> Unit,
-    /** "Read aloud" was picked for selected text: the chapter and sentence it's in. */
+    /** "Read from here" was picked for selected text: the chapter and sentence it's in. */
     private val onReadAloudFrom: (chapter: Int, sentence: Int) -> Unit,
 ) : WebView(context) {
 
@@ -510,7 +510,9 @@ class BookWebView(
                     .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
             }
             if (menu.findItem(READ_ALOUD_ITEM) == null) {
-                menu.add(Menu.NONE, READ_ALOUD_ITEM, Menu.FIRST + 1, "Read aloud")
+                // Not plain "Read aloud": phones with Google's speech services add an
+                // item of that name to every app's menu, which reads just the selection.
+                menu.add(Menu.NONE, READ_ALOUD_ITEM, Menu.FIRST + 1, "Read from here")
                     .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
             }
         }

@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
 import android.graphics.drawable.Icon
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
@@ -115,13 +116,29 @@ class ReadAloudService : Service() {
         } else {
             setNoisy(false)
         }
-        val book = readAloud.book
-        session.setMetadata(
-            MediaMetadata.Builder()
-                .putString(MediaMetadata.METADATA_KEY_TITLE, chapterTitle(state))
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, book?.title.orEmpty())
-                .build(),
-        )
+        val shown = Shown.of(readAloud.book, state, playing)
+        // Each sentence updates the state, but the cover is a bitmap sent across to
+        // the system: only refresh what's shown when something on it has changed.
+        if (shown == lastShown) return
+        val metadataChanged = shown.copy(playing = false) != lastShown?.copy(playing = false)
+        lastShown = shown
+        if (metadataChanged) {
+            session.setMetadata(
+                MediaMetadata.Builder()
+                    // The lock screen shows the title above the artist: the book, then
+                    // where in it.
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, shown.title)
+                    .putString(MediaMetadata.METADATA_KEY_ARTIST, shown.position)
+                    .putString(MediaMetadata.METADATA_KEY_ALBUM, shown.chapterTitle)
+                    .apply {
+                        shown.cover?.let {
+                            putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, it)
+                            putBitmap(MediaMetadata.METADATA_KEY_ART, it)
+                        }
+                    }
+                    .build(),
+            )
+        }
         session.setPlaybackState(
             PlaybackState.Builder()
                 .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
@@ -136,13 +153,34 @@ class ReadAloudService : Service() {
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(state))
     }
 
-    private fun chapterTitle(state: ReadAloud.State): String {
-        val book = readAloud.book ?: return "Reading aloud"
-        return if (state.chapter in 0 until book.chapterCount) book.chapterTitle(state.chapter) else book.title
+    /** What the lock screen and notification show, to tell when it changes. */
+    private data class Shown(
+        val title: String,
+        val position: String,
+        val chapterTitle: String,
+        val cover: Bitmap?,
+        val playing: Boolean,
+    ) {
+        companion object {
+            fun of(book: ReadAloud.Book?, state: ReadAloud.State, playing: Boolean): Shown {
+                if (book == null) return Shown("Reading aloud", "", "", null, playing)
+                val inBook = state.chapter in 0 until book.chapterCount
+                return Shown(
+                    title = book.title.ifBlank { "Reading aloud" },
+                    position = if (inBook) book.position(state.chapter, state.sentence) else "",
+                    chapterTitle = if (inBook) book.chapterTitle(state.chapter) else "",
+                    cover = book.cover,
+                    playing = playing,
+                )
+            }
+        }
     }
+
+    private var lastShown: Shown? = null
 
     private fun notification(state: ReadAloud.State): Notification {
         val playing = state.status != ReadAloud.Status.PAUSED
+        val shown = Shown.of(readAloud.book, state, playing)
         val toggle = Notification.Action.Builder(
             Icon.createWithResource(this, if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play),
             if (playing) "Pause" else "Play",
@@ -155,8 +193,9 @@ class ReadAloudService : Service() {
         ).build()
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_read_aloud)
-            .setContentTitle(chapterTitle(state))
-            .setContentText(readAloud.book?.title.orEmpty())
+            .setContentTitle(shown.title)
+            .setContentText(shown.position)
+            .apply { shown.cover?.let { setLargeIcon(it) } }
             .setContentIntent(openApp())
             .setOngoing(true)
             .setShowWhen(false)
