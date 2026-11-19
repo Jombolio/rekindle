@@ -82,6 +82,28 @@ class SentenceMarkerTest {
     }
 
     @Test
+    fun `Unicode spaces end sentences and are tidied`() {
+        // A no-break space after a full stop, and an em space inside a sentence.
+        val marked = SentenceMarker.mark("<p>One. Two words.</p>")
+        assertEquals(listOf("One.", "Two words."), marked.sentences)
+    }
+
+    /**
+     * Android's regex engine (ICU) rejects the (?U) flag and UNICODE_CHARACTER_CLASS,
+     * which the JVM running these tests accepts: 1.6.4-beta.2 crashed on opening any
+     * book because of it. This keeps them out of the app's code.
+     */
+    @Test
+    fun `no regex uses a flag Android rejects`() {
+        val offenders = java.io.File("src/main/java").walkTopDown()
+            .filter { it.extension == "kt" }
+            .filter { file -> file.readText().let { "(?U)" in it || "UNICODE_CHARACTER_CLASS" in it } }
+            .map { it.name }
+            .toList()
+        assertEquals(emptyList<String>(), offenders)
+    }
+
+    @Test
     fun `long text is split for the engine between words`() {
         val parts = ReadAloud.split("aaaa bbbb cccc dddd", 10)
         assertEquals(listOf("aaaa bbbb", "cccc dddd"), parts)
