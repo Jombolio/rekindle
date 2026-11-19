@@ -44,11 +44,20 @@ final voicePackProvider =
 
 class VoicePackNotifier extends Notifier<VoicePack> {
   CancelToken? _cancel;
+  late Future<void> _checked;
 
   @override
   VoicePack build() {
-    refresh();
+    _checked = refresh();
     return const VoicePack(checking: true);
+  }
+
+  /// The state once the first look at the disk is done. Read this rather
+  /// than [state] when a decision hangs on whether the voice is installed:
+  /// until then [state] says it isn't, even when it is.
+  Future<VoicePack> ready() async {
+    await _checked;
+    return state;
   }
 
   Future<void> refresh() async {

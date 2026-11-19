@@ -88,4 +88,41 @@ void main() {
     expect(marked.sentenceAt(0.5), 2);
     expect(marked.sentenceAt(1), 3);
   });
+
+  group('sentenceOfText', () {
+    final marked = markSentences(
+      '<h1>Chapter One</h1>'
+      '<p>The rain fell. She waited by the door.</p>'
+      '<p>The rain fell. He did not come, and she <i>went home</i> alone.</p>',
+    );
+
+    test('finds the sentence a selection starts in', () {
+      expect(marked.sentenceOfText(after: 'waited by'), 2);
+      expect(marked.sentenceOfText(after: 'He did not come, and she went'), 4);
+    });
+
+    test('ignores case and spacing the page adds', () {
+      expect(marked.sentenceOfText(after: 'CHAPTER  ONE'), 0);
+      expect(marked.sentenceOfText(after: '\u2003He did\nnot come'), 4);
+    });
+
+    test('the text before a click tells repeated text apart', () {
+      expect(
+          marked.sentenceOfText(
+              before: 'by the door. ', after: 'The rain fell.'),
+          3);
+      expect(
+          marked.sentenceOfText(before: 'waited by the door. ', after: ''),
+          null);
+    });
+
+    test('repeated text goes to the copy nearest the reader', () {
+      expect(marked.sentenceOfText(after: 'The rain fell.', near: 0), 1);
+      expect(marked.sentenceOfText(after: 'The rain fell.', near: 1), 3);
+    });
+
+    test('text that is not in the chapter is not found', () {
+      expect(marked.sentenceOfText(after: 'zebra crossing'), null);
+    });
+  });
 }

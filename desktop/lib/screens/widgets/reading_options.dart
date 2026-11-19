@@ -236,7 +236,9 @@ class _ReadAloudVoice extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const _Heading('Read-aloud voice'),
-        if (pack.installed)
+        if (pack.checking)
+          const SizedBox.shrink()
+        else if (pack.installed)
           _Choices<KokoroVoice>(
             values: kokoroVoices,
             selected: voice,

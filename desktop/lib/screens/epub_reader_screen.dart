@@ -6,9 +6,13 @@ import 'dart:ui' as ui;
 import 'package:csslib/visitor.dart' as css;
 import 'package:dio/dio.dart';
 import 'package:flutter/gestures.dart'
-    show PointerScrollEvent, PointerSignalEvent;
+    show
+        HitTestResult,
+        kSecondaryMouseButton,
+        PointerScrollEvent,
+        PointerSignalEvent;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show SelectedContent;
+import 'package:flutter/rendering.dart' show RenderParagraph, SelectedContent;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
@@ -88,6 +92,12 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   EpubChapter? _chapter;
   bool _chapterFailed = false;
   int _chapterIndex = 0;
+
+  /// Play was pressed before the voice check finished; ignores repeat presses.
+  bool _awaitingVoiceCheck = false;
+
+  /// The text at the last right-click, for "Read aloud from here".
+  ({String before, String after})? _menuSpot;
 
   /// The theme picked with the palette button, for this visit only. Until then
   /// the reader follows the default in Settings.
@@ -308,7 +318,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
       // Reading carries on into the chapter opened, from where it opens.
       if (_continueReading || _readAloud.active) {
         _continueReading = false;
-        _readAloudFrom(chapter, fraction);
+        _readAloudFrom(chapter, fraction: fraction);
       }
     } catch (_) {
       if (mounted && request == _chapterRequest) {
@@ -403,7 +413,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   }
 
   /// Play, pause, and resume.
-  void _toggleReadAloud() {
+  Future<void> _toggleReadAloud() async {
     switch (_readAloud.status) {
       case ReadAloudStatus.playing:
         _readAloud.pause();
@@ -412,8 +422,19 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
       case ReadAloudStatus.starting:
         break;
       case ReadAloudStatus.idle:
+        if (_awaitingVoiceCheck) return;
+        // Right after launch the voice may still be being looked for on
+        // disk; wait for that rather than calling it missing.
+        _awaitingVoiceCheck = true;
+        final VoicePack pack;
+        try {
+          pack = await ref.read(voicePackProvider.notifier).ready();
+        } finally {
+          _awaitingVoiceCheck = false;
+        }
+        if (!mounted || _readAloud.status != ReadAloudStatus.idle) return;
         final chapter = _chapter;
-        if (!ref.read(voicePackProvider).installed) {
+        if (!pack.installed) {
           _readAloudMessage(
               'Download the voice in Settings, under Books, to have books '
               'read aloud.',
@@ -422,27 +443,111 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
           _readAloudMessage(
               'Read aloud works in the page, spread and scroll layouts.');
         } else if (chapter != null) {
-          final fraction = _layout.paged
-              ? (_pagePosition?.fraction ?? _layoutFraction)
-              : _currentFraction;
-          _readAloudFrom(chapter, fraction);
+          _readAloudFrom(chapter, fraction: _readingFraction);
         }
     }
   }
 
-  void _readAloudFrom(EpubChapter chapter, double fraction) {
+  /// Reads [chapter] aloud from [sentence], or else from the one at
+  /// [fraction] of the way through it.
+  void _readAloudFrom(EpubChapter chapter, {double fraction = 0, int? sentence}) {
     final dir = ref.read(voicePackProvider).dir;
     if (dir == null || _layout == BookLayout.continuous) {
       _stopReadAloud();
       return;
     }
-    final marked = _marked?.chapter == chapter
-        ? _marked!.marked
-        : markSentences(chapter.html);
+    final marked = _markedFor(chapter);
     setState(() => _marked = (chapter: chapter, marked: marked));
-    _readAloud.read(marked, marked.sentenceAt(fraction),
+    _readAloud.read(marked, sentence ?? marked.sentenceAt(fraction),
         modelDir: dir.path, voice: ref.read(readAloudVoiceProvider));
   }
+
+  MarkedChapter _markedFor(EpubChapter chapter) => _marked?.chapter == chapter
+      ? _marked!.marked
+      : markSentences(chapter.html);
+
+  /// Where the reader is in the current chapter, for reading aloud from it.
+  double get _readingFraction => _layout.paged
+      ? (_pagePosition?.fraction ?? _layoutFraction)
+      : _currentFraction;
+
+  /// The text around [position], if it is on the chapter's text: the rest of
+  /// its paragraph from the start of the word there, and a little before it.
+  ({String before, String after})? _textAt(Offset position, int viewId) {
+    final result = HitTestResult();
+    WidgetsBinding.instance.hitTestInView(result, position, viewId);
+    for (final entry in result.path) {
+      final target = entry.target;
+      if (target is! RenderParagraph || !target.hasSize) continue;
+      // Placeholders are kept, one character each, as the paragraph counts
+      // them.
+      final text = target.text.toPlainText(includeSemanticsLabels: false);
+      var start = target
+          .getPositionForOffset(target.globalToLocal(position))
+          .offset
+          .clamp(0, text.length);
+      final space = RegExp(r'\s');
+      while (start > 0 && !space.hasMatch(text[start - 1])) {
+        start--;
+      }
+      return (
+        before: text.substring((start - 60).clamp(0, start), start),
+        after: text.substring(start, (start + 80).clamp(start, text.length)),
+      );
+    }
+    return null;
+  }
+
+  /// "Read aloud from here" in the text's context menu: from the selection,
+  /// or else from the word that was right-clicked.
+  Future<void> _readAloudFromMenu() async {
+    final chapter = _chapter;
+    final selected = _selectedText?.trim() ?? '';
+    final spot =
+        selected.isNotEmpty ? (before: '', after: selected) : _menuSpot;
+    if (chapter == null || spot == null) return;
+    final pack = await ref.read(voicePackProvider.notifier).ready();
+    if (!mounted || _chapter != chapter) return;
+    if (!pack.installed) {
+      _readAloudMessage(
+          'Download the voice in Settings, under Books, to have books '
+          'read aloud.',
+          toSettings: true);
+      return;
+    }
+    final sentence = _markedFor(chapter).sentenceOfText(
+        before: spot.before, after: spot.after, near: _readingFraction);
+    if (sentence == null) {
+      _readAloudMessage("Couldn't find that text in the chapter to read from.");
+      return;
+    }
+    _readAloudFrom(chapter, sentence: sentence);
+  }
+
+  /// A [SelectionArea] whose context menu can also start reading aloud.
+  Widget _selectionArea({required Widget child, bool readAloud = true}) =>
+      SelectionArea(
+        onSelectionChanged: _onSelectionChanged,
+        contextMenuBuilder: (context, state) {
+          final hasSpot = (_selectedText?.trim().isNotEmpty ?? false) ||
+              _menuSpot != null;
+          return AdaptiveTextSelectionToolbar.buttonItems(
+            anchors: state.contextMenuAnchors,
+            buttonItems: [
+              ...state.contextMenuButtonItems,
+              if (readAloud && _chapter != null && hasSpot)
+                ContextMenuButtonItem(
+                  label: 'Read aloud from here',
+                  onPressed: () {
+                    state.hideToolbar();
+                    _readAloudFromMenu();
+                  },
+                ),
+            ],
+          );
+        },
+        child: child,
+      );
 
   /// A new voice picked while reading: the sentence being read starts again
   /// in it.
@@ -878,8 +983,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
     final columnWidth = reading.bookFontSize * style.measure;
 
     if (style.layout == BookLayout.continuous) {
-      return SelectionArea(
-        onSelectionChanged: _onSelectionChanged,
+      // Read aloud doesn't work in this layout.
+      return _selectionArea(
+        readAloud: false,
         child: ContinuousBookView(
           key: ValueKey(('continuous', _continuousEpoch)),
           book: book,
@@ -924,8 +1030,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
 
     if (style.layout.paged) {
       final arriving = _arrivingFrom;
-      return SelectionArea(
-        onSelectionChanged: _onSelectionChanged,
+      return _selectionArea(
         child: PagedChapterView(
           key: _pagedKey,
           content: _chapterView(book, chapter, reading),
@@ -976,8 +1081,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: columnWidth),
-            child: SelectionArea(
-              onSelectionChanged: _onSelectionChanged,
+            child: _selectionArea(
               child: KeyedSubtree(
                 key: _scrollChapterKey,
                 child: _chapterView(book, chapter, reading),
@@ -1065,6 +1169,10 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
                         _cancelRestore();
                         _pointerDown = true;
                         _pointerAt = event.position;
+                        // Read now: once the menu is up it covers the spot.
+                        if (event.buttons & kSecondaryMouseButton != 0) {
+                          _menuSpot = _textAt(event.position, event.viewId);
+                        }
                         _defineTimer?.cancel();
                         _defineRequest++;
                         _ignoreNextTap = _definition != null ||
