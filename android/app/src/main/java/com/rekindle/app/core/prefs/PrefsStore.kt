@@ -37,6 +37,10 @@ const val MIN_PAGE_TURN_MS = 200
 const val MAX_PAGE_TURN_MS = 1400
 const val DEFAULT_PAGE_TURN_MS = 700
 
+/** Read-aloud speed, as a multiple of the engine's normal speed. */
+const val MIN_READ_ALOUD_RATE = 0.5f
+const val MAX_READ_ALOUD_RATE = 2.5f
+
 @Singleton
 class PrefsStore @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -238,6 +242,20 @@ class PrefsStore @Inject constructor(
     /** Book layout and readability options. */
     val readingStyle: Flow<ReadingStyle> = store.data.map { ReadingStyle.fromJson(it[Keys.READING_STYLE]) }
 
+    /** The text-to-speech voice books are read aloud in, by name. Empty: the engine's default. */
+    val readAloudVoice: Flow<String> = store.data.map { it[Keys.READ_ALOUD_VOICE] ?: "" }
+
+    /** How fast books are read aloud: 1 is the engine's normal speed. */
+    val readAloudRate: Flow<Float> = store.data.map {
+        (it[Keys.READ_ALOUD_RATE] ?: 1f).coerceIn(MIN_READ_ALOUD_RATE, MAX_READ_ALOUD_RATE)
+    }
+
+    suspend fun setReadAloudVoice(name: String) = store.edit { it[Keys.READ_ALOUD_VOICE] = name }
+
+    suspend fun setReadAloudRate(rate: Float) = store.edit {
+        it[Keys.READ_ALOUD_RATE] = rate.coerceIn(MIN_READ_ALOUD_RATE, MAX_READ_ALOUD_RATE)
+    }
+
     /**
      * Content URI string granted via ACTION_OPEN_DOCUMENT_TREE.
      * Empty = use app-private external storage (no permission needed).
@@ -328,6 +346,8 @@ class PrefsStore @Inject constructor(
         val BOOK_FONT_SIZE = floatPreferencesKey("book_font_size")
         val BOOK_THEME = stringPreferencesKey("book_theme")
         val READING_STYLE = stringPreferencesKey("reading_style")
+        val READ_ALOUD_VOICE = stringPreferencesKey("read_aloud_voice")
+        val READ_ALOUD_RATE = floatPreferencesKey("read_aloud_rate")
         val CONFIRM_CHAPTER_CHANGE = booleanPreferencesKey("confirm_chapter_change")
         val CHAPTER_CONFIRM_MS = intPreferencesKey("chapter_confirm_ms")
         val SOURCES_JSON = stringPreferencesKey("sources_json")

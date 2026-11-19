@@ -3,6 +3,8 @@ package com.rekindle.app.core.epub
 import org.w3c.dom.Element
 import java.io.Closeable
 import java.io.File
+import com.rekindle.app.core.readaloud.MarkedChapter
+import com.rekindle.app.core.readaloud.SentenceMarker
 import java.io.InputStream
 import java.net.URLDecoder
 import java.util.zip.ZipEntry
@@ -183,13 +185,13 @@ object EpubParser {
      * `<title/>` in the original head would swallow the whole page. [themeCss] comes
      * last so the reader's theme wins.
      */
-    fun renderChapter(html: String, themeCss: String): String {
+    fun renderChapter(html: String, themeCss: String, markSentences: Boolean = false): String {
         val body = BODY.find(html)
         val head = html.substring(0, body?.range?.first ?: 0)
         val links = LINK.findAll(head).map { it.value }.filter { "stylesheet" in it.lowercase() }
         val styles = STYLE.findAll(head).map { it.value }
         val bodyAttributes = body?.groupValues?.get(1).orEmpty()
-        val content = expandSelfClosingTags(body?.groupValues?.get(2) ?: html).replace(SCRIPT, "")
+        val content = chapterContent(html, markSentences)
         return buildString {
             append("<!DOCTYPE html><html><head><meta charset=\"utf-8\">")
             append("<meta http-equiv=\"Content-Security-Policy\" content=\"").append(CONTENT_SECURITY_POLICY).append("\">")
@@ -207,12 +209,12 @@ object EpubParser {
      * belongs to none of its chapters. Its stylesheets come along inside the section,
      * where browsers apply them as they would in the head.
      */
-    fun flowSection(index: Int, path: String, html: String, host: String): String {
+    fun flowSection(index: Int, path: String, html: String, host: String, markSentences: Boolean = false): String {
         val body = BODY.find(html)
         val head = html.substring(0, body?.range?.first ?: 0)
         val links = LINK.findAll(head).map { it.value }.filter { "stylesheet" in it.lowercase() }
         val styles = STYLE.findAll(head).map { it.value }.map { expandSelfClosingStyle(it) }
-        val content = expandSelfClosingTags(body?.groupValues?.get(2) ?: html).replace(SCRIPT, "")
+        val content = chapterContent(html, markSentences)
         return buildString {
             append("<section data-chapter=\"").append(index).append("\">")
             links.forEach { append(absoluteUrls(it, path, host)) }
@@ -221,6 +223,18 @@ object EpubParser {
             append("</section>")
         }
     }
+
+    /** A chapter's body as the page shows it, its sentences marked when asked. */
+    private fun chapterContent(html: String, markSentences: Boolean): String {
+        val content = expandSelfClosingTags(BODY.find(html)?.groupValues?.get(2) ?: html).replace(SCRIPT, "")
+        return if (markSentences) SentenceMarker.mark(content).html else content
+    }
+
+    /**
+     * A chapter's sentences for reading aloud, numbered as on a page rendered with
+     * `markSentences`: both come from the same body and the same [SentenceMarker].
+     */
+    fun chapterSentences(html: String): MarkedChapter = SentenceMarker.mark(chapterContent(html, false))
 
     /** The continuous layout's document, opening with [firstSection]. */
     fun renderFlow(firstSection: String, themeCss: String): String = buildString {

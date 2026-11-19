@@ -24,6 +24,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.TextFormat
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.TextDecrease
 import androidx.compose.material.icons.filled.TextIncrease
@@ -36,6 +40,17 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import android.widget.Toast
+import com.rekindle.app.core.readaloud.ReadAloud
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -82,6 +97,27 @@ fun EpubReaderScreen(
     val state by vm.state.collectAsState()
     var webView by remember { mutableStateOf<BookWebView?>(null) }
     val layout = state.style.layout
+    val context = LocalContext.current
+
+    LaunchedEffect(vm) {
+        vm.messages.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+    }
+
+    // Reading aloud carries on with the screen off, with its controls in a
+    // notification, which Android 13 and later ask permission to show. Reading works
+    // either way, so it's asked once and not insisted on.
+    var askedNotifications by rememberSaveable { mutableStateOf(false) }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    fun startReadAloud() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !askedNotifications &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            askedNotifications = true
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        webView?.sentenceInView { chapter, sentence -> vm.readAloudFrom(chapter, sentence) }
+    }
 
     val theme = state.theme(appDark = MaterialTheme.colorScheme.background.luminance() < 0.5f)
     val bgColor = theme.bgColor
@@ -123,6 +159,7 @@ fun EpubReaderScreen(
                             onFlowPosition = vm::onFlowPosition,
                             onPastEnd = vm::onPastEnd,
                             onBeforeStart = vm::onBeforeStart,
+                            onReadAloudFrom = vm::readAloudFrom,
                         ).also { webView = it }
                     },
                     update = { wv ->
@@ -138,6 +175,7 @@ fun EpubReaderScreen(
                             styleKey = "${theme.name}|${state.font.name}|${state.style.toJson()}",
                             startFraction = state.startFraction,
                         )
+                        wv.highlightSentence(state.readingChapter, state.readingSentence)
                     },
                     // No padding for the HUD: the controls float over the page, because
                     // resizing the page on every tap moved the text being read. The
@@ -182,6 +220,13 @@ fun EpubReaderScreen(
                             color = fgColor,
                             maxLines = 1,
                             modifier = Modifier.weight(1f),
+                        )
+                        ReadAloudButtons(
+                            status = state.readAloud,
+                            tint = fgColor,
+                            onStart = ::startReadAloud,
+                            onPauseOrResume = vm::pauseOrResumeReadAloud,
+                            onStop = vm::stopReadAloud,
                         )
                         IconButton(onClick = { vm.cycleTheme(theme) }) {
                             Icon(Icons.Default.Palette, "Theme", tint = fgColor)
@@ -254,9 +299,38 @@ fun EpubReaderScreen(
                             modifier = Modifier
                                 .verticalScroll(rememberScrollState())
                                 .padding(start = 20.dp, end = 20.dp, bottom = 32.dp),
+                            readAloud = { ReadAloudOptions() },
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Read aloud from the page on screen; then pause, resume and stop. */
+@Composable
+private fun ReadAloudButtons(
+    status: ReadAloud.Status,
+    tint: Color,
+    onStart: () -> Unit,
+    onPauseOrResume: () -> Unit,
+    onStop: () -> Unit,
+) {
+    when (status) {
+        ReadAloud.Status.IDLE -> IconButton(onClick = onStart) {
+            Icon(Icons.Default.RecordVoiceOver, "Read aloud", tint = tint)
+        }
+        ReadAloud.Status.STARTING -> IconButton(onClick = onStop) {
+            CircularProgressIndicator(Modifier.size(20.dp), color = tint, strokeWidth = 2.dp)
+        }
+        ReadAloud.Status.PLAYING, ReadAloud.Status.PAUSED -> {
+            IconButton(onClick = onPauseOrResume) {
+                if (status == ReadAloud.Status.PLAYING) Icon(Icons.Default.Pause, "Pause reading aloud", tint = tint)
+                else Icon(Icons.Default.PlayArrow, "Resume reading aloud", tint = tint)
+            }
+            IconButton(onClick = onStop) {
+                Icon(Icons.Default.Stop, "Stop reading aloud", tint = tint)
             }
         }
     }
@@ -368,6 +442,12 @@ private val EpubTheme.fgColor: Color
         EpubTheme.CONTRAST_LIGHT -> Color.Black
     }
 
+/** The sentence being read aloud: the text's own colour, faint, as on desktop. */
+private fun highlightCss(fg: Color): String {
+    val argb = fg.toArgb()
+    return "rgba(${(argb shr 16) and 0xFF},${(argb shr 8) and 0xFF},${argb and 0xFF},0.2)"
+}
+
 private fun colorHex(color: Color): String {
     val argb = color.toArgb()
     return "#%06X".format(argb and 0xFFFFFF)
@@ -384,6 +464,7 @@ private fun themeCss(theme: EpubTheme, font: BookFont): String {
 html, body { background: $bg !important; color: $fg !important; }
 body { font-family: serif; }
 body * { color: inherit !important; background-color: transparent !important; }
+body .$READ_ALOUD_HIGHLIGHT { background-color: ${highlightCss(theme.fgColor)} !important; border-radius: 2px; }
 img, svg { max-width: 100% !important; height: auto; }
 ${font.css}
 """
