@@ -59,17 +59,22 @@ object SentenceMarker {
     /** Elements whose text is not read: code and styling, ruby annotations, pictures. */
     private val SILENT = setOf("script", "style", "rt", "rp", "svg", "math", "head", "title")
 
+    // Any whitespace, Unicode's included. Spelled out rather than with the inline
+    // Unicode-classes flag, which Android's regex engine (ICU) rejects: that crashed
+    // every book on opening. SentenceMarkerTest keeps the flag out.
+    private const val WS = "\\s\\p{Z}"
+
     /** Words that end in a full stop without ending the sentence. */
     private val ABBREVIATION = Regex(
-        "(?U)(?:^|[\\s(“\"‘])(?:Mr|Mrs|Ms|Mx|Dr|Prof|St|Jr|Sr|Mt|No|vs|etc|viz|cf|" +
+        "(?:^|[$WS(“\"‘])(?:Mr|Mrs|Ms|Mx|Dr|Prof|St|Jr|Sr|Mt|No|vs|etc|viz|cf|" +
             "Gen|Col|Capt|Lt|Sgt|Rev|Hon|Fr|[A-HJ-Z])\\.$",
     )
 
     /** The end of a sentence: closing punctuation, any closing quotes or brackets,
      *  then space or the end of the text. */
-    private val END = Regex("(?U)[.!?…]+[\"'”’)\\]]*(?=\\s|$)")
+    private val END = Regex("[.!?…]+[\"'”’)\\]]*(?=[$WS]|$)")
     private val STRONG_END = Regex("[!?…]")
-    private val SPACES = Regex("(?U)\\s+")
+    private val SPACES = Regex("[$WS]+")
 
     /** Marks the sentences of a chapter's body HTML. See [MarkedChapter]. */
     fun mark(bodyHtml: String): MarkedChapter {

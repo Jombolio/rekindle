@@ -227,7 +227,14 @@ object EpubParser {
     /** A chapter's body as the page shows it, its sentences marked when asked. */
     private fun chapterContent(html: String, markSentences: Boolean): String {
         val content = expandSelfClosingTags(BODY.find(html)?.groupValues?.get(2) ?: html).replace(SCRIPT, "")
-        return if (markSentences) SentenceMarker.mark(content).html else content
+        if (!markSentences) return content
+        // Marking is only for reading aloud: if it ever fails, the chapter still opens.
+        return try {
+            SentenceMarker.mark(content).html
+        } catch (e: Throwable) {
+            if (e is VirtualMachineError && e !is StackOverflowError) throw e
+            content
+        }
     }
 
     /**
