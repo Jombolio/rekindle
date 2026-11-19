@@ -19,6 +19,8 @@ import com.rekindle.app.core.prefs.MAX_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.MIN_BOOK_FONT_SIZE
 import com.rekindle.app.core.prefs.PrefsStore
 import com.rekindle.app.core.prefs.ReadingStyle
+import com.rekindle.app.core.readaloud.MarkedChapter
+import com.rekindle.app.core.readaloud.ReadAloud
 import com.rekindle.app.data.repository.DownloadRepository
 import com.rekindle.app.data.repository.MediaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,7 +31,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -69,6 +73,10 @@ data class EpubReaderState(
     val showControls: Boolean = true,
     /** The dictionary pop-up, when one is open. */
     val definition: BookDefinition? = null,
+    /** Reading aloud: whether it is, and the chapter and sentence being read. */
+    val readAloud: ReadAloud.Status = ReadAloud.Status.IDLE,
+    val readingChapter: Int = -1,
+    val readingSentence: Int? = null,
     val error: String? = null,
 )
 
@@ -102,6 +110,7 @@ class EpubReaderViewModel @Inject constructor(
     private val mediaRepo: MediaRepository,
     private val prefs: PrefsStore,
     private val dictionary: WordNetDictionary,
+    private val readAloud: ReadAloud,
 ) : ViewModel() {
 
     private val mediaId: String = checkNotNull(savedStateHandle["mediaId"])
@@ -117,6 +126,26 @@ class EpubReaderViewModel @Inject constructor(
     private var moved = false
     private var saveJob: Job? = null
 
+    private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
+
+    /** Short notes for the reader, such as why reading aloud stopped. */
+    val messages = _messages.asSharedFlow()
+
+    /** The open book as reading aloud sees it. */
+    private val readAloudBook = object : ReadAloud.Book {
+        override val title: String get() = _state.value.book?.title.orEmpty()
+        override val chapterCount: Int get() = _state.value.book?.chapters?.size ?: 0
+        override fun chapterTitle(index: Int): String =
+            _state.value.book?.chapters?.getOrNull(index)?.title.orEmpty()
+
+        override fun sentences(chapter: Int): MarkedChapter? {
+            val book = _state.value.book ?: return null
+            val path = book.chapters.getOrNull(chapter)?.path ?: return null
+            val bytes = book.read(path) ?: return null
+            return EpubParser.chapterSentences(EpubParser.decodeText(bytes))
+        }
+    }
+
     /** A copy for this session only, deleted on close. Downloads aren't touched. */
     private val sessionFile = File(context.cacheDir, "books/$mediaId-${UUID.randomUUID()}.epub")
 
@@ -131,6 +160,58 @@ class EpubReaderViewModel @Inject constructor(
             loadEpub()
             followSettings()
         }
+        followReadAloud()
+    }
+
+    // ── Read aloud ───────────────────────────────────────────────────────────
+
+    private fun followReadAloud() {
+        viewModelScope.launch {
+            var lastChapter = -1
+            readAloud.state.collect { reading ->
+                val ours = reading.active && readAloud.book === readAloudBook
+                _state.update {
+                    it.copy(
+                        readAloud = if (ours) reading.status else ReadAloud.Status.IDLE,
+                        readingChapter = if (ours) reading.chapter else -1,
+                        readingSentence = if (ours) reading.sentence else null,
+                    )
+                }
+                if (!ours) {
+                    lastChapter = -1
+                    return@collect
+                }
+                // Reading moved on to the next chapter: so does the page. Only on a
+                // change, so a reader looking at another chapter isn't pulled back
+                // with every sentence. The continuous layout scrolls into it itself.
+                if (reading.chapter != lastChapter && lastChapter != -1 &&
+                    _state.value.style.layout != BookLayout.CONTINUOUS
+                ) {
+                    goToChapter(reading.chapter)
+                }
+                lastChapter = reading.chapter
+                // Progress follows the speech, which carries on with the screen off.
+                val sentence = reading.sentence ?: return@collect
+                val at = readAloud.fractionOf(sentence) ?: return@collect
+                if (reading.chapter == _state.value.chapterIndex) onPositionChanged(at)
+            }
+        }
+        viewModelScope.launch {
+            readAloud.errors.collect { if (readAloud.book === readAloudBook || readAloud.book == null) _messages.tryEmit(it) }
+        }
+    }
+
+    /** Reads aloud from sentence [sentence] of chapter [chapter]: null is the chapter's end. */
+    fun readAloudFrom(chapter: Int, sentence: Int?) {
+        if (_state.value.book == null) return
+        readAloud.read(readAloudBook, chapter, sentence ?: Int.MAX_VALUE)
+    }
+
+    /** Play and pause. Starting needs the page, to begin from what's on screen. */
+    fun pauseOrResumeReadAloud() = readAloud.togglePause()
+
+    fun stopReadAloud() {
+        if (readAloud.book === readAloudBook) readAloud.stop()
     }
 
     /**
@@ -371,6 +452,8 @@ class EpubReaderViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        // Leaving the book stops reading it.
+        if (readAloud.book === readAloudBook || !readAloud.state.value.active) readAloud.release()
         val book = _state.value.book
         // viewModelScope is cancelled BEFORE onCleared is invoked, so a coroutine
         // launched on it never runs — the exit-time work needs its own scope.

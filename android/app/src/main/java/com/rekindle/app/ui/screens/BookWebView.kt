@@ -25,9 +25,13 @@ import com.rekindle.app.core.prefs.BUNDLED_FONT_PATH
 import com.rekindle.app.core.prefs.BookLayout
 import com.rekindle.app.core.prefs.DEFAULT_PAGE_TURN_MS
 import com.rekindle.app.core.prefs.ReadingCss
+import com.rekindle.app.core.readaloud.SentenceMarker
 import java.io.ByteArrayInputStream
 import java.util.concurrent.Executors
 import kotlin.math.abs
+
+/** The class on the sentence being read aloud; the reader's theme colours it. */
+const val READ_ALOUD_HIGHLIGHT = "rk-reading"
 
 /**
  * Shows a book in one of four layouts:
@@ -59,6 +63,8 @@ class BookWebView(
     private val onFlowPosition: (chapter: Int, fraction: Float) -> Unit,
     private val onPastEnd: () -> Unit,
     private val onBeforeStart: () -> Unit,
+    /** "Read aloud" was picked for selected text: the chapter and sentence it's in. */
+    private val onReadAloudFrom: (chapter: Int, sentence: Int) -> Unit,
 ) : WebView(context) {
 
     var book: ReaderBook? = null
@@ -68,6 +74,10 @@ class BookWebView(
 
     /** How long one page turn takes, in milliseconds. */
     var turnMs: Int = DEFAULT_PAGE_TURN_MS
+
+    /** The sentence being read aloud, highlighted and kept on screen. */
+    private var readingChapter = -1
+    private var readingSentence: Int? = null
 
     /** What is loaded, to tell a real change from a recomposition. */
     private var loadedKey: String? = null
@@ -349,7 +359,7 @@ class BookWebView(
             val path = book.chapters[index].path
             val raw = runCatching { book.read(path) }.getOrNull()
             val section = raw?.let {
-                EpubParser.flowSection(index, path, EpubParser.decodeText(it), BOOK_HOST)
+                EpubParser.flowSection(index, path, EpubParser.decodeText(it), BOOK_HOST, markSentences = true)
             }
             main.post {
                 flowLoading = false
@@ -375,6 +385,107 @@ class BookWebView(
         }
     }
 
+    // ── Read aloud ───────────────────────────────────────────────────────────
+    //
+    // Chapters are served with every sentence marked (`<span data-ra="n">`, see
+    // SentenceMarker), numbered as the speech numbers them. In the continuous layout
+    // each chapter's section has its own numbering.
+
+    /** Highlights sentence [sentence] of chapter [chapter] and keeps it on screen. Null clears it. */
+    fun highlightSentence(chapter: Int, sentence: Int?) {
+        if (chapter == readingChapter && sentence == readingSentence) return
+        readingChapter = chapter
+        readingSentence = sentence
+        applyHighlight(follow = sentence != null)
+    }
+
+    private fun applyHighlight(follow: Boolean) {
+        val flow = layout == BookLayout.CONTINUOUS
+        // Another chapter's sentence numbers mean nothing here: just clear.
+        val sentence = readingSentence?.takeIf { flow || readingChapter == shownChapter() } ?: -1
+        val share = if (layout == BookLayout.SPREAD) 0.5 else 1.0
+        evaluateJavascript(
+            "(function(c,n,flow,follow,paged,share,top,bottom){var d=document;" +
+                "d.querySelectorAll('.$HIGHLIGHT').forEach(function(e){e.classList.remove('$HIGHLIGHT')});" +
+                "if(n<0)return -1;" +
+                "var root=flow?d.querySelector('section[data-chapter=\"'+c+'\"]'):d.body;if(!root)return -1;" +
+                "var s=root.querySelectorAll('[${SentenceMarker.ATTRIBUTE}=\"'+n+'\"]');if(!s.length)return -1;" +
+                "s.forEach(function(e){e.classList.add('$HIGHLIGHT')});if(!follow)return -1;" +
+                "var r=s[0].getClientRects()[0]||s[0].getBoundingClientRect();" +
+                // Paged: the column the sentence starts in, for the app to turn to.
+                "if(paged)return Math.floor((r.left+scrollX+1)/(innerWidth*share));" +
+                "if(r.top<top||r.bottom>innerHeight-bottom)" +
+                "window.scrollTo({top:scrollY+r.top-innerHeight*0.3,behavior:'smooth'});return -1;" +
+                "})($readingChapter,$sentence,$flow,$follow,${layout.paged},$share,${ReadingCss.TOP_INSET},$FOLLOW_BOTTOM)",
+        ) { result ->
+            val column = result?.toIntOrNull() ?: return@evaluateJavascript
+            if (column < 0 || !layout.paged) return@evaluateJavascript
+            // Following the speech takes over from restoring a position.
+            pendingFraction = null
+            if (column >= page && column < page + perScreen) return@evaluateJavascript
+            measurePages { count ->
+                val last = ((count - 1) / perScreen) * perScreen
+                showPage(align(column).coerceIn(0, last), count, animate = true, turned = true)
+            }
+        }
+    }
+
+    /** The chapter on screen, outside the continuous layout; -1 in it. */
+    private fun shownChapter(): Int =
+        if (layout == BookLayout.CONTINUOUS) -1 else loadedChapter?.let { book?.chapterIndexOf(it) } ?: -1
+
+    /**
+     * Where reading aloud starts from the page as it is: the first sentence on
+     * screen, or the first after it if none is. Reports the chapter (the one shown,
+     * or in the continuous layout the one that sentence is in) and the sentence.
+     * The sentence is null when no text follows in the chapter shown.
+     */
+    fun sentenceInView(then: (chapter: Int, sentence: Int?) -> Unit) {
+        val shown = shownChapter()
+        evaluateJavascript(
+            "(function(top){var s=document.querySelectorAll('[${SentenceMarker.ATTRIBUTE}]'),after=null;" +
+                "for(var i=0;i<s.length;i++){var rs=s[i].getClientRects();" +
+                "for(var j=0;j<rs.length;j++){var r=rs[j];" +
+                "if(r.right>0&&r.left<innerWidth&&r.bottom>top&&r.top<innerHeight)return pick(s[i]);" +
+                "if(!after&&(r.top>=innerHeight||r.left>=innerWidth))after=s[i];}}" +
+                "return after?pick(after):'';" +
+                "function pick(e){var sec=e.closest('section[data-chapter]');" +
+                "return (sec?sec.dataset.chapter:-1)+','+e.getAttribute('${SentenceMarker.ATTRIBUTE}');}" +
+                "})(${ReadingCss.TOP_INSET})",
+        ) { raw ->
+            val spot = parseSpot(raw, shown)
+            when {
+                spot != null -> then(spot.first, spot.second)
+                shown >= 0 -> then(shown, null)
+            }
+        }
+    }
+
+    /** The sentence the selection starts in, as [sentenceInView] reports it. */
+    private fun sentenceAtSelection(then: (chapter: Int, sentence: Int) -> Unit) {
+        val shown = shownChapter()
+        evaluateJavascript(
+            "(function(){var sel=getSelection();if(!sel.rangeCount)return '';" +
+                "var n=sel.getRangeAt(0).startContainer,e=n.nodeType===1?n:n.parentElement;" +
+                "var at=e&&e.closest('[${SentenceMarker.ATTRIBUTE}]');" +
+                // Between sentences, as at a heading's edge: the next one.
+                "if(!at){var w=document.createTreeWalker(document.body,NodeFilter.SHOW_ELEMENT);w.currentNode=n;" +
+                "while(w.nextNode()){if(w.currentNode.hasAttribute('${SentenceMarker.ATTRIBUTE}')){at=w.currentNode;break;}}}" +
+                "if(!at)return '';var sec=at.closest('section[data-chapter]');" +
+                "return (sec?sec.dataset.chapter:-1)+','+at.getAttribute('${SentenceMarker.ATTRIBUTE}');})()",
+        ) { raw -> parseSpot(raw, shown)?.let { (chapter, sentence) -> then(chapter, sentence) } }
+    }
+
+    /** "chapter,sentence" from the page, where a chapter of -1 means the one shown. */
+    private fun parseSpot(raw: String?, shown: Int): Pair<Int, Int>? {
+        val text = runCatching { JsonParser.parseString(raw).asString }.getOrNull() ?: return null
+        val parts = text.split(',')
+        if (parts.size != 2) return null
+        val chapter = parts[0].toIntOrNull()?.takeIf { it >= 0 } ?: shown
+        val sentence = parts[1].toIntOrNull() ?: return null
+        return if (chapter >= 0) chapter to sentence else null
+    }
+
     // ── Dictionary ───────────────────────────────────────────────────────────
 
     /** Adds "Define" to the toolbar Android shows for selected text. */
@@ -398,6 +509,10 @@ class BookWebView(
                 menu.add(Menu.NONE, DEFINE_ITEM, Menu.FIRST, "Define")
                     .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
             }
+            if (menu.findItem(READ_ALOUD_ITEM) == null) {
+                menu.add(Menu.NONE, READ_ALOUD_ITEM, Menu.FIRST + 1, "Read aloud")
+                    .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
+            }
         }
 
         override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean =
@@ -410,8 +525,16 @@ class BookWebView(
         }
 
         override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
-            if (item.itemId != DEFINE_ITEM) return inner.onActionItemClicked(mode, item)
-            defineSelection(mode)
+            when (item.itemId) {
+                DEFINE_ITEM -> defineSelection(mode)
+                READ_ALOUD_ITEM -> {
+                    sentenceAtSelection { chapter, sentence -> onReadAloudFrom(chapter, sentence) }
+                    // Evaluated in order, so the selection is read before it's cleared.
+                    evaluateJavascript("getSelection().removeAllRanges()", null)
+                    mode.finish()
+                }
+                else -> return inner.onActionItemClicked(mode, item)
+            }
             return true
         }
 
@@ -431,6 +554,11 @@ class BookWebView(
     }
 
     private inner class BookClient : WebViewClient() {
+        /** A reload, for a new theme or font, loses the highlight: put it back. */
+        override fun onPageFinished(view: WebView, url: String) {
+            if (readingSentence != null) applyHighlight(follow = true)
+        }
+
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse {
             val uri = request.url
             val book = book
@@ -443,7 +571,9 @@ class BookWebView(
                 val index = path.removePrefix(FLOW_PATH).toIntOrNull() ?: return refused()
                 val chapter = book.chapters.getOrNull(index) ?: return refused()
                 val bytes = runCatching { book.read(chapter.path) }.getOrNull() ?: CHAPTER_FAILED.toByteArray()
-                val section = EpubParser.flowSection(index, chapter.path, EpubParser.decodeText(bytes), BOOK_HOST)
+                val section = EpubParser.flowSection(
+                    index, chapter.path, EpubParser.decodeText(bytes), BOOK_HOST, markSentences = true,
+                )
                 return html(EpubParser.renderFlow(section, themeCss))
             }
 
@@ -453,7 +583,7 @@ class BookWebView(
                 // When streaming, a dropped connection shouldn't look like a blank page.
                 val bytes = runCatching { book.read(path) }.getOrNull()
                     ?: CHAPTER_FAILED.toByteArray()
-                return html(EpubParser.renderChapter(EpubParser.decodeText(bytes), themeCss))
+                return html(EpubParser.renderChapter(EpubParser.decodeText(bytes), themeCss, markSentences = true))
             }
             val stream = runCatching { book.open(path) }.getOrNull() ?: return refused()
             return WebResourceResponse(mimeTypeOf(path), null, stream)
@@ -523,6 +653,10 @@ class BookWebView(
         const val FLOW_PATH = "__rekindle__/flow/"
         const val DEFAULT_FONT_SIZE = 16f
         const val DEFINE_ITEM = 0x52454B44
+        const val READ_ALOUD_ITEM = 0x52454B52
+        const val HIGHLIGHT = READ_ALOUD_HIGHLIGHT
+        /** Room kept clear at the bottom when following the speech: the controls. */
+        const val FOLLOW_BOTTOM = 80
         const val RESTORE_WINDOW_MS = 2000L
         const val RESTORE_TICK_MS = 100L
         const val FLOW_CHECK_MS = 150L

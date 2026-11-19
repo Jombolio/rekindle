@@ -342,6 +342,7 @@ fun SettingsScreen(
                         onFont = vm::setBookFont,
                         onFontSize = vm::setBookFontSize,
                         onTheme = vm::setBookTheme,
+                        readAloud = { ReadAloudOptions() },
                     )
 
                     // ── Updates ────────────────────────────────────────────

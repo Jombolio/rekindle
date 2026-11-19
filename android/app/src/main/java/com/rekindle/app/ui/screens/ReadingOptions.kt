@@ -48,6 +48,8 @@ fun ReadingOptions(
     onFontSize: (Float) -> Unit,
     onTheme: (BookTheme) -> Unit,
     modifier: Modifier = Modifier,
+    /** The read-aloud voice and speed, shown under the theme. */
+    readAloud: (@Composable () -> Unit)? = null,
 ) {
     fun ems(v: Float) = if (v == 0f) "None" else "%.2f em".format(v)
 
@@ -67,6 +69,11 @@ fun ReadingOptions(
 
         Heading("Theme")
         Choices(BookTheme.entries, theme, { it.label }) { onTheme(it) }
+
+        if (readAloud != null) {
+            Heading("Read aloud")
+            readAloud()
+        }
 
         Heading("Spacing")
         SliderRow("Line spacing", style.lineHeight, ReadingStyle.LINE_HEIGHT, 11, "%.1f×".format(style.lineHeight)) {
