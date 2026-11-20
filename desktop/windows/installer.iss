@@ -1,5 +1,5 @@
 #define AppName "Rekindle"
-#define AppVersion "1.6.4-beta.4"
+#define AppVersion "1.6.4-beta.5"
 #define AppExeName "rekindle.exe"
 #define AppURL "https://git.jombo.uk/Jombo/rekindle"
 
