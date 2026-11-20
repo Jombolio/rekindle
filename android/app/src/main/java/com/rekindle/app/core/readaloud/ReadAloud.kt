@@ -2,6 +2,7 @@ package com.rekindle.app.core.readaloud
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.media.AudioAttributes
 import android.os.Handler
 import android.os.Looper
@@ -61,6 +62,12 @@ class ReadAloud @Inject constructor(
         val title: String
         val chapterCount: Int
         fun chapterTitle(index: Int): String
+
+        /** The book's cover, for the lock screen and notification, once it has loaded. */
+        val cover: Bitmap? get() = null
+
+        /** Where reading is, as the lock screen shows it: "Chapter 6 of 62 · Page 3 of 14". */
+        fun position(chapter: Int, sentence: Int?): String = "Chapter ${chapter + 1} of $chapterCount"
 
         /** The chapter's sentences, or null if it can't be read. Called off the main thread. */
         fun sentences(chapter: Int): MarkedChapter?

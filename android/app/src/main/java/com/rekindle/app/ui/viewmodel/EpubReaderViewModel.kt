@@ -1,6 +1,12 @@
 package com.rekindle.app.ui.viewmodel
 
 import android.content.Context
+import android.graphics.Bitmap
+import androidx.core.graphics.drawable.toBitmap
+import coil.imageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
+import kotlin.math.roundToInt
 import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -138,12 +144,52 @@ class EpubReaderViewModel @Inject constructor(
         override fun chapterTitle(index: Int): String =
             _state.value.book?.chapters?.getOrNull(index)?.title.orEmpty()
 
+        override val cover: Bitmap? get() = this@EpubReaderViewModel.cover
+
+        override fun position(chapter: Int, sentence: Int?): String {
+            val s = _state.value
+            val base = "Chapter ${chapter + 1} of $chapterCount"
+            // The paged layouts know the page; the others, how far into the chapter.
+            if (s.style.layout.paged && s.chapterIndex == chapter && s.pageCount > 0) {
+                // A spread's left page is -1 when a chapter opens alone on the right.
+                val first = if (s.page < 0) 1 else s.page + 1
+                val last = if (s.style.layout == BookLayout.SPREAD) minOf(s.page + 2, s.pageCount) else first
+                val pages = if (first == last) "Page $first" else "Pages $first–$last"
+                return "$base · $pages of ${s.pageCount}"
+            }
+            val at = sentence?.let { readAloud.fractionOf(it) } ?: return base
+            return "$base · ${(at * 100).roundToInt()}%"
+        }
+
         override fun sentences(chapter: Int): MarkedChapter? {
             val book = _state.value.book ?: return null
             val path = book.chapters.getOrNull(chapter)?.path ?: return null
             val bytes = book.read(path) ?: return null
             return EpubParser.chapterSentences(EpubParser.decodeText(bytes))
         }
+    }
+
+    /** The book's cover, for reading aloud's lock screen and notification. */
+    private var cover: Bitmap? = null
+
+    /**
+     * Loads the cover: the downloaded copy if there is one, else the server's,
+     * through the app's image cache, where the library has usually put it already.
+     * Small, and in software, since it's sent to the system.
+     */
+    private suspend fun loadCover() {
+        val local = downloadRepo.localCoverPath(mediaId)?.let(::File)?.takeIf { it.exists() }
+        val base = prefs.serverUrl.first()
+        val data: Any = local ?: if (base.isBlank()) return else mediaRepo.coverUrl(base, mediaId)
+        val request = ImageRequest.Builder(context)
+            .data(data)
+            .apply { if (local == null) addHeader("Authorization", "Bearer ${prefs.token.first().orEmpty()}") }
+            .size(COVER_SIZE)
+            .allowHardware(false)
+            .build()
+        cover = runCatching { (context.imageLoader.execute(request) as? SuccessResult)?.drawable?.toBitmap() }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull()
     }
 
     /** A copy for this session only, deleted on close. Downloads aren't touched. */
@@ -160,6 +206,7 @@ class EpubReaderViewModel @Inject constructor(
             loadEpub()
             followSettings()
         }
+        viewModelScope.launch { loadCover() }
         followReadAloud()
     }
 
@@ -474,5 +521,6 @@ class EpubReaderViewModel @Inject constructor(
 
     private companion object {
         const val SAVE_DEBOUNCE_MS = 1500L
+        const val COVER_SIZE = 512
     }
 }
