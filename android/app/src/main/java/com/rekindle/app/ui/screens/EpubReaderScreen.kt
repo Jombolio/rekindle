@@ -64,6 +64,11 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -180,7 +185,9 @@ fun EpubReaderScreen(
                     // No padding for the HUD: the controls float over the page, because
                     // resizing the page on every tap moved the text being read. The
                     // theme's body padding keeps the chapter's ends clear of them.
-                    modifier = Modifier.fillMaxSize(),
+                    // The system bars are another matter: they're always there (the app
+                    // draws edge to edge), so the page stays inside them.
+                    modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars),
                 )
 
                 if (state.style.ruler) {
@@ -198,6 +205,7 @@ fun EpubReaderScreen(
                         foreground = fgColor,
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
+                            .windowInsetsPadding(WindowInsets.systemBars)
                             .padding(start = 12.dp, end = 12.dp, bottom = if (state.showControls) 64.dp else 16.dp),
                     )
                 }
@@ -209,6 +217,8 @@ fun EpubReaderScreen(
                             .fillMaxWidth()
                             .align(Alignment.TopStart)
                             .background(bgColor.copy(alpha = 0.95f))
+                            // Below the status bar, its background reaching up behind it.
+                            .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
                             .padding(horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -248,6 +258,8 @@ fun EpubReaderScreen(
                             .fillMaxWidth()
                             .align(Alignment.BottomStart)
                             .background(bgColor.copy(alpha = 0.95f))
+                            // Above the navigation buttons or gesture bar.
+                            .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
                             .padding(horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
